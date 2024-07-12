@@ -1,0 +1,20 @@
+nlp_engine_name: spacy
+models:
+  - lang_code: en
+    model_name: en_core_web_lg
+ner_model_configuration:
+  - model_name: en_core_web_lg
+    lang_code: en
+    entity_recognizers:
+      - name: CREDIT_CARD_NUMBER
+        type: regex
+        regex: '\b(?:\d[ -]*?){13,16}\b'
+model_to_presidio_entity_mapping:
+  en_core_web_lg:
+    CARDINAL: NUMBER
+    PERSON: PERSON
+    GPE: LOCATION
+low_score_entity_names:
+  - DATE
+labels_to_ignore:
+  - 'O'

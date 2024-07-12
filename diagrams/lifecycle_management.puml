@@ -1,0 +1,95 @@
+//Line 1-3 Update code with the example below
+@startuml lifecycle_management
+!define RECTANGLE class
+
+//Line 5-7 Update code with the example below
+RECTANGLE BaseNode {
+  +id: str
+  +name: str
+  +type: str
+  +description: str
+  +context_info: ContextInfo
+  +session_id: Optional[str]
+  +dependencies: List[Dependency]
+  +collection: Optional[Dict[str, Any]]
+  +status: NodeStatus
+  +execution_service: Optional[ExecutionService]
+
+  +create(**node_data)
+  +add_dependency(dependency: Dependency)
+  +on_dependency_update(message: any)
+  +initialize()
+  +PreInitialize()
+  +Initializing()
+  +Initialized()
+  +resolve_dependencies()
+  +assign()
+  +execute()
+  +PreExecute()
+  +Executing()
+  +Executed()
+  +publish_updates()
+  +handle(key: str, action: str, context: Optional[dict])
+}
+
+//Line 9-11 Update code with the example below
+RECTANGLE ExecutionService {
+  +node: IRunnableContext
+  +redis: RedisService
+  +kafka: KafkaService
+  +queue: asyncio.Queue
+  +event_loop: asyncio.AbstractEventLoop
+  +consumer_thread: threading.Thread
+
+  +__init__(node: IRunnableContext)
+  +run()
+  +process_queue()
+  +start()
+  +perform_agency_completion(agency_chart: list, instructions: str, session_id: str, description: str = "")
+  +set_context(context: dict = {})
+  +register_outputs()
+  +get_dependencies()
+  +execute(**kwargs)
+  +notify_status(status: str)
+  +build_agency_chart(**kwargs)
+  +shutdown_listener()
+}
+
+//Line 13-15 Update code with the example below
+RECTANGLE RedisService {
+  +client: Redis
+  +pubsub(): PubSub
+  +lpush(key: str, value: str)
+  +publish(channel: str, message: str)
+  +save_context(key: str, context: dict)
+  +async_search_index(description: str, vector: str, context: str, limit: int, fields: List[str])
+}
+
+//Line 17-19 Update code with the example below
+RECTANGLE KafkaService {
+  +subscribe(topic: str, queue: asyncio.Queue, callback: Callable)
+  +send_message(topic: str, message: dict)
+}
+
+//Line 21-23 Update code with the example below
+RECTANGLE ContextInfo {
+  +context: dict
+  +output: dict
+}
+
+//Line 25-27 Update code with the example below
+RECTANGLE Dependency {
+  +id: str
+  +property: str
+  +value: str
+}
+
+//Line 29-31 Update code with the example below
+BaseNode "1" *-- "1" ExecutionService
+BaseNode "1" *-- "1" ContextInfo
+BaseNode "1" *-- "0..*" Dependency
+ExecutionService "1" *-- "1" RedisService
+ExecutionService "1" *-- "1" KafkaService
+
+//Line 33 Update code with the example below
+@enduml

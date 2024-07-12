@@ -1,0 +1,158 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "MedicalCondition",
+    "type": "object",
+    "description": "Details a specific medical condition, including its name, description, and related information such as approval rate, color coding for severity, and executive summary.",
+    "properties": {
+        "name": {
+            "type": "string",
+            "description": "The name of the medical condition."
+        },
+        "description": {
+            "type": "string",
+            "description": "A brief description of the condition."
+        },
+        "approvalRate": {
+            "type": "string",
+            "description": "The approval rate for claims related to this condition."
+        },
+        "color": {
+            "type": "string",
+            "description": "Color code indicating the condition's severity or approval likelihood. Use 'green', 'yellow', or 'red' for predefined validation."
+        },
+        "shortDescriptor": {
+            "type": "string",
+            "description": "A short descriptor or tagline summarizing the condition."
+        },
+        "conditionType": {
+            "type": "string",
+            "description": "The type or category of the medical condition, indicating its strategic importance or difficulty in approval.",
+            "enum": ["cornerstone", "easywin", "highvalue"]
+          },
+        "executiveSummary": {
+            "type": "string",
+            "description": "An executive summary providing an overview of the condition, its impact, and key considerations."
+        },
+        "keyPoints": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/KeyPoint"
+            },
+            "description": "A list of key points highlighting important aspects of the condition."
+        },
+        "research": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/ResearchItem"
+            },
+            "description": "Research items related to the condition, including studies, papers, and articles."
+        },
+        "PointsFor38CFR": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/CFRPoint"
+            },
+            "description": "Points specifically related to 38 CFR (Code of Federal Regulations) that are relevant to the condition."
+        },
+        "futureConsiderations": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/Consideration"
+            },
+            "description": "Considerations for the future management or treatment of the condition."
+        }
+    },
+    "required": [
+        "name",
+        "description",
+        "approvalRate",
+        "color",
+        "shortDescriptor",
+        "conditionType",
+        "executiveSummary",
+        "keyPoints",
+        "research",
+        "PointsFor38CFR",
+        "futureConsiderations"
+    ],
+    "definitions": {
+        "KeyPoint": {
+            "type": "object",
+            "properties": {
+                "pointTitle": {
+                    "type": "string",
+                    "description": "The title or heading of the key point."
+                },
+                "point": {
+                    "type": "string",
+                    "description": "The detailed description or information of the key point."
+                }
+            },
+            "required": [
+                "pointTitle",
+                "point"
+            ]
+        },
+        "ResearchItem": {
+            "type": "object",
+            "properties": {
+                "fileName": {
+                    "type": "string",
+                    "description": "The name of the research file or document."
+                },
+                "authorName": {
+                    "type": "string",
+                    "description": "The name of the author or researcher."
+                },
+                "fileUrl": {
+                    "type": "string",
+                    "description": "The URL where the research document can be accessed."
+                },
+                "summaryOfResearch": {
+                    "type": "string",
+                    "description": "A summary of the research findings or contents."
+                }
+            },
+            "required": [
+                "fileName",
+                "authorName",
+                "fileUrl",
+                "summaryOfResearch"
+            ]
+        },
+        "CFRPoint": {
+            "type": "object",
+            "properties": {
+                "pointTitle": {
+                    "type": "string",
+                    "description": "The title or heading of the CFR point."
+                },
+                "point": {
+                    "type": "string",
+                    "description": "The detailed description or information of the CFR point."
+                }
+            },
+            "required": [
+                "pointTitle",
+                "point"
+            ]
+        },
+        "Consideration": {
+            "type": "object",
+            "properties": {
+                "considerationTitle": {
+                    "type": "string",
+                    "description": "The title or heading of the consideration."
+                },
+                "consideration": {
+                    "type": "string",
+                    "description": "The detailed description or information of the consideration."
+                }
+            },
+            "required": [
+                "considerationTitle",
+                "consideration"
+            ]
+        }
+    }
+}

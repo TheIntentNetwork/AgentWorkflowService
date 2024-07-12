@@ -1,0 +1,56 @@
+version: '0.1.0'
+
+index:
+  name: prompt_settings
+  prefix: prompt_settings
+  storage_type: hash
+
+fields:
+- name: name
+  type: text
+  attrs:
+    weight: 1.0
+- name: instructions
+  type: text
+  attrs:
+    weight: 1.0
+- name: description
+  type: text
+  attrs:
+    weight: 1.0
+- name: tools
+  type: text
+  attrs:
+    weight: 1.0
+- name: instructions_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6
+- name: description_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6
+- name: tools_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6
+- name: metadata_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6

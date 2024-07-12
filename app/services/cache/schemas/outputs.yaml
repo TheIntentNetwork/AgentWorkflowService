@@ -1,0 +1,36 @@
+version: '0.1.0'
+
+index:
+  name: outputs
+  prefix: output
+  storage_type: hash
+
+fields:
+- name: session_id
+  type: tag
+  attrs:
+    weight: 1.0
+- name: context_key
+  type: tag
+  attrs:
+    weight: 1.0
+- name: output_name
+  type: tag
+  attrs:
+    weight: 1.0
+- name: output_description
+  type: text
+  attrs:
+    weight: 1.0
+- name: output
+  type: text
+  attrs:
+    weight: 1.0
+- name: metadata_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6

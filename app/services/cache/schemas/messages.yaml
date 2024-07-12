@@ -1,0 +1,32 @@
+version: '0.1.0'
+
+index:
+  name: messages
+  prefix: message
+  storage_type: hash
+
+fields:
+- name: agent_name
+  type: tag
+  attrs:
+    weight: 1.0
+- name: message
+  type: tag
+  attrs:
+    weight: 1.0
+- name: message_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6
+- name: metadata_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6

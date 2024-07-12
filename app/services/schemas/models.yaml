@@ -1,0 +1,53 @@
+version: '0.1.0'
+
+index:
+  name: models
+  prefix: models
+  storage_type: hash
+
+fields:
+- name: name
+  type: tag
+  attrs:
+    separator: ','
+- name: description
+  type: text
+  attrs:
+    weight: 1.0
+- name: domain
+  type: tag
+  attrs:
+    separator: ','
+- name: steps
+  type: text
+  attrs:
+    weight: 1.0
+- name: metadata
+  type: text
+  attrs:
+    weight: 1.0
+- name: feedback
+  type: text
+  attrs:
+    weight: 1.0
+- name: steps_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: float32
+    dims: 384
+    distance_metric: cosine
+- name: metadata_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: float32
+    dims: 384
+    distance_metric: cosine
+- name: feedback_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: float32
+    dims: 384
+    distance_metric: cosine

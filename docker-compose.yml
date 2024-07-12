@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  agentworkflowservice:
+    build: .
+    container_name: agentworkflowservice
+    ports:
+      - "5000:5000" # Map the port from the container to the host (if needed)
+      - "7900:7900" # Map another port if your application uses it
+    volumes:
+      - ./:/app # Mount the directory with your application code
+    shm_size: '2g' # Set shared memory size as in your docker run command

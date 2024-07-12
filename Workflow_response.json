@@ -1,0 +1,158 @@
+{
+    "sessionId": "d92f3534-ce01-47e5-bd30-20b8f2dae1b7",
+    "workflow": {
+        "key": "workflow: 0945c22a-50e0-4607-b6fa-c4b210af7c8d",
+        "sessionId": "d92f3534-ce01-47e5-bd30-20b8f2dae1b7",
+        "purpose": "Generate a research report.",
+        "steps": [
+            {
+                "key": "workflow: 0945c22a-50e0-4607-b6fa-c4b210af7c8d:step:db131f4b-85a4-48a5-859f-6c84ef81caf1",
+                "id": "db131f4b-85a4-48a5-859f-6c84ef81caf1",
+                "description": "Gather intake forms from clients",
+                "mode": "sequential",
+                "status": "pending",
+                "assignee": [
+                    {
+                        "key": "agent:c6e3f36f-50d0-46c2-a705-d807ca20ad2f",
+                        "name": "IntakeAgent"
+                    }
+                ],
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d"
+            },
+            {
+                "key": "workflow: 0945c22a-50e0-4607-b6fa-c4b210af7c8d:step:d5c937e2-ccb3-4503-9f0f-cd68fc7b8521",
+                "id": "d5c937e2-ccb3-4503-9f0f-cd68fc7b8521",
+                "description": "Gather supplemental forms for each condition",
+                "mode": "parallel",
+                "status": "pending",
+                "assignee": [
+                    {
+                        "key": "agent:f92783d4-d3f1-4baf-b055-0c36c1a748c8",
+                        "name": "SupplementalAgent"
+                    }
+                ],
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d"
+            },
+            {
+                "key": "workflow: 0945c22a-50e0-4607-b6fa-c4b210af7c8d:step:eaa0ee46-fd93-4cad-afc0-f0fe0f65be53",
+                "id": "eaa0ee46-fd93-4cad-afc0-f0fe0f65be53",
+                "description": "Gather research from the 38CFR",
+                "mode": "parallel",
+                "status": "pending",
+                "assignee": [
+                    {
+                        "key": "agent: 2fa06ec1-6c5b-415d-945c-12df7dc208d8",
+                        "name": "ResearchAgent"
+                    }
+                ],
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d"
+            },
+            {
+                "key": "workflow: 0945c22a-50e0-4607-b6fa-c4b210af7c8d:step: 835434df-c518-46dd-97c7-0b44cf13b59c",
+                "id": "835434df-c518-46dd-97c7-0b44cf13b59c",
+                "description": "Compile all gathered information into a structured report",
+                "mode": "sequential",
+                "status": "pending",
+                "assignee": [
+                    {
+                        "key": "agent:a6c8aaea-5a78-48e8-8042-4a19894f8e8a",
+                        "name": "CompilerAgent"
+                    }
+                ],
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d"
+            },
+            {
+                "key": "workflow: 0945c22a-50e0-4607-b6fa-c4b210af7c8d:step: 3618b621-8ce6-4cdb-ba71-002fd4cc355b",
+                "id": "3618b621-8ce6-4cdb-ba71-002fd4cc355b",
+                "description": "Review the report for accuracy and completeness",
+                "mode": "sequential",
+                "status": "pending",
+                "assignee": [
+                    {
+                        "key": "agent:af300e39-0699-4193-8e6f-e8a5333fd691",
+                        "name": "ReviewAgent"
+                    }
+                ],
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d"
+            },
+            {
+                "key": "workflow: 0945c22a-50e0-4607-b6fa-c4b210af7c8d:step:c1e4a0df-0ff2-49fd-83d3-1c9c8b2409d1",
+                "id": "c1e4a0df-0ff2-49fd-83d3-1c9c8b2409d1",
+                "description": "Finalize and save the report in the required format",
+                "mode": "sequential",
+                "status": "pending",
+                "assignee": [
+                    {
+                        "key": "agent: 62b2fb77-3db8-43e2-95f9-f4926d3c2c78",
+                        "name": "FinalizingAgent"
+                    }
+                ],
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d"
+            }
+        ],
+        "agents": [
+            {
+                "key": "agent:c6e3f36f-50d0-46c2-a705-d807ca20ad2f",
+                "id": "c6e3f36f-50d0-46c2-a705-d807ca20ad2f",
+                "sessionId": "d92f3534-ce01-47e5-bd30-20b8f2dae1b7",
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d",
+                "name": "IntakeAgent",
+                "instructions": "Gather intake forms from clients",
+                "description": "Skilled in intake form collection"
+            },
+            {
+                "key": "agent:f92783d4-d3f1-4baf-b055-0c36c1a748c8",
+                "id": "f92783d4-d3f1-4baf-b055-0c36c1a748c8",
+                "sessionId": "d92f3534-ce01-47e5-bd30-20b8f2dae1b7",
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d",
+                "name": "SupplementalAgent",
+                "instructions": "Gather supplemental forms for each condition",
+                "description": "Skilled in supplemental form collection"
+            },
+            {
+                "key": "agent: 2fa06ec1-6c5b-415d-945c-12df7dc208d8",
+                "id": "2fa06ec1-6c5b-415d-945c-12df7dc208d8",
+                "sessionId": "d92f3534-ce01-47e5-bd30-20b8f2dae1b7",
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d",
+                "name": "ResearchAgent",
+                "instructions": "Gather research from the 38CFR",
+                "description": "Skilled in research gathering"
+            },
+            {
+                "key": "agent:a6c8aaea-5a78-48e8-8042-4a19894f8e8a",
+                "id": "a6c8aaea-5a78-48e8-8042-4a19894f8e8a",
+                "sessionId": "d92f3534-ce01-47e5-bd30-20b8f2dae1b7",
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d",
+                "name": "CompilerAgent",
+                "instructions": "Compile all gathered information into a structured report",
+                "description": "Skilled in compiling and organizing data"
+            },
+            {
+                "key": "agent:af300e39-0699-4193-8e6f-e8a5333fd691",
+                "id": "af300e39-0699-4193-8e6f-e8a5333fd691",
+                "sessionId": "d92f3534-ce01-47e5-bd30-20b8f2dae1b7",
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d",
+                "name": "ReviewAgent",
+                "instructions": "Review the compiled report for accuracy and completeness",
+                "description": "Skilled in reviewing and validating content accuracy"
+            },
+            {
+                "key": "agent: 62b2fb77-3db8-43e2-95f9-f4926d3c2c78",
+                "id": "62b2fb77-3db8-43e2-95f9-f4926d3c2c78",
+                "sessionId": "d92f3534-ce01-47e5-bd30-20b8f2dae1b7",
+                "workflowId": "0945c22a-50e0-4607-b6fa-c4b210af7c8d",
+                "name": "FinalizingAgent",
+                "instructions": "Finalize and save the report in the required format",
+                "description": "Skilled in formatting and finalizing documents"
+            }
+        ],
+        "goals": [
+            "Collect Relevant Research",
+            "Organize Research into Sections",
+            "Save your final outputs in the required format"
+        ],
+        "user_context": {
+            "user_id": "157a0ef0-e80b-4181-8a9b-53ecdbf0a9c6"
+        }
+    }
+}

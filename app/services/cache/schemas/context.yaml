@@ -1,0 +1,92 @@
+version: '0.1.0'
+
+index:
+  name: context
+  prefix: context
+  storage_type: hash
+
+fields:
+- name: key
+  type: tag
+  attrs:
+    weight: 1.0
+- name: name
+  type: tag
+  attrs:
+    weight: 1.0
+- name: input_description
+  type: text
+  attrs:
+    weight: 1.0
+- name: action_summary
+  type: text
+  attrs:
+    weight: 1.0
+- name: outcome_description
+  type: text
+  attrs:
+    weight: 1.0
+- name: feedback
+  type: text
+  attrs:
+    weight: 1.0
+- name: output
+  type: text
+  attrs:
+    weight: 1.0
+- name: item
+  type: text
+  attrs:
+    weight: 1.0
+- name: created_at
+  type: text
+  attrs:
+    weight: 1.0
+- name: input_description_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6
+- name: action_summary_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6
+- name: outcome_description_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6
+- name: feedback_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6
+- name: output_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6
+- name: metadata_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6

@@ -1,0 +1,30 @@
+{
+    "configurations": [
+        {
+            "name": "Python: FastAPI",
+            "type": "python",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "main:app",
+                "--reload",
+                "--host", "0.0.0.0",
+                "--port", "8000"
+            ],
+            "jinja": true,
+            "justMyCode": true
+        },
+        {
+            "name": "Python: FastAPI with Profiling",
+            "type": "python",
+            "request": "launch",
+            "module": "main",
+            "args": [],
+            "jinja": true,
+            "justMyCode": true,
+            "env": {
+                "PROFILE": "true"
+            }
+        }
+    ]
+}
