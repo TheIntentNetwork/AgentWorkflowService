@@ -193,3 +193,6 @@ websockets==12.0
 wsproto==1.2.0
 yarl==1.9.4
 zipp==3.18.1
+pyinstrument
+objgraph
+memory_profiler
