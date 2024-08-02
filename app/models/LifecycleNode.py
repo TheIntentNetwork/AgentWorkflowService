@@ -1,3 +1,4 @@
+import asyncio
 import json
 from app.models.Node import Node
 from app.models.NodeStatus import NodeStatus
@@ -12,14 +13,17 @@ class LifecycleNode(Node):
         self.failed_status_result = None
         self.no_action_result = None
         self.goal_id = kwargs.get('goal_id', None)
+        # Instead of running the async method here, we'll just prepare it
+        self.init_task = self.initialize()
 
-    async def run(self):
+    async def initialize(self):
         await self.subscribe_to_status()
 
     async def subscribe_to_status(self):
         from app.services.discovery.service_registry import ServiceRegistry
-        context_manager = ServiceRegistry.instance().get('context_manager')
-        await context_manager.subscribe("node_status_updates", self.on_status_update, self.status_filter)
+        from app.services.events.event_manager import EventManager
+        event_manager: EventManager = ServiceRegistry.instance().get('event_manager')
+        await event_manager.subscribe(f"node:{self.id}", self.on_status_update, "status")
 
     async def on_status_update(self, message: str):
         from app.services.discovery.service_registry import ServiceRegistry

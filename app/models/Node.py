@@ -73,11 +73,6 @@ class Node(BaseModel, IRunnableContext):
         
         return node
 
-    async def update_context_property(self, path, value, handler_type='string'):
-        handler: ContextUpdate = context_update_manager.get_handler(handler_type)
-        handler.update(self.context_info.context, path, value)
-        await self.dispatch_update(path, value)
-
     async def update_property(self, path: str, value: Any, handler_type: str = 'string'):
         """
         Update a specific property within the context data using a hierarchical path.
@@ -88,7 +83,7 @@ class Node(BaseModel, IRunnableContext):
             handler_type (str): The type of handler to use for the update (default is 'string').
         """
         handler: ContextUpdate = context_update_manager.get_handler(handler_type)
-        handler.update(self.context_info.context, path, value)
+        handler.update(self, path, value)
         
     async def get_dependencies(self) -> None:
         """
@@ -135,8 +130,19 @@ class Node(BaseModel, IRunnableContext):
         await self._context_manager.update_property(self, "status", NodeStatus.created)
     
     async def add_dependency(self, dependency: Dependency) -> None:
-        await self._event_manager.subscribe(f"node:{dependency.context_key}:output", self.on_dependency_update)
-        self.dependencies.append(dependency)
+        from app.services.discovery.service_registry import ServiceRegistry
+        from app.services.cache.redis import RedisService
+        # Add this node as a subscriber of the output of the dependency node
+        redis: RedisService = ServiceRegistry.instance().get("redis")
+        
+        if dependency not in self.dependencies:
+            get_logger('Node').info(f"Adding dependency: {dependency}")
+            redis.client.sadd(f"{dependency.context_key}:subscribers", {'key': self.id, 'property': dependency.property_name})
+            self.dependencies.append(dependency)
+        
+        if self.dependencies.count() > 0:
+            await self._context_manager.update_property(self, "status", NodeStatus.resolving_dependencies)
+            await self._event_manager.subscribe(f"node:{self.id}", self.on_dependency_update, "output")
     
     async def on_dependency_update(self, message: dict) -> None:
         output = message.get('data', {})
@@ -178,6 +184,7 @@ class Node(BaseModel, IRunnableContext):
         log_message = f"Node {self.id} executing"
         logger.info(log_message)
         await self._context_manager.update_property(self, "status", NodeStatus.executing)
+        await self._assign_and_get_completion()
     
     async def PreExecute(self):
         logger = get_logger('BaseNode')
@@ -185,15 +192,6 @@ class Node(BaseModel, IRunnableContext):
         await self._context_manager.update_property(f"node:{self.id}", "status", NodeStatus.pre_execute)
         log_message = f"Node {self.id} PreExecute"
         logger.info(log_message)
-
-
-    async def Executing(self):
-        logger = get_logger('BaseNode')
-        logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
-        log_message = f"Node {self.id} executing"
-        logger.info(log_message)
-        await self._context_manager.update_property(self, "status", NodeStatus.executing)
-        await self._assign_and_get_completion()
         
     async def perform_agency_completion(self, agency_chart: list, instructions: str, session_id: str, description: str = "") -> dict:
         """
@@ -310,12 +308,12 @@ class Node(BaseModel, IRunnableContext):
             for agent in agent_group:
                 agency_chart.append([agency_chart[0], agent])
         
-        get_logger('ExecutionService').info(f"Agency Chart Built: {agency_chart}")
+        get_logger('Node').info(f"Agency Chart Built: {agency_chart}")
             
         return agency_chart
 
     async def Executed(self):
-        logger = get_logger('BaseNode')
+        logger = get_logger('Node')
         logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
         log_message = f"Node {self.id} Executed: status 'completed'"
         logger.info(log_message)
@@ -324,15 +322,11 @@ class Node(BaseModel, IRunnableContext):
         """
         Publish the node's outputs to any subscribers.
         """
-        logger = get_logger('BaseNode')
+        logger = get_logger('Node')
         logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
         
         # Notify subscribers about the entire node update
         await self._event_manager.notify_subscribers(f"node:{self.id}", self.model_dump(), "Node.publish_updates")
-        
-        # Notify subscribers about specific property updates
-        for key, value in self.model_dump().items():
-            await self._event_manager.notify_subscribers(f"node:{self.id}", {key: value}, f"Node.publish_updates.{key}")
         
         logger.info(f"Published updates for node {self.id}")
 
@@ -366,20 +360,18 @@ class Node(BaseModel, IRunnableContext):
             if node_data['type'] == 'lifecycle':
                 from app.models.LifecycleNode import LifecycleNode
                 node_instance: Node = await LifecycleNode.create(**node_data)
-        else:
-            node_instance: Node = await cls.create(**node_data)
+                await node_instance.init_task
+            else:
+                node_instance: Node = await cls.create(**node_data)
         
         logger = get_logger('BaseNode')
         logger = logging.LoggerAdapter(logger, {'classname': cls.__name__})
         logger.info(f"Node {node_instance.id} handling action: {action}")
         logger.info(f"Current Node: {node_instance}")
-
-        if node_instance.status == NodeStatus.ready or node_instance.status == NodeStatus.dependencies_resolved:
-            await node_instance.execute()
-        elif node_instance.status == NodeStatus.pending:
+        
+        if action == 'initialize':
             await node_instance.initialize()
+        elif action == 'execute':
+            await node_instance.execute()
         else:
             raise ValueError(f"Unhandled action: {action}")
-        
-        # Update node status in Redis after action
-        await context_manager.set_context(key, 'status', node_instance.status.value)

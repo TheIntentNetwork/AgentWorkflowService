@@ -35,12 +35,15 @@ class SaveOutput(BaseTool):
         
         from app.services.cache.redis import RedisService
         from app.models.agents import Agent
+        from app.services.context.context_manager import ContextManager
+        
         redis: RedisService = ServiceRegistry.instance().get('redis')
+        context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
         agent: Agent = self.caller_agent
         try:
             context = {
                 "session_id": agent.session_id,
-                "context_key": "output:" + self.id,
+                "context_key": "node:" + self.id,
                 "output_name": self.output_name,
                 "output_description": self.output_description,
                 "output": json.dumps(self.output)
@@ -49,7 +52,9 @@ class SaveOutput(BaseTool):
             get_logger('RegisterOutput').info(f"Generating embeddings for context: {context}")
             
             embeddings = redis.generate_embeddings(context, ["session_id", "context_key", "output_name", "output_description", "output"])
-
+            
+            await context_manager.update_property(self, f"output.{self.output_name}", self.output)
+            
         except Exception as e:
             get_logger('RegisterOutput').error(f"Error generating embeddings: {e}")
         

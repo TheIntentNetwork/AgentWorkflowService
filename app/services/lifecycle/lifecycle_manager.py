@@ -19,7 +19,7 @@ class LifecycleManager(IService):
 
     async def initialize(self):
         self.logger.info("Initializing LifecycleManager")
-        #await self.create_lifecycle_nodes()
+        await self.create_lifecycle_nodes()
         self.logger.info("LifecycleManager initialization completed")
 
     async def create_lifecycle_nodes(self):
