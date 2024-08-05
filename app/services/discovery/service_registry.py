@@ -29,7 +29,7 @@ class ServiceRegistry:
             logger.debug(f"Instance details: {instance.__dict__}")
             logger.info(f"Service {name} registration complete")
 
-    def get(self, name: str):
+    async def get(self, name: str):
         if name not in self.services:
             if name == 'redis':
                 from app.services.cache.redis import RedisService
@@ -42,7 +42,7 @@ class ServiceRegistry:
                 self.register(name, EventManager)
             elif name == 'context_manager':
                 from app.services.context.context_manager import ContextManager
-                self.register(name, ContextManager)
+                await self.register(name, ContextManager)
             elif name == 'worker':
                 from app.services.worker.worker import Worker
                 self.register(name, Worker)

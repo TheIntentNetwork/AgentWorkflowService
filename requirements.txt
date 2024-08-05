@@ -234,4 +234,7 @@ weasel==0.3.4
 websockets==12.0
 wsproto==1.2.0
 yarl==1.9.4
+pyinstrument
+objgraph
+memory_profiler
 zipp==3.19.2
