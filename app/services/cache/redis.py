@@ -40,7 +40,7 @@ class RedisService(IService):
                 queue = asyncio.Queue()
             if channel not in self.subscriptions:
                 self.subscriptions[channel] = []
-                await self.client.subscribe(channel)
+                await self.client.pubsub().subscribe(channel)
                 self.logger.info(f"Subscribed to channel: {channel}")
             self.subscriptions[channel].append((queue, filter_func))
             self.logger.debug(f"Added subscription for channel {channel}")
@@ -258,7 +258,8 @@ class RedisService(IService):
 
     async def subscribe_to_property_updates(self, name: str, key: str, queue=None):
         property_updates = self.client.pubsub()
-        channel = f"context_update:{name}:{key}"
+        channel = f"context_update_complete:{name}:{key}"
+        
         return await property_updates.subscribe(channel)
     
     async def create_index(self, index_schema_file) -> AsyncSearchIndex:

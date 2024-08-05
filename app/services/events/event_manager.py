@@ -45,6 +45,7 @@ class EventManager(IService):
         self.tasks = []
         self.running = False
         self.logger.info("EventManager initialization completed")
+        self.notified = set()
         self.start_consumer_thread()
 
     def start_consumer_thread(self):
@@ -73,8 +74,9 @@ class EventManager(IService):
             event = await self.queue.get()
             self.logger.debug(f"Processing event: {event}")
             # Line 67-68 Update code with the example below
+            
             print(f"Received event: {event}")
-            await self.handle_event(event)
+            #await self.handle_event(event)
             self.queue.task_done()
             self.logger.debug(f"Event processed: {event}")
 
@@ -187,35 +189,6 @@ class EventManager(IService):
             self.logger.info(f"Context update handled for key: {key}")
         else:
             self.logger.warning(f"Unhandled action: {action}")
-
-    async def handle_node_update(self, node_id: str, node_data: dict):
-        """
-        Handles updates for a specific node.
-
-        Args:
-            node_id (str): The ID of the node being updated.
-            node_data (dict): The updated data for the node.
-        """
-        # Here you can implement the logic for handling node updates
-        # For example, you might want to update a local cache or trigger some action
-        self.logger.info(f"Processing update for node {node_id}")
-        # Add your node update logic here
-
-    async def handle_context_update(self, key, context):
-        """
-        Handles context updates by saving the context to Redis.
-
-        Args:
-            key (str): The key of the context.
-            context (dict): The context data to be saved.
-        """
-        try:
-            self.logger.info(f"Saving context for key: {key}")
-            await self.__redis.save_context(key, context)
-            self.logger.info(f"Context saved for key: {key}")
-        except Exception as e:
-            self.logger.error(f"Error in handle_context_update: {e}")
-            self.logger.error(traceback.format_exc())
 
     async def __event_listener(self, message: any):
         """
