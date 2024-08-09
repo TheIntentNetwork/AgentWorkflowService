@@ -1,0 +1,65 @@
+name: Dev Deployments
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: [dev]
+
+    strategy:
+      matrix:
+        python-version: [3.11.7]
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Installing Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create env file
+        run: |
+          touch .env
+          echo PORT='8000' >> .env
+          echo BOOTSTRAP_SERVERS='${{ secrets.BOOTSTRAP_SERVERS_DEV }}' >> .env
+          echo SUPABASE_ANON_KEY='${{ secrets.SUPABASE_ANON_KEY_DEV }}' >> .env
+          echo SUPABASE_URL='${{ secrets.SUPABASE_URL_DEV }}' >> .env
+          echo KAFKA_BROKER_URL='${{ secrets.KAFKA_BROKER_URL_DEV }}' >> .env
+          echo REDIS_URL='${{ secrets.REDIS_URL_DEV }}' >> .env
+          echo NODE_ENV='development' >> .env
+          cat .env
+
+      - name: Install Supervisor
+        run: sudo apt-get install -y supervisor
+
+      - name: Create Supervisor config
+        run: |
+          sudo bash -c 'cat > /etc/supervisor/conf.d/fastapi-dev.conf <<EOF
+          [program:fastapi-dev]
+          command=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+          directory=/home/runner/work/<your-repo-name>/<your-repo-name>
+          user=ubuntu
+          autostart=true
+          autorestart=true
+          stopasgroup=true
+          killasgroup=true
+          stdout_logfile=/var/log/fastapi-dev.log
+          stderr_logfile=/var/log/fastapi-dev_err.log
+          EOF'
+
+      - name: Start FastAPI with Supervisor
+        run: |
+          sudo supervisorctl reread
+          sudo supervisorctl update
+          sudo supervisorctl restart fastapi-dev
+
+    environment:
+      name: Development
