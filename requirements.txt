@@ -110,7 +110,7 @@ murmurhash==1.0.10
 mypy-extensions==1.0.0
 nest-asyncio==1.6.0
 networkx==3.2.1
-numpy==1.26.4
+numpy>=1.26.4,<=2.0.0
 nvidia-ml-py==12.555.43
 nvidia-ml-py3==7.352.0
 objgraph==3.6.1
