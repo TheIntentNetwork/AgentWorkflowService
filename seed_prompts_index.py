@@ -1,6 +1,7 @@
 # Description: This script creates test data for intent and workflow indexes and stores them in Redis. It also creates the indexes for the intent and workflow data in Redisearch.
 # Usage: python test_create_index_service.py
 # The script will output the status of the test data creation and index creation in Redis.
+
 import asyncio
 from enum import Enum, auto
 import json
@@ -39,40 +40,39 @@ class Agent(BaseModel):
     tools: List[str] = Field([], description="The tools used by the agent.")
 
 def create_test_data():
-
     # Define your test data
     agent_test_data: List[Agent] = [
-        #Agent(
-        #    name="VARatingsResearchAgent",
-        #    instructions="""          
-        #    Gather conditon criteria from the 38CFR Part 4 for a particular disability.
+        # Agent(
+        #     name="VARatingsResearchAgent",
+        #     instructions="""          
+        #     Gather conditon criteria from the 38CFR Part 4 for a particular disability.
         #    
-        #    1.) Go to https://www.ecfr.gov/api/renderer/v1/content/enhanced/2024-04-29/title-38?chapter=I&part=4&subpart=B and retrieve the #copy of the section specific to the disability
-        #    as well as the rating criteria and rating schedule.
+        #     1.) Go to https://www.ecfr.gov/api/renderer/v1/content/enhanced/2024-04-29/title-38?chapter=I&part=4&subpart=B and retrieve the #copy of the section specific to the disability
+        #     as well as the rating criteria and rating schedule.
         #    
-        #    2.) SaveResults in the following format:
-        #    38CFR Part 4 Section Contents and Rating Criteria for [Disability Name]
-        #    - Disability: [Disability Name]
-        #    - Description: [Description of the disability]
-        #    - Section Number: [Section Number]
-        #    - Rating Criteria: [Rating Criteria with Ratings]
+        #     2.) SaveResults in the following format:
+        #     38CFR Part 4 Section Contents and Rating Criteria for [Disability Name]
+        #     - Disability: [Disability Name]
+        #     - Description: [Description of the disability]
+        #     - Section Number: [Section Number]
+        #     - Rating Criteria: [Rating Criteria with Ratings]
         #    
-        #    Example for Migraines:
-        #    38CFR Part 4 Section Contents and Rating Criteria for Migraines
-        #    - Disability: Migraines
-        #    - Description: Migraines are recurrent headaches that can cause moderate to severe pain and other symptoms.
-        #    - Section Number: 8100            
+        #     Example for Migraines:
+        #     38CFR Part 4 Section Contents and Rating Criteria for Migraines
+        #     - Disability: Migraines
+        #     - Description: Migraines are recurrent headaches that can cause moderate to severe pain and other symptoms.
+        #     - Section Number: 8100            
         #    
-        #    Rating Schedule for Migraines:
-        #    With very frequent completely prostrating and prolonged attacks productive of severe economic inadaptability	50
-        #    With characteristic prostrating attacks occurring on an average once a month over last several months	30
-        #    With characteristic prostrating attacks averaging one in 2 months over last several months	10
-        #    With less frequent attacks	0
+        #     Rating Schedule for Migraines:
+        #     With very frequent completely prostrating and prolonged attacks productive of severe economic inadaptability 50
+        #     With characteristic prostrating attacks occurring on an average once a month over last several months 30
+        #     With characteristic prostrating attacks averaging one in 2 months over last several months 10
+        #     With less frequent attacks 0
         #    
-        #    """,
-        #    description="This agent is responsible for gathering research on VA disability ratings for a specific disability.",
-        #    tools=["SaveOutput"]
-        #),
+        #     """,
+        #     description="This agent is responsible for gathering research on VA disability ratings for a specific disability.",
+        #     tools=["SaveOutput"]
+        # ),
         Agent(
             name="IntakeAgent",
             instructions="""
@@ -136,7 +136,7 @@ def create_test_data():
             """,
             description="This agent is responsible for gathering the rating criteria for a specific condition from the 38CFR Part 4.",
             tools=["SaveOutput"]
-        )
+        ),
         Agent(
             name="UniverseAgent",
             instructions="""
@@ -175,7 +175,7 @@ def create_test_data():
 
     return agent_test_data
 
-    # Connect to Redis
+# Connect to Redis
 REDIS_HOST = "localhost"
 REDIS_PORT = 6379
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT)
@@ -199,11 +199,11 @@ try:
 except:
     print("Agents index already exists")
 
-#try:
-#    r.ft(Indexes.Workflow.value).create_index(workflow_schema, definition=IndexDefinition(prefix=["workflow:"], index_type=IndexType.HASH))
-#    print(f"Workflow index created successfully")
-#except:
-#    print("Workflow index already exists")
+# try:
+#     r.ft(Indexes.Workflow.value).create_index(workflow_schema, definition=IndexDefinition(prefix=["workflow:"], index_type=IndexType.HASH))
+#     print(f"Workflow index created successfully")
+# except:
+#     print("Workflow index already exists")
 
 model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
 
@@ -270,7 +270,6 @@ async def create_index(agent_test_data: List[Agent], index_name: str):
     r.close()
 
 async def query_vector_database_for_prompts():
-    
     redis_url = os.getenv("REDIS_URL")
     ServiceRegistry.instance().register(name="redis", service=RedisService, **{"redis_url": redis_url})
     redis_service: RedisService = ServiceRegistry.instance().get(name="redis")
@@ -287,25 +286,21 @@ async def main(agent_test_data: List[Agent]):
     print("Index created successfully")
     await query_vector_database_for_prompts()
     
-
     # Generate embeddings for each workflow test data entry and store in Redis
-    #for i, data in enumerate(workflow_test_data):
-    #    embeddings = generate_embeddings(data.dict(), ["steps", "metadata", "feedback"])
-    #    r.hset(f"workflow:{i}", mapping={
-    #        "name": data.name,
-    #        "description": data.description,
-    #        "domain": data.domain,
-    #        "steps": json.dumps([step.dict() for step in data.steps]),
-    #        "metadata": json.dumps(data.metadata),
-    #        "feedback": json.dumps([feedback.dict() for feedback in data.feedback]),
-    #        **{field: np.array(vector, dtype=np.float32).tobytes() for field, vector in embeddings.items()}
-    #    })
-    #    print(f"Workflow test data {i} stored in Redis")
+    # for i, data in enumerate(workflow_test_data):
+    #     embeddings = generate_embeddings(data.dict(), ["steps", "metadata", "feedback"])
+    #     r.hset(f"workflow:{i}", mapping={
+    #         "name": data.name,
+    #         "description": data.description,
+    #         "domain": data.domain,
+    #         "steps": json.dumps([step.dict() for step in data.steps]),
+    #         "metadata": json.dumps(data.metadata),
+    #         "feedback": json.dumps([feedback.dict() for feedback in data.feedback]),
+    #         **{field: np.array(vector, dtype=np.float32).tobytes() for field, vector in embeddings.items()}
+    #     })
+    #     print(f"Workflow test data {i} stored in Redis")
 
 if __name__ == "__main__":
     agent_test_data = create_test_data()
     print("Test data and indexes created successfully")
     asyncio.run(main(agent_test_data))
-    
-    
-
