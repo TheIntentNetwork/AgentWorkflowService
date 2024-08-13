@@ -50,8 +50,8 @@ jobs:
         run: |
           sudo bash -c 'cat > /etc/supervisor/conf.d/fastapi-dev.conf <<EOF
           [program:fastapi-dev]
-          command=/home/runner/work/<your-repo-name>/<your-repo-name>/venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-          directory=/home/runner/work/<your-repo-name>/<your-repo-name>
+          command=/home/runner/work/${{ github.repository }}/venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+          directory=/home/runner/work/${{ github.repository }}/${{ github.repository }}
           user=ubuntu
           autostart=true
           autorestart=true
@@ -61,11 +61,15 @@ jobs:
           stderr_logfile=/var/log/fastapi-dev_err.log
           EOF'
 
-      - name: Start FastAPI with Supervisor
+      - name: Check Supervisor Configuration
         run: |
           sudo supervisorctl reread
           sudo supervisorctl update
-          sudo supervisorctl restart fastapi-dev
+          sudo supervisorctl status
+
+      - name: Start FastAPI with Supervisor
+        run: |
+          sudo supervisorctl start fastapi-dev
 
     environment:
       name: Development
