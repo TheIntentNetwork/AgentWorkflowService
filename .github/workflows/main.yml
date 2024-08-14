@@ -43,33 +43,10 @@ jobs:
           echo NODE_ENV='development' >> .env
           cat .env
 
-      - name: Install Supervisor
-        run: sudo apt-get install -y supervisor
-
-      - name: Create Supervisor config
+      - name: Start FastAPI Application
         run: |
-          sudo bash -c 'cat > /etc/supervisor/conf.d/fastapi-dev.conf <<EOF
-          [program:fastapi-dev]
-          command=/home/runner/work/${{ github.repository }}/venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-          directory=/home/runner/work/${{ github.repository }}/${{ github.repository }}
-          user=ubuntu
-          autostart=true
-          autorestart=true
-          stopasgroup=true
-          killasgroup=true
-          stdout_logfile=/var/log/fastapi-dev.log
-          stderr_logfile=/var/log/fastapi-dev_err.log
-          EOF'
-
-      - name: Check Supervisor Configuration
-        run: |
-          sudo supervisorctl reread
-          sudo supervisorctl update
-          sudo supervisorctl status
-
-      - name: Start FastAPI with Supervisor
-        run: |
-          sudo supervisorctl start fastapi-dev
+          source venv/bin/activate
+          nohup venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 
     environment:
       name: Development
