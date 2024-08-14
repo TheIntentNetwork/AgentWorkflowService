@@ -50,7 +50,7 @@ jobs:
         run: |
           sudo bash -c 'cat > /etc/supervisor/conf.d/fastapi-dev.conf <<EOF
           [program:fastapi-dev]
-          command=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+          command=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService/venv/bin/uvicorn main:app --reload
           directory=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService
           user=ubuntu
           autostart=true
