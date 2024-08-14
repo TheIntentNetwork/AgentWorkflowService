@@ -50,8 +50,8 @@ jobs:
         run: |
           sudo bash -c 'cat > /etc/supervisor/conf.d/fastapi-dev.conf <<EOF
           [program:fastapi-dev]
-          command=/home/ubuntu/actions-runner/_work/${{ github.repository }}/${{ github.repository }}/venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-          directory=/home/ubuntu/actions-runner/_work/${{ github.repository }}/${{ github.repository }}
+          command=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService/venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+          directory=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService
           user=ubuntu
           autostart=true
           autorestart=true
