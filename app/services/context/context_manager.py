@@ -50,39 +50,30 @@ class ContextManager(IService):
         if isinstance(context_key, Node):
             context_key = f"node:{context_key.id}"
 
-        self.logger.info(f"Retrieving context for key: {context_key}")
+        self.logger.debug(f"Retrieving context for key: {context_key}")
         
         try:
-            # Check if the key exists in the in-memory store
             if context_key in self.in_memory_store:
-                self.logger.info(f"Context found in in-memory store for key: {context_key}")
+                self.logger.debug(f"Context found in in-memory store for key: {context_key}")
                 return self.in_memory_store[context_key]
             
-            # Check Redis connection
             if not await self.redis.client.ping():
                 self.logger.error("Redis connection failed")
                 return {}
 
-            # Retrieve data from Redis
             data = await self.redis.client.hgetall(context_key)
             
             if data:
-                self.logger.info(f"Context found in Redis for key: {context_key}")
+                self.logger.debug(f"Context found in Redis for key: {context_key}")
                 context_data = data.get(b'context', b'{}')
                 if isinstance(context_data, bytes):
                     context_data = context_data.decode('utf-8')
-                self.logger.debug(f"Raw context data: {context_data}")
                 parsed_data = json.loads(context_data)
-                self.in_memory_store[context_key] = parsed_data  # Cache the data in memory
-                self.logger.debug(f"Parsed data: {parsed_data}")
+                self.in_memory_store[context_key] = parsed_data
                 return parsed_data
             else:
                 self.logger.warning(f"No context found for key: {context_key}")
                 return {}
-        except json.JSONDecodeError as je:
-            self.logger.error(f"JSON decoding error for key {context_key}: {str(je)}")
-            self.logger.debug(f"Raw data: {data}")
-            return {}
         except Exception as e:
             self.logger.error(f"Error retrieving context for key {context_key}: {str(e)}")
             return {}
@@ -106,9 +97,12 @@ class ContextManager(IService):
         """
         self.logger.info(f"Saving context for key: {context_key}")
         
-        data_to_save = {"value": json.dumps(value)}
+        data_to_save = {"context": json.dumps(value)}
+        
         if embeddings:
             data_to_save.update({field: np.array(vector, dtype=np.float32).tobytes() for field, vector in embeddings.items()})
+        
+        data_to_save["item"] = json.dumps(value)
         
         await self.redis.client.hset(context_key, mapping=data_to_save)
         self.in_memory_store[context_key] = value
@@ -149,13 +143,10 @@ class ContextManager(IService):
             context_manager = ContextManager()
             await context_manager.update_property("user:123", "preferences.theme", "light")
         """
-        from app.services.events.event_manager import EventManager
-        self.event_manager: EventManager = ServiceRegistry.instance().get('event_manager')
-        
         if isinstance(context_key, Node):
             context_key = f"node:{context_key.id}"
 
-        self.logger.info(f"Updating property for key: {context_key} at path: {property_path}")
+        self.logger.debug(f"Updating property for key: {context_key} at path: {property_path}")
         
         context = await self.get_context(context_key)
         
@@ -165,21 +156,19 @@ class ContextManager(IService):
             if key not in d:
                 d[key] = {}
             d = d[key]
+        old_value = d.get(keys[-1])
         d[keys[-1]] = value
         
         from app.services.cache.redis import RedisService
-        from app.services.context.context_manager import ContextManager
-        
         redis: RedisService = ServiceRegistry.instance().get('redis')
-        context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
+        
         embeddings = {}
         if "context_info" in context:
             embeddings = redis.generate_embeddings(context['context_info'], ["input_description", "action_summary", "outcome_description", "output", "feedback"])
         
         await self.update_context(context_key, context, embeddings)
-        
-        # Notify subscribers for both the specific property and the general context
-        await self.event_manager.notify_subscribers(context_key, value, __class__.name, property_path)
+        await redis.publish(f"{context_key}:{property_path}", json.dumps({"old_value": old_value, "new_value": value}))
+        self.logger.info(f"Updated and published property: {context_key}:{property_path}")
 
     async def batch_update(self, context_key: str, updates: Dict[str, Any]):
         """

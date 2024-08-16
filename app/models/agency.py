@@ -6,7 +6,7 @@ import queue
 import threading
 import uuid
 from enum import Enum
-from typing import List, Callable, Any, Dict, Literal, Union, Optional, ClassVar, Type
+from typing import AsyncGenerator, List, Callable, Any, Dict, Literal, Union, Optional, ClassVar, Type
 from typing_extensions import TypedDict
 
 from openai.types.beta import AssistantToolChoice
@@ -152,92 +152,113 @@ class Agency(BaseModel):
         self._init_threads()
         self.logger.info("Threads initialized.")
 
-    async def get_completion(self, message: str,
-                       message_files: List[str] = None,
-                       yield_messages: bool = False,
-                       recipient_agent: Agent = None,
-                       additional_instructions: str = None,
-                       attachments: List[dict] = None,
-                       tool_choice: dict = None,
-                       session_id: str = None,
-                       dependencies: List[str] = None,
-                       ):
+    async def get_completion(self, 
+                             message: str,
+                             message_files: List[str] = None,
+                             recipient_agent = None,
+                             event_handler: type(AgencyEventHandler) = None,
+                             additional_instructions: str = None,
+                             attachments: List[dict] = None,
+                             tool_choice: dict = None,
+                             session_id: str = None,
+                             dependencies: List[str] = None,
+                             ) -> str:
         """
-        Retrieves the completion for a given message from the main thread.
+        Asynchronously retrieves the completion for a given message.
 
-        Parameters:
-            message (str): The message for which completion is to be retrieved.
-            message_files (list, optional): A list of file ids to be sent as attachments with the message. When using this parameter, files will be assigned both to file_search and code_interpreter tools if available. It is recommended to assign files to the most sutiable tool manually, using the attachments parameter.  Defaults to None.
-            yield_messages (bool, optional): Flag to determine if intermediate messages should be yielded. Defaults to True.
-            recipient_agent (Agent, optional): The agent to which the message should be sent. Defaults to the first agent in the agency chart.
-            additional_instructions (str, optional): Additional instructions to be sent with the message. Defaults to None.
-            attachments (List[dict], optional): A list of attachments to be sent with the message, following openai format. Defaults to None.
-            tool_choice (dict, optional): The tool choice for the recipient agent to use. Defaults to None.
+        This method processes the input message and returns the completed response
+        from the specified agent or the default CEO agent.
+
+        Args:
+            message (str): The input message to process.
+            message_files (List[str], optional): List of file IDs to be sent as attachments.
+            recipient_agent (Agent, optional): The specific agent to process the message. If None, defaults to CEO.
+            event_handler (type(AgencyEventHandler), optional): Event handler for processing stream events.
+            additional_instructions (str, optional): Any additional instructions for processing.
+            attachments (List[dict], optional): List of attachments in OpenAI format.
+            tool_choice (dict, optional): Specific tool choice for the agent to use.
+            session_id (str, optional): Unique identifier for the session.
+            dependencies (List[str], optional): List of dependencies for the completion.
 
         Returns:
-            Generator or final response: Depending on the 'yield_messages' flag, this method returns either a generator yielding intermediate messages or the final response from the main thread.
+            str: The final completion response.
+
+        Raises:
+            Exception: Any exceptions raised during the completion process.
         """
         self.logger.debug(f"Getting completion for message: {message} for recipient: {recipient_agent.name if recipient_agent else 'CEO'}")
-        if yield_messages:
-            print("Warning: yield_messages parameter is deprecated. Use streaming instead.")
         
-        if recipient_agent:
-            if recipient_agent.additional_instructions:
-                additional_instructions = recipient_agent.additional_instructions
-            else:
-                additional_instructions = ""
-        else:
+        if recipient_agent and recipient_agent.additional_instructions:
+            additional_instructions = recipient_agent.additional_instructions
+        elif not additional_instructions:
             additional_instructions = ""
 
-        return await self.main_thread.get_completion(message=message,
-                                               message_files=message_files,
-                                               attachments=attachments,
-                                               recipient_agent=recipient_agent,
-                                               additional_instructions=additional_instructions,
-                                               tool_choice=tool_choice)
+        completion = ""
+        try:
+            async for chunk in self.main_thread.get_completion_stream(
+                message=message,
+                message_files=message_files,
+                event_handler=event_handler,
+                attachments=attachments,
+                recipient_agent=recipient_agent,
+                additional_instructions=additional_instructions,
+                tool_choice=tool_choice
+            ):
+                if isinstance(chunk, str):
+                    completion += chunk
+                elif isinstance(chunk, MessageOutput):
+                    # Handle MessageOutput objects if needed
+                    pass
+        except Exception as e:
+            self.logger.error(f"Error in get_completion: {str(e)}")
+            raise
 
-    async def get_completion_stream(self,
-                              message: str,
-                              event_handler: type(AgencyEventHandler),
-                              message_files: List[str] = None,
-                              recipient_agent: Agent = None,
-                              additional_instructions: str = None,
-                              attachments: List[dict] = None,
-                              tool_choice: dict = None
-                              ):
+        return completion
+
+    async def get_completion_stream(self, 
+                                    message: str,
+                                    message_files: List[str] = None,
+                                    recipient_agent = None,
+                                    event_handler: type(AgencyEventHandler) = None,
+                                    additional_instructions: str = None,
+                                    attachments: List[dict] = None,
+                                    tool_choice: dict = None
+                                    ) -> AsyncGenerator[Union[str, MessageOutput], None]:
         """
-        Generates a stream of completions for a given message from the main thread.
+        Asynchronously streams the completion for a given message.
 
-        Parameters:
-            message (str): The message for which completion is to be retrieved.
-            event_handler (type(AgencyEventHandler)): The event handler class to handle the completion stream. https://github.com/openai/openai-python/blob/main/helpers.md
-            message_files (list, optional): A list of file ids to be sent as attachments with the message. When using this parameter, files will be assigned both to file_search and code_interpreter tools if available. It is recommended to assign files to the most sutiable tool manually, using the attachments parameter.  Defaults to None.
-            recipient_agent (Agent, optional): The agent to which the message should be sent. Defaults to the first agent in the agency chart.
-            additional_instructions (str, optional): Additional instructions to be sent with the message. Defaults to None.
-            attachments (List[dict], optional): A list of attachments to be sent with the message, following openai format. Defaults to None.
-            tool_choice (dict, optional): The tool choice for the recipient agent to use. Defaults to None.
+        This method processes the input message and yields chunks of the response
+        or MessageOutput objects from the specified agent or the default CEO agent.
 
-        Returns:
-            Final response: Final response from the main thread.
+        Args:
+            message (str): The input message to process.
+            message_files (List[str], optional): List of file IDs to be sent as attachments.
+            recipient_agent (Agent, optional): The specific agent to process the message. If None, defaults to CEO.
+            event_handler (type(AgencyEventHandler), optional): Event handler for processing stream events.
+            additional_instructions (str, optional): Any additional instructions for processing.
+            attachments (List[dict], optional): List of attachments in OpenAI format.
+            tool_choice (dict, optional): Specific tool choice for the agent to use.
+
+        Yields:
+            Union[str, MessageOutput]: Chunks of the response or MessageOutput objects.
+
+        Raises:
+            Exception: Any exceptions raised during the completion process.
         """
-        if self.async_mode:
-            raise Exception("Streaming is not supported in async mode.")
-
-        if not inspect.isclass(event_handler):
-            raise Exception("Event handler must not be an instance.")
-
-        res = await self.main_thread.get_completion_stream(message=message,
-                                                      message_files=message_files,
-                                                      event_handler=event_handler,
-                                                      attachments=attachments,
-                                                      recipient_agent=recipient_agent,
-                                                      additional_instructions=additional_instructions,
-                                                      tool_choice=tool_choice
-                                                      )
-
-        event_handler.on_all_streams_end()
-
-        return res
+        try:
+            async for chunk in self.main_thread.get_completion_stream(
+                message=message,
+                message_files=message_files,
+                event_handler=event_handler,
+                attachments=attachments,
+                recipient_agent=recipient_agent,
+                additional_instructions=additional_instructions,
+                tool_choice=tool_choice
+            ):
+                yield chunk
+        except Exception as e:
+            self.logger.error(f"Error in get_completion_stream: {str(e)}")
+            raise
 
     def demo_gradio(self, height=450, dark_mode=True, **kwargs):
         """

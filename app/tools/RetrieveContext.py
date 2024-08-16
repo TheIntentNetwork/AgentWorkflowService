@@ -62,7 +62,8 @@ class RetrieveContext(BaseTool):
     Result: {Should return example context that can be used to create a new model based on this historical example.}
     
     """
-    type: Literal["agent", "workflow", "step", "model", "lifecycle"] = Field(..., description="The type of the context to retrieve e.g. 'agent', 'workflow', 'step', 'model', 'lifecycle'.")
+    type: Literal["agent", "workflow", "step", "model", "lifecycle", "log"] = Field(..., description="The type of the context to retrieve e.g. 'agent', 'workflow', 'step', 'model', 'lifecycle'.")
+    key: Optional[str] = Field(None, description="The key of the context to retrieve.")
     query: str = Field(..., description="The query of the context to retrieval.")
     
     async def run(self) -> str:
@@ -70,6 +71,8 @@ class RetrieveContext(BaseTool):
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
         try:
             filter = Tag("type") == self.type
+            if self.key:
+                filter = filter & Tag("key") == self.key
             results = await redis_service.async_search_index(self.query, f"metadata_vector", "context", 2, ["item"],filter)
             context = sorted(results, key=lambda x: x['vector_distance'])[:3]
             context = [json.loads(item['item']) for item in context]

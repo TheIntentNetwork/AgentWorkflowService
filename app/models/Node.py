@@ -6,6 +6,7 @@ import pydantic
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union
 import uuid
 from app.factories.agent_factory import AgentFactory
+from aiostream import stream
 from app.models.agency import Agency
 
 if TYPE_CHECKING:
@@ -208,7 +209,7 @@ class Node(BaseModel, IRunnableContext):
         """
         
         agency = Agency(agency_chart=agency_chart, shared_instructions=description, session_id=session_id)
-        response = await agency.get_completion(instructions, yield_messages=False)
+        response = await agency.get_completion(instructions)
         return response  
     
     
@@ -217,16 +218,16 @@ class Node(BaseModel, IRunnableContext):
 
     async def _assign_and_get_completion(self) -> None:
         """
-        Execute the node by applying lifecycle nodes and performing agency completion.
+        Execute the node by building the agency chart and performing agency completion.
 
-        Args:
-            node: The node to execute.
-            **kwargs: Additional arguments for execution.
+        This method updates the node status, builds the agency chart, and performs
+        the agency completion.
+
+        Raises:
+            Exception: Any exceptions raised during the execution process.
         """
         try:
             await self._context_manager.update_property(self, "status", NodeStatus.executing)
-            # Execute the main node logic
-            search_config = {}
             agency_chart = await self._build_agency_chart()
             response = await self.perform_agency_completion(agency_chart, self.description, self.context_info.context.get('session_id'))
             await self._context_manager.update_property(self, "status", NodeStatus.completed)
@@ -234,21 +235,53 @@ class Node(BaseModel, IRunnableContext):
             get_logger('Node').error(f"Error during execution: {str(e)}")
             await self._context_manager.update_property(self, "status", NodeStatus.failed)
             raise
-    
-    async def _build_agency_chart(self) -> list:
-        """
-        Build the agency chart for the node.
 
-        Args:
-            **kwargs: Additional arguments for building the agency chart.
+    async def _build_agency_chart(self) -> List:
+        logger = get_logger('Node')
+        logger.info(f"Building agency chart for task: {self.description}")
+        
+        universe_agent = await self._create_universe_agent()
+        
+        assign_agents_chart = [universe_agent]
+        assign_agents_agency = Agency(agency_chart=assign_agents_chart, shared_instructions="", session_id=self.context_info.context['session_id'])
+        
+        logger.info("Starting completion generation")
+        completion_gen = assign_agents_agency.get_completion_stream(message="AssignAgent most appropriate for the task.")
+        
+        try:
+            logger.info("Awaiting stream.list")
+            result = await stream.list(completion_gen)
+            logger.info(f"Assign agents result: {result}")
+        except Exception as e:
+            logger.error(f"Error during stream.list: {str(e)}")
+            raise
+        
+        return await self._construct_agency_chart(universe_agent)
+
+    async def _create_universe_agent(self):
+        """
+        Create and configure the Universe Agent.
 
         Returns:
-            list: Agency chart for the node.
+            Agent: The configured Universe Agent.
         """
-        logger = get_logger('Node')
-        logger.info(f"Assigning agents to the task: {self.description}")
-        
-        # Create a detailed prompt for the Universe Agent
+        instructions = self._create_universe_agent_instructions()
+        return await AgentFactory.from_name(
+            name='UniverseAgent',
+            session_id=self.context_info.context['session_id'],
+            context_info=self.context_info,
+            instructions=instructions,
+            tools=['RetrieveContext', 'AssignAgents'],
+            self_assign=False
+        )
+
+    def _create_universe_agent_instructions(self) -> str:
+        """
+        Create the instructions for the Universe Agent.
+
+        Returns:
+            str: The formatted instructions.
+        """
         prompt = f"""
         Assess the task and utilize the RetrieveContext tool to find examples of agents that have been used to complete similar tasks in the past. Choose the best agents to complete the task from the list of example agents.
         
@@ -266,50 +299,41 @@ class Node(BaseModel, IRunnableContext):
         Outcome Description: {self.context_info.outcome_description}
         """
         
-        instructions = f"""
-        {prompt}
-        """
-        
-        # Instantiate the Universe Agent with the enhanced prompt
-        universe_agent = await AgentFactory.from_name(
-            name='UniverseAgent',
-            session_id=self.context_info.context['session_id'],
-            context_info=self.context_info,
-            instructions=instructions,
-            tools=['RetrieveContext', 'AssignAgents'],
-            self_assign=False
-        )
-        
-        logger.debug(f"Universe agent: {universe_agent}")
+        return f"{prompt}"
 
-        # Further logic to manage the assignment
-        assign_agents_chart = [universe_agent]
-        assign_agents_agency = Agency(agency_chart=assign_agents_chart, shared_instructions="", session_id=self.context_info.context['session_id'])
-        await assign_agents_agency.get_completion(message="AssignAgent most appropriate for the task.", yield_messages=False)
-        
-        agent_group = []
+    async def _construct_agency_chart(self, universe_agent) -> List:
+        """
+        Construct the agency chart based on the Universe Agent's assignments.
+
+        Args:
+            universe_agent (Agent): The Universe Agent with assignment results.
+
+        Returns:
+            List: The constructed agency chart.
+        """
         agency_chart = []
-        for agent in universe_agent.context_info.context.get('assignees', []):
+        agent_group = []
+        
+        for agent_dict in universe_agent.context_info.context.get('assignees', []):
             agent_instance = await AgentFactory.from_name(
-                name=agent.name,
-                instructions=agent.instructions,
-                description=agent.description,
-                tools=agent.tools,
+                name=agent_dict['name'],
+                instructions=agent_dict['instructions'],
+                description=agent_dict['description'],
+                tools=agent_dict['tools'],
                 session_id=universe_agent.context_info.context['session_id'],
                 context_info=universe_agent.context_info
             )
             
-            if agent.leader:
+            if agent_dict.get('leader', False):
                 agency_chart.append(agent_instance)
             else:
                 agent_group.append(agent_instance)
         
-        if len(agent_group) > 0:
+        if agent_group:
             for agent in agent_group:
                 agency_chart.append([agency_chart[0], agent])
         
         get_logger('Node').info(f"Agency Chart Built: {agency_chart}")
-            
         return agency_chart
 
     async def Executed(self):

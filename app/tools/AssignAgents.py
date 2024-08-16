@@ -24,16 +24,16 @@ class AssignAgents(BaseTool):
 
     async def run(self) -> str:
         get_logger(self.__class__.__name__).info(f"Assigning agents {self.agents} to step {self.node_id}")
-            
         
-        if not self.caller_agent.context_info.context.get("assignees"):
-            self.caller_agent.context_info.context["assignees"] = []
         if not self.caller_agent.context_info.context.get("assignees"):
             self.caller_agent.context_info.context["assignees"] = []
 
-        self.caller_agent.context_info.context["assignees"] = self.agents
+        # Convert Agent objects to dictionaries
+        agent_dicts = [agent.dict() for agent in self.agents]
         
-        return self.agents
+        self.caller_agent.context_info.context["assignees"] = agent_dicts
+        
+        return f"Assigned {len(self.agents)} agents to step {self.node_id}"
 
 
         

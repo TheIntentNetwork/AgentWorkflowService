@@ -17,7 +17,7 @@ import os
 import numpy as np
 from app.interfaces.service import IService
 
-from app.utilities.logger import get_logger
+
 
 class RedisService(IService):
     name = "redis"
@@ -26,6 +26,7 @@ class RedisService(IService):
         self.redis_url = kwargs.get("redis_url")
         self.redis_url = "redis://localhost:6379"
         self.client = AsyncRedis.from_url(self.redis_url)
+        self.pubsub = self.client.pubsub()
         self.service_registry = __class__.service_registry
         self.subscriptions = {}
         self.initialized = True
@@ -34,15 +35,15 @@ class RedisService(IService):
         self.listener_thread.start()
         self.model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
 
-    async def subscribe(self, channel, queue=None, filter_func: Optional[Callable[[dict], bool]] = None):
+    async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
         try:
             if queue is None:
                 queue = asyncio.Queue()
             if channel not in self.subscriptions:
                 self.subscriptions[channel] = []
-                await self.client.pubsub().subscribe(channel)
+                await self.pubsub.subscribe(channel)
                 self.logger.info(f"Subscribed to channel: {channel}")
-            self.subscriptions[channel].append((queue, filter_func))
+            self.subscriptions[channel].append((queue, callback, filter_func))
             self.logger.debug(f"Added subscription for channel {channel}")
             return queue
         except Exception as e:
@@ -56,28 +57,29 @@ class RedisService(IService):
                 self.logger.debug(f"Removed subscription for channel {channel}")
                 if not self.subscriptions[channel]:
                     del self.subscriptions[channel]
-                    await self.client.unsubscribe(channel)
+                    await self.pubsub.unsubscribe(channel)
                     self.logger.info(f"Unsubscribed from channel: {channel}")
         except Exception as e:
             self.logger.error(f"Error unsubscribing from channel {channel}: {str(e)}")
             raise
     
     def run_listener(self):
+        from app.utilities.logger import get_logger
+        self.logger = get_logger('RedisService')
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
         async def listen():
-            pubsub = self.client.pubsub()
-            await pubsub.subscribe(*self.subscriptions.keys())
-            async for message in pubsub.listen():
+            await self.pubsub.subscribe(*self.subscriptions.keys())
+            async for message in self.pubsub.listen():
                 if message['type'] == 'message':
                     channel = message['channel'].decode('utf-8')
                     data = message['data']
                     if channel in self.subscriptions:
-                        for queue, filter_func in self.subscriptions[channel]:
+                        for queue, callback, filter_func in self.subscriptions[channel]:
                             try:
                                 if filter_func is None or filter_func(data):
-                                    self.event_loop.call_soon_threadsafe(queue.put_nowait, data)
+                                    self.event_loop.call_soon_threadsafe(queue.put_nowait, (callback, data))
                             except Exception as e:
                                 self.logger.error(f"Error applying filter for channel {channel}: {str(e)}")
 
@@ -92,20 +94,19 @@ class RedisService(IService):
             self.logger.error(f"Error publishing to channel {channel}: {str(e)}")
             raise
 
-    async def subscribe_pattern(self, pattern: str, queue=None, filter_func: Optional[Callable[[dict], bool]] = None):
-        try:
-            if queue is None:
-                queue = asyncio.Queue()
-            if pattern not in self.subscriptions:
-                self.subscriptions[pattern] = []
-                await self.client.psubscribe(pattern)
-                self.logger.info(f"Subscribed to pattern: {pattern}")
-            self.subscriptions[pattern].append((queue, filter_func))
-            self.logger.debug(f"Added subscription for pattern {pattern}")
-            return queue
-        except Exception as e:
-            self.logger.error(f"Error subscribing to pattern {pattern}: {str(e)}")
-            raise
+    async def subscribe_pattern(self, pattern: str, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
+        if queue is None:
+            queue = asyncio.Queue()
+        
+        if pattern not in self.subscriptions:
+            self.subscriptions[pattern] = []
+            await self.pubsub.psubscribe(pattern)
+            self.logger.info(f"Subscribed to pattern: {pattern}")
+        
+        self.subscriptions[pattern].append((queue, callback, filter_func))
+        self.logger.debug(f"Added subscription for pattern {pattern}")
+        
+        return queue
 
     async def unsubscribe_pattern(self, pattern: str, queue):
         try:
@@ -114,7 +115,7 @@ class RedisService(IService):
                 self.logger.debug(f"Removed subscription for pattern {pattern}")
                 if not self.subscriptions[pattern]:
                     del self.subscriptions[pattern]
-                    await self.client.punsubscribe(pattern)
+                    await self.pubsub.punsubscribe(pattern)
                     self.logger.info(f"Unsubscribed from pattern: {pattern}")
         except Exception as e:
             self.logger.error(f"Error unsubscribing from pattern {pattern}: {str(e)}")
@@ -177,7 +178,7 @@ class RedisService(IService):
         all_text = []
         
         if key:
-            get_logger('RedisService').warning(f"Key encryption not implemented yet.")
+            self.logger.warning(f"Key encryption not implemented yet.")
         
         if embedding_config is None:
             embedding_config = {}
@@ -219,7 +220,7 @@ class RedisService(IService):
         )
         items = await index.query(query)
         sorted_items = sorted(items, key=lambda x: x['vector_distance'], reverse=True)
-        get_logger('RedisService').debug(f"Results: {sorted_items}")
+        self.logger.debug(f"Results: {sorted_items}")
         return sorted_items
 
 
@@ -250,17 +251,6 @@ class RedisService(IService):
                 context[k] = str(v)
         await self.client.hset(key, mapping=context)
         await self.publish_update(key, context)
-
-    async def publish_property_update(self, name: str, key: str, value: dict):
-        channel = f"context_update:{name}:{key}"
-        await self.client.publish(channel, json.dumps(value))
-        await self.client.hset(name, key, json.dumps(value))
-
-    async def subscribe_to_property_updates(self, name: str, key: str, queue=None):
-        property_updates = self.client.pubsub()
-        channel = f"context_update_complete:{name}:{key}"
-        
-        return await property_updates.subscribe(channel)
     
     async def create_index(self, index_schema_file) -> AsyncSearchIndex:
         current_dir = os.path.dirname(os.path.realpath(__file__))

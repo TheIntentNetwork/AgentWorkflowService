@@ -342,7 +342,7 @@ def get_node_seed_data():
             description="Save the research into a report for the customer.",
             type="step",
             context_info=ContextInfo(
-                input_description="The {research} from the BrowsingAgent.",
+                input_description="The {research} for the customer.",
                 action_summary="Save the research into a report for the customer.",
                 outcome_description="A partial report for the customer.",
                 feedback=[

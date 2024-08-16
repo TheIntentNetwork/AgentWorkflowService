@@ -8,6 +8,7 @@ import uuid
 import app
 from pydantic import BaseModel, Extra, Field
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Type, Union
+from app.services.cache.redis import RedisService
 from app.tools.base_tool import BaseTool
 
 from app.services.queue.kafka import KafkaService
@@ -48,22 +49,23 @@ class CreateNodes(BaseTool):
     def contexts(cls):
         return ['node_context']
     
-    def run(self) -> str:
+    async def run(self) -> str:
         
         from app.services.discovery import ServiceRegistry
+        redis_service: RedisService = ServiceRegistry.instance().get('redis')
         kafka_service: KafkaService = ServiceRegistry.instance().get('kafka')
 
         for node in self.nodes:
             node.id = str(uuid4())
-            node.status = "created"
+            node.status = "pending"
             node.session_id = self.caller_agent.session_id
             
         payload = { "session_id": self.caller_agent.session_id, "nodes": [node.model_dump_json() for node in self.nodes] }
-
-        # Ensure there is an event loop running in another thread or start a new one
-
-        kafka_service.send_message_sync("new_nodes", payload)
         
+        for node in self.nodes:
+            await redis_service.save_context(f"node:{node.id}", node.model_dump_json())
+            kafka_service.send_message_sync("agency_action", {"key": f"node:{node.id}", "action": "initialize"})
+
         return payload
         
         

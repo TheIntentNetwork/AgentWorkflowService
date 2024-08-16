@@ -15,35 +15,50 @@ class LifecycleNode(Node):
         self.goal_id = kwargs.get('goal_id', None)
         # Instead of running the async method here, we'll just prepare it
         self.init_task = self.initialize()
+        self.queue = asyncio.Queue()
 
     async def initialize(self):
+        
         await self.subscribe_to_status()
+    
+    async def _status_equals_filter(self, status: NodeStatus):
+        return status == self.status_filter
 
     async def subscribe_to_status(self):
         from app.services.discovery.service_registry import ServiceRegistry
         from app.services.events.event_manager import EventManager
         event_manager: EventManager = ServiceRegistry.instance().get('event_manager')
-        await event_manager.subscribe(f"node:{self.id}", self.on_status_update, "status")
-
-    async def on_status_update(self, message: str):
-        from app.services.discovery.service_registry import ServiceRegistry
-        message_data = json.loads(message)
-        node_id = message_data['node_id']
-        status = message_data['status']
-        context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
+        await event_manager.subscribe_to_patterns([f"node:*:status"], self.on_status_update, self._status_equals_filter)
         
-        key = f"node:{node_id}"
-        node_data = await context_manager.get_context(key)
-        if isinstance(node_data, str):
-            node_data = json.loads(node_data)
+        async def listen_for_status():
+            while True:
+                message = await self.queue.get()
+                await self.on_status_update(message)
+                await asyncio.sleep(0.1)
         
-        get_logger('LifecycleNode').info(f"Received status update for node {node_id}: {status}")
-        self.context_info.context['target_node'] = node_data
-        
+        asyncio.create_task(listen_for_status())
+            
+    async def on_status_update(self, message: bytes):
         try:
+            message_data = json.loads(message.decode('utf-8'))
+            node_id = message_data['node_id']
+            status = message_data['status']
+            
+            from app.services.discovery.service_registry import ServiceRegistry
+            context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
+            
+            key = f"node:{node_id}"
+            node_data = await context_manager.get_context(key)
+            if isinstance(node_data, str):
+                node_data = json.loads(node_data)
+            
+            get_logger('LifecycleNode').info(f"Received status update for node {node_id}: {status}")
+            self.context_info.context['target_node'] = node_data
+            
             await self.execute()
             self.context_info.context['updated_status'] = self.status_result
         except Exception as e:
+            get_logger('LifecycleNode').error(f"Error in on_status_update: {str(e)}")
             self.context_info.context['updated_status'] = self.failed_status_result
             raise e
 

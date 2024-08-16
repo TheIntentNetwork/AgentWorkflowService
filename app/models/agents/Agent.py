@@ -18,6 +18,7 @@ from openai import NotFoundError
 
 from openai.types.beta.thread_create_params import ToolResources
 from redisvl.query.filter import Tag, FilterExpression
+from app.tools.oai.FileSearch import FileSearchConfig
 # Remove the import of FileSearch to break the circular dependency
 from app.utilities.llm_client import get_openai_client
 from app.utilities.logger import get_logger
@@ -110,6 +111,8 @@ class Agent:
             max_completion_tokens: int = None,
             truncation_strategy: dict = None,
             examples: List[ExampleMessage] = None,
+            file_search: FileSearchConfig = None,
+            parallel_tool_calls: bool = True,
             session_id: str = None,
             context_info: ContextInfo = None,
             assistant_id: str = None,
@@ -176,6 +179,8 @@ class Agent:
         self.max_completion_tokens = max_completion_tokens
         self.truncation_strategy = truncation_strategy
         self.examples = examples
+        self.file_search = file_search
+        self.parallel_tool_calls = parallel_tool_calls
         self.session_id = session_id
         self.context_info = context_info
         
@@ -422,6 +427,11 @@ class Agent:
 
         No output parameters are returned, but the method updates the assistant's details on the OpenAI server and locally updates the settings file.
         """
+        
+        tool_resources = copy.deepcopy(self.tool_resources)
+        if tool_resources and tool_resources.get('file_search'):
+            tool_resources['file_search'].pop('vector_stores', None)
+            
         params = {
             "name": self.name,
             "description": self.description,

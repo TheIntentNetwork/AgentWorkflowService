@@ -68,15 +68,19 @@ class RetrieveOutputs(BaseTool):
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
         try:
             filter = Tag("session_id") == self.caller_agent.session_id
-            results = await redis_service.async_search_index(self.query, f"metadata_vector", "outputs", 3, ["session_id", "context_key", "output_name", "output_description", "output"], filter)
-            outputs = sorted(results, key=lambda x: x['vector_distance'])[:3]
-            get_logger(self.__class__.__name__).debug(f"RetrieveOutputs: Retrieved outputs: {outputs}")
+            #results = await redis_service.async_search_index(self.query, f"metadata_vector", "outputs", 3, ["session_id", "context_key", "output_name", "output_description", "output"], filter)
+            results = await redis_service.async_search_index(self.query, f"output_vector", "node", 3, ["item"], filter)
+            nodes = sorted(results, key=lambda x: x['vector_distance'])[:3]
+            
+            results = await redis_service.async_search_index(self.query, f"outcome_description_vector", "node", 3, ["item"], filter)
+            nodes = sorted(results, key=lambda x: x['vector_distance'])[:3]
+            get_logger(self.__class__.__name__).debug(f"RetrieveOutputs: Retrieved nodes: {nodes}")
         except Exception as e:
-            get_logger(self.__class__.__name__).error(f"RetrieveOutputs: Failed to retrieve outputs: {e}")
+            get_logger(self.__class__.__name__).error(f"RetrieveOutputs: Failed to retrieve nodes: {e}")
 
             raise e
         
-        return outputs
+        return nodes
         
         
 

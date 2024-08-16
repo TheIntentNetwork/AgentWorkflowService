@@ -75,7 +75,7 @@ def configure_logger(name):
     """Configure a logger with the given name."""
     logger = logging.getLogger(name)
     if not logger.handlers:
-        logger.setLevel(logging.INFO)
+        logger.setLevel(logging.DEBUG)
 
         # Define a ColoredFormatter with colors for different parts of the log message
         custom_formatter = CustomFormatter(

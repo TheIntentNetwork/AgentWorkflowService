@@ -219,7 +219,7 @@ class Task(BaseModel):
             Create 1 of more nodes based upon the complexity of the task. RetrieveContext for previous examples of similar tasks.
             """
             agency = Agency(agency_chart=agency_chart, shared_instructions="", session_id=self.session_id)
-            response = await agency.get_completion(message, yield_messages=False)
+            response = await agency.get_completion(message, session_id=self.session_id)
             logger.info(f"Task completed: {self.description}")
             kafka: KafkaService = ServiceRegistry.instance().get('kafka')
             await kafka.send_message('task_completed',
