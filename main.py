@@ -90,20 +90,20 @@ def create_app():
             topics = os.getenv("TOPICS").split(",")
             consumer_group = os.getenv("CONSUMER_GROUP")
             redis_url = os.getenv("REDIS_URL")
-            await service_registry.register("kafka", KafkaService, bootstrap_servers=bootstrap_servers, topics=topics, consumer_group=consumer_group)
-            await service_registry.register("redis", RedisService, redis_url=redis_url)
-            await service_registry.register("worker", Worker, worker_uuid=worker_uuid)
-            await service_registry.register("session_manager", SessionManager)
-            await service_registry.register("event_manager", EventManager)
+            service_registry.register("kafka", KafkaService, bootstrap_servers=bootstrap_servers, topics=topics, consumer_group=consumer_group)
+            service_registry.register("redis", RedisService, redis_url=redis_url)
+            service_registry.register("worker", Worker, worker_uuid=worker_uuid)
+            service_registry.register("session_manager", SessionManager)
+            service_registry.register("event_manager", EventManager)
             from app.services.context.context_manager import ContextManager
-            await service_registry.register("context_manager", ContextManager)
+            service_registry.register("context_manager", ContextManager)
             from app.services.orchestrators.lifecycle.Execution import ExecutionService
-            await service_registry.register("execution_service", ExecutionService)
-            await service_registry.register("lifecycle_manager", LifecycleManager)
+            service_registry.register("execution_service", ExecutionService)
+            service_registry.register("lifecycle_manager", LifecycleManager)
 
             # Initialize services that require async initialization
             worker_service: Worker = service_registry.get("worker")
-            await worker_service.join()
+            worker_service.join()
 
             lifecycle_manager: LifecycleManager = service_registry.get("lifecycle_manager")
             await lifecycle_manager.initialize()

@@ -20,7 +20,7 @@ class ServiceRegistry:
             logger.debug("Using existing instance of ServiceRegistry")
         return cls._instance
 
-    async def register(self, name: str, service: any, **kwargs):
+    def register(self, name: str, service: any, **kwargs):
         logger.info(f"Registering service: {name}")
         if issubclass(service, IService):
             instance = service.instance(name=name, service_registry=self, **kwargs)
@@ -29,7 +29,7 @@ class ServiceRegistry:
             logger.debug(f"Instance details: {instance.__dict__}")
             logger.info(f"Service {name} registration complete")
 
-    async def get(self, name: str):
+    def get(self, name: str):
         if name not in self.services:
             if name == 'redis':
                 from app.services.cache.redis import RedisService
@@ -42,7 +42,7 @@ class ServiceRegistry:
                 self.register(name, EventManager)
             elif name == 'context_manager':
                 from app.services.context.context_manager import ContextManager
-                await self.register(name, ContextManager)
+                self.register(name, ContextManager)
             elif name == 'worker':
                 from app.services.worker.worker import Worker
                 self.register(name, Worker)
@@ -50,7 +50,7 @@ class ServiceRegistry:
                 from app.services.lifecycle.lifecycle_manager import LifecycleManager
                 self.register(name, LifecycleManager)
             elif name == 'session_manager':
-                from app.services.session.session_manager import SessionManager
+                from app.services.session.session import SessionManager
                 self.register(name, SessionManager)
             else:
                 logger.error(f"Service '{name}' not found in ServiceRegistry.")
