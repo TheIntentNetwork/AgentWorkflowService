@@ -1,5 +1,6 @@
 """Module for configuring logging in the AgentWorkflowService application."""
 
+import os
 import logging
 import uuid
 from logging.handlers import RotatingFileHandler
@@ -73,6 +74,11 @@ class CustomFormatter(ColoredFormatter):
 
 def configure_logger(name):
     """Configure a logger with the given name."""
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
+    file_handler = logging.FileHandler(f"{log_dir}/{name}.log")
     logger = logging.getLogger(name)
     if not logger.handlers:
         logger.setLevel(logging.DEBUG)

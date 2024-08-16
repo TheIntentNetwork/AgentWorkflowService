@@ -1,0 +1,50 @@
+# name: Production Deployments
+
+# on:
+#   push:
+#     branches: [production]
+
+# jobs:
+#   build:
+#     runs-on: [production]
+
+#     strategy:
+#       matrix:
+#         node-version: [20.x]
+
+#     steps:
+#       - uses: actions/checkout@v2
+
+#       - name: Set up Node.js ${{ matrix.node-version }}
+#         uses: actions/setup-node@v2
+#         with:
+#           node-version: ${{ matrix.node-version }}
+#           cache: 'npm'
+
+#       - name: Installing Dependencies
+#         run: npm install
+
+#       - name: Create env file
+#         run: |
+#           touch .env
+#           echo PORT='3000' >> .env
+#           echo BOOTSTRAP_SERVERS='${{ secrets.BOOTSTRAP_SERVERS }}' >> .env
+#           echo SUPABASE_ANON_KEY='${{ secrets.SUPABASE_ANON_KEY }}' >> .env
+#           echo SUPABASE_URL='${{ secrets.SUPABASE_URL }}' >> .env
+#           echo KAFKA_BROKER_URL='${{ secrets.KAFKA_BROKER_URL }}' >> .env
+#           echo REDIS_URL='${{ secrets.REDIS_URL }}' >> .env
+#           echo NODE_ENV='production' >> .env
+#           cat .env
+
+#       - name: Build Backend
+#         run: |
+#           npm run build
+
+#       - name: Start Backend
+#         run: |
+#           npm install -g pm2
+#           pm2 delete backend-prod
+#           pm2 start "npm run serve" --name backend-prod
+
+#     environment:
+#       name: Production
