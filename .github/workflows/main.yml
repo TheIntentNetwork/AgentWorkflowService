@@ -25,12 +25,13 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
+          python --version
 
       - name: Installing Dependencies
         run: |
           source venv/bin/activate
-          pip3 install -r requirements.txt
 
+      # pip3 install -r requirements.txt
       - name: Create env file
         run: |
           touch .env
@@ -46,8 +47,8 @@ jobs:
           echo SUPABASE_AUTH_SERVICE_ROLE_KEY='${{ secrets.DEV_SUPABASE_AUTH_SERVICE_ROLE_KEY }}' >> .env
           cat .env
 
-      - name: Start Server
-        run: uvicorn main:app --reload
+      # - name: Start Server
+      #   run: uvicorn main:app --reload
 
       # - name: Install Supervisor
       #   run: sudo apt-get install -y supervisor
