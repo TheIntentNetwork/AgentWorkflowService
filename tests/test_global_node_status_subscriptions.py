@@ -1,3 +1,4 @@
+import os
 import asyncio
 import pytest
 import logging
@@ -14,7 +15,7 @@ async def setup_services():
     from app.services.events.event_manager import EventManager
     # Initialize services
     service_registry = ServiceRegistry.instance()
-    redis_service = RedisService(redis_url="redis://localhost:6379")
+    redis_service = RedisService(redis_url=os.getenv('REDIS_URL', 'redis://localhost:6379'))
     event_manager = EventManager()
     service_registry.register("redis", redis_service)
     service_registry.register("event_manager", event_manager)

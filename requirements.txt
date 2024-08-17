@@ -4,6 +4,7 @@ colorlog==6.8.2
 deepdiff==6.7.1
 fastapi==0.112.0
 GitPython==3.1.43
+anthropic==0.21.3
 GitPython==3.1.43
 google_api_python_client==2.135.0
 gradio==4.41.0
@@ -33,3 +34,6 @@ transformers==4.39.2
 typing_extensions==4.12.2
 uvicorn==0.30.5
 webdriver_manager==4.0.2
+aiostream==0.6.2
+kafka-python==2.0.2
+supabase==2.4.3

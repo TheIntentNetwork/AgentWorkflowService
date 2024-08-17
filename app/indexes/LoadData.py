@@ -38,7 +38,7 @@ class LoadData:
         current_dir = os.path.dirname(os.path.realpath(__file__))
         self.index_schema_file = os.path.join(current_dir, "schemas/workflow.yaml")
         self.data = self.create_test_data()
-        self.redis_uri = "redis://localhost:6379"
+        self.redis_uri = os.getenv('REDIS_URL', 'redis://localhost:6379')
 
     async def load(self):
         index = await self.create_index(self.index_schema_file, self.redis_uri)

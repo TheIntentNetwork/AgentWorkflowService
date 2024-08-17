@@ -23,38 +23,38 @@ class LifecycleManager(IService):
         self.logger.info("LifecycleManager initialization completed")
 
     async def create_lifecycle_nodes(self):
-        from app.services.orchestrators.lifecycle.Execution import ExecutionService
-        from app.services.discovery.service_registry import ServiceRegistry
-        from app.services.cache.redis import RedisService
+        # from app.services.orchestrators.lifecycle.Execution import ExecutionService
+        # from app.services.discovery.service_registry import ServiceRegistry
+        # from app.services.cache.redis import RedisService
         
-        service_registry: ServiceRegistry = ServiceRegistry.instance()
-        redis_service: RedisService = service_registry.get('redis')
+        # service_registry: ServiceRegistry = ServiceRegistry.instance()
+        # redis_service: RedisService = service_registry.get('redis')
         
-        filter_condition = Tag("type") == "goal"
-        goals = await redis_service.async_search_index("goal", "metadata_vector", "context", 10, ["item"], filter_condition)
+        # filter_condition = Tag("type") == "goal"
+        # goals = await redis_service.async_search_index("goal", "metadata_vector", "context", 10, ["item"], filter_condition)
         
-        goals = [json.loads(goal['item']) for goal in goals]
+        # goals = [json.loads(goal['item']) for goal in goals]
         
-        from app.services.worker.worker import Worker
+        # from app.services.worker.worker import Worker
         
-        worker_process: Worker = ServiceRegistry.instance().get("worker")
+        # worker_process: Worker = ServiceRegistry.instance().get("worker")
         
-        node_data = {
-            "name": "Review Goals",
-            "type": "lifecycle",
-            "description": "Review your goals and ensure the proper lifecycle nodes are created to support the Universe.",
-            "context_info": ContextInfo(
-                input_description="Goals context",
-                action_summary="Review goals. Using various search terms derived from the goals, search for a 'model' type node that contains a collection of lifecycle nodes meant to support your goals and ensure the proper lifecycle nodes are created. All lifecycle nodes found within the model should be created to support your goals if they do not already exist.",
-                outcome_description="Lifecycle nodes created",
-                feedback=["You should only create the lifecycle nodes if they do not already exist.", "Do not create other nodes other than lifecycle nodes from this task."],
-                output={},
-                context={"goals": goals, "session_id": f"worker:{worker_process.worker_uuid}"}
-            ),
-        }
+        # node_data = {
+        #     "name": "Review Goals",
+        #     "type": "lifecycle",
+        #     "description": "Review your goals and ensure the proper lifecycle nodes are created to support the Universe.",
+        #     "context_info": ContextInfo(
+        #         input_description="Goals context",
+        #         action_summary="Review goals. Using various search terms derived from the goals, search for a 'model' type node that contains a collection of lifecycle nodes meant to support your goals and ensure the proper lifecycle nodes are created. All lifecycle nodes found within the model should be created to support your goals if they do not already exist.",
+        #         outcome_description="Lifecycle nodes created",
+        #         feedback=["You should only create the lifecycle nodes if they do not already exist.", "Do not create other nodes other than lifecycle nodes from this task."],
+        #         output={},
+        #         context={"goals": goals, "session_id": f"worker:{worker_process.worker_uuid}"}
+        #     ),
+        # }
         
-        node = await Node.create(**node_data)
-        await node.execute()
+        # node = await Node.create(**node_data)
+        # await node.execute()
         
         #from app.services.context.context_manager import ContextManager
         #context_manager: ContextManager = ServiceRegistry.instance().get("context_manager")
