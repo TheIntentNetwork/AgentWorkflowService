@@ -50,9 +50,9 @@ jobs:
           cat .env
 
       - name: Start Server
-          run: |
-            source venv/bin/activate
-            uvicorn main:app --reload
+        run: |
+          source venv/bin/activate
+          uvicorn main:app --reload
 
       # - name: Install Supervisor
       #   run: sudo apt-get install -y supervisor
