@@ -47,10 +47,12 @@ jobs:
           echo SUPABASE_AUTH_SERVICE_ROLE_KEY='${{ secrets.DEV_SUPABASE_AUTH_SERVICE_ROLE_KEY }}' >> .env
           cat .env
 
-      - name: Start Server
-        run: |
-          source venv/bin/activate
-          uvicorn main:app --reload
+      - name: Restart Server
+        run: sudo supervisorctl restart fastapi-dev
+      # - name: Start Server
+      #   run: |
+      #     source venv/bin/activate
+      #     uvicorn main:app --reload
 
       # - name: Install Supervisor
       #   run: sudo apt-get install -y supervisor
