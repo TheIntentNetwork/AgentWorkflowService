@@ -48,7 +48,10 @@ jobs:
           cat .env
 
       - name: Restart Server
-        run: sudo supervisorctl restart fastapi-dev
+        run: |
+          sudo > /var/log/fastapi-dev_err.log
+          sudo supervisorctl restart fastapi-dev
+          sudo supervisorctl status
       # - name: Start Server
       #   run: |
       #     source venv/bin/activate
@@ -59,18 +62,18 @@ jobs:
 
       # - name: Create Supervisor config
       #   run: |
-      #     sudo bash -c 'cat > /etc/supervisor/conf.d/fastapi-dev.conf <<EOF
-      #     [program:fastapi-dev]
-      #     command=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService/venv/bin/uvicorn main:app --reload
-      #     directory=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService
-      #     user=ubuntu
-      #     autostart=true
-      #     autorestart=true
-      #     stopasgroup=true
-      #     killasgroup=true
-      #     stdout_logfile=/var/log/fastapi-dev.log
-      #     stderr_logfile=/var/log/fastapi-dev_err.log
-      #     EOF'
+      # sudo bash -c 'cat > /etc/supervisor/conf.d/fastapi-dev.conf <<EOF
+      # [program:fastapi-dev]
+      # command=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService/venv/bin/uvicorn main:app --reload --port 8000
+      # directory=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService
+      # user=ubuntu
+      # autostart=true
+      # autorestart=true
+      # stopasgroup=true
+      # killasgroup=true
+      # stdout_logfile=/var/log/fastapi-dev.log
+      # stderr_logfile=/var/log/fastapi-dev_err.log
+      # EOF'
 
       # - name: Check Supervisor Configuration
       #   run: |
