@@ -23,9 +23,9 @@ class LifecycleManager(IService):
         self.logger.info("LifecycleManager initialization completed")
 
     async def create_lifecycle_nodes(self):
-        # from app.services.orchestrators.lifecycle.Execution import ExecutionService
-        # from app.services.discovery.service_registry import ServiceRegistry
-        # from app.services.cache.redis import RedisService
+        from app.services.orchestrators.lifecycle.Execution import ExecutionService
+        from app.services.discovery.service_registry import ServiceRegistry
+        from app.services.cache.redis import RedisService
         
         # service_registry: ServiceRegistry = ServiceRegistry.instance()
         # redis_service: RedisService = service_registry.get('redis')
