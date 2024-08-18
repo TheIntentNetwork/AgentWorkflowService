@@ -49,8 +49,9 @@ jobs:
 
       - name: Restart Server
         run: |
-          sudo > /var/log/fastapi-dev_err.log
-          sudo supervisorctl restart fastapi-dev
+          sudo supervisorctl stop fastapi-dev
+          sudo sh -c 'echo > /var/log/fastapi-dev_err.log'
+          sudo supervisorctl start fastapi-dev
           sudo supervisorctl status
       # - name: Start Server
       #   run: |
