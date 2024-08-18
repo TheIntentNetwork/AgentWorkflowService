@@ -1,4 +1,6 @@
+import os
 import json
+import redis
 
 def embeddable(agent):
     def decorator(tool_name):
@@ -34,7 +36,7 @@ def embeddable(agent):
                 })
 
             # Connect to Redis
-            r = redis.Redis(host='localhost', port=6379, db=0)
+            r = redis.Redis(host=os.getenv("REDIS_URL").split('//')[1].split(':')[0], port=6379, db=0)
 
             # Embed the record into the Redis stack vector embeddings database
             r.lpush("function_calls", json.dumps(record))

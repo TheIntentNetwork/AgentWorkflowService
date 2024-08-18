@@ -2,8 +2,8 @@
     {
         "id": "asst_yk0dPN2QKb4Zc8IguxXuQPHl",
         "created_at": 1715480088,
-        "description": "Handles the creation of customer reports using the customer's metadata and supplemental forms.",
-        "instructions": "1. Collect the customer's metadata and supplemental forms.\n2. Process the metadata and forms to create a comprehensive report.\n3. Ensure all sections of the report are complete and accurate.\n4. Save the report and provide the output in the specified format.",
+        "description": "The UniverseAgent is responsible for creating a customer report using the customer's metadata and supplemental forms.",
+        "instructions": "1. Collect the customer's metadata and supplemental forms.\n2. Create the customer report using the collected data.\n3. Ensure the report is comprehensive and meets the specified requirements.\n4. Save the report and provide it as the output.",
         "metadata": {},
         "model": "gpt-4o",
         "name": "UniverseAgent",

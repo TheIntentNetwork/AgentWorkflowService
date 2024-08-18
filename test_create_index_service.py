@@ -5,6 +5,7 @@ import asyncio
 from enum import Enum, auto
 import json
 import re
+import os
 import string
 from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
@@ -229,7 +230,7 @@ def create_test_data():
     return intent_test_data, workflow_test_data
 
     # Connect to Redis
-REDIS_HOST = "localhost"
+REDIS_HOST = os.getenv("REDIS_URL").split('//')[1].split(':')[0]
 REDIS_PORT = 6379
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT)
 

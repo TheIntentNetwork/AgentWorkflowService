@@ -154,7 +154,7 @@ def create_test_data():
     return combined_data
 
     # Connect to Redis
-REDIS_HOST = "localhost"
+REDIS_HOST = os.getenv("REDIS_URL").split('//')[1].split(':')[0]
 REDIS_PORT = 6379
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT)
 
