@@ -1,8 +1,9 @@
 """Module for configuring logging in the AgentWorkflowService application."""
 
 import os
-import logging
 import uuid
+import logging
+import watchtower
 from logging.handlers import RotatingFileHandler
 
 from colorama import Fore, Style
@@ -73,12 +74,11 @@ class CustomFormatter(ColoredFormatter):
         return additional_info
 
 def configure_logger(name):
-    """Configure a logger with the given name."""
+    """Configure a logger with the given name and conditionally add CloudWatch logging based on the environment."""
     log_dir = "logs"
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    file_handler = logging.FileHandler(f"{log_dir}/{name}.log")
     logger = logging.getLogger(name)
     if not logger.handlers:
         logger.setLevel(logging.DEBUG)
@@ -99,13 +99,34 @@ def configure_logger(name):
             style='%'
         )
 
+        # File handler for local file logs
         file_handler = logging.FileHandler(f"logs/{name}.log")
         file_handler.setFormatter(logging.Formatter("%(message)s"))
         logger.addHandler(file_handler)
 
+        # Stream handler for console output
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(custom_formatter)
         logger.addHandler(stream_handler)
+
+        # Conditionally add CloudWatch handler based on environment
+        if os.getenv("NODE_ENV") == "production":
+            try:
+                cloudwatch_handler = watchtower.CloudWatchLogHandler(
+                    log_group="ec2-server-logs",
+                    stream_name=name
+                )
+                cloudwatch_handler.setFormatter(logging.Formatter("%(message)s"))
+                logger.addHandler(cloudwatch_handler)
+                # cloudwatch_combined_handler = watchtower.CloudWatchLogHandler(
+                #     log_group="your-log-group-name",
+                #     stream_name=name
+                # )
+                # cloudwatch_combined_handler.setFormatter(logging.Formatter("%(message)s"))
+                # logger.addHandler(cloudwatch_combined_handler)
+            except Exception as e:
+                # Log to console if CloudWatch handler fails to initialize
+                logging.error(f"Failed to initialize CloudWatch handler: {e}")
 
         logger.propagate = False
 

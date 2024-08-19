@@ -2,8 +2,8 @@
     {
         "id": "asst_yk0dPN2QKb4Zc8IguxXuQPHl",
         "created_at": 1715480088,
-        "description": "The UniverseAgent is responsible for creating a customer report using the customer's metadata and supplemental forms.",
-        "instructions": "1. Collect the customer's metadata and supplemental forms.\n2. Create the customer report using the collected data.\n3. Ensure the report is comprehensive and meets the specified requirements.\n4. Save the report and provide it as the output.",
+        "description": "Handles the creation of customer reports using metadata and supplemental forms.",
+        "instructions": "1. Collect the customer's metadata and supplemental forms.\n2. Create the customer report based on the collected data.\n3. Ensure all necessary sections are included in the report.\n4. Save and output the final report.",
         "metadata": {},
         "model": "gpt-4o",
         "name": "UniverseAgent",
@@ -34,6 +34,37 @@
                         "required": [
                             "query",
                             "session_id",
+                            "user_id"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "function": {
+                    "name": "GetSupplemental",
+                    "description": "Correctly extracted `GetSupplemental` with all the required parameters with correct types",
+                    "parameters": {
+                        "properties": {
+                            "user_id": {
+                                "description": "The user id of the user.",
+                                "title": "User Id",
+                                "type": "string"
+                            },
+                            "type": {
+                                "const": "supplemental",
+                                "default": "supplemental",
+                                "description": "The type of the form.",
+                                "enum": [
+                                    "supplemental"
+                                ],
+                                "title": "Type",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
                             "user_id"
                         ],
                         "type": "object"
