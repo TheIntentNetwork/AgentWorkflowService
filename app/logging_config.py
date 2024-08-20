@@ -1,7 +1,7 @@
 """Module for configuring logging in the AgentWorkflowService application."""
-
 import os
 import uuid
+import boto3
 import logging
 import watchtower
 from logging.handlers import RotatingFileHandler
@@ -108,25 +108,27 @@ def configure_logger(name):
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(custom_formatter)
         logger.addHandler(stream_handler)
-
-        # Conditionally add CloudWatch handler based on environment
-        if os.getenv("NODE_ENV") == "production":
-            try:
-                cloudwatch_handler = watchtower.CloudWatchLogHandler(
-                    log_group="ec2-server-logs",
-                    stream_name=name
-                )
-                cloudwatch_handler.setFormatter(logging.Formatter("%(message)s"))
-                logger.addHandler(cloudwatch_handler)
-                # cloudwatch_combined_handler = watchtower.CloudWatchLogHandler(
-                #     log_group="your-log-group-name",
-                #     stream_name=name
-                # )
-                # cloudwatch_combined_handler.setFormatter(logging.Formatter("%(message)s"))
-                # logger.addHandler(cloudwatch_combined_handler)
-            except Exception as e:
-                # Log to console if CloudWatch handler fails to initialize
-                logging.error(f"Failed to initialize CloudWatch handler: {e}")
+        environment=os.getenv("NODE_ENV")
+        try:            
+            cloudwatch_handler = watchtower.CloudWatchLogHandler(
+                log_group=f"server-logs-{environment}",
+                stream_name=name,  # Set log stream name to just the logger name (e.g., KafkaService)
+                create_log_stream=True,  # Ensure the log stream is created if it doesn't exist
+            )
+            cloudwatch_handler.setFormatter(logging.Formatter("%(message)s"))
+            logger.addHandler(cloudwatch_handler)
+            # all logs combined
+            cloudwatch_handler = watchtower.CloudWatchLogHandler(
+                log_group=f"all-server-logs-{environment}",
+                stream_name="all",  # Set log stream name to just the logger name (e.g., KafkaService)
+                create_log_stream=True,  # Ensure the log stream is created if it doesn't exist
+            )
+            cloudwatch_handler.setFormatter(logging.Formatter("%(message)s"))
+            logger.addHandler(cloudwatch_handler)
+            
+        except Exception as e:
+            # Log to console if CloudWatch handler fails to initialize
+            logging.error(f"Failed to initialize CloudWatch handler: {e}")
 
         logger.propagate = False
 

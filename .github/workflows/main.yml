@@ -36,7 +36,7 @@ jobs:
         run: |
           touch .env
           echo PORT='8000' >> .env
-          echo NODE_ENV='production' >> .env
+          echo NODE_ENV='development' >> .env
           echo TOPICS='${{ secrets.DEV_TOPICS }}' >> .env
           echo PROFILE='${{ secrets.DEV_PROFILE }}' >> .env
           echo REDIS_URL='${{ secrets.DEV_REDIS_URL }}' >> .env

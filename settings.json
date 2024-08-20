@@ -2,8 +2,8 @@
     {
         "id": "asst_yk0dPN2QKb4Zc8IguxXuQPHl",
         "created_at": 1715480088,
-        "description": "Handles the creation of customer reports using metadata and supplemental forms.",
-        "instructions": "1. Collect the customer's metadata and supplemental forms.\n2. Create the customer report based on the collected data.\n3. Ensure all necessary sections are included in the report.\n4. Save and output the final report.",
+        "description": "The UniverseAgent, renowned as the ultimate planner with comprehensive knowledge of all human history and creation, excels in transforming user requests into meticulously detailed workflow created from nodes. It specializes in deconstructing tasks into their most fundamental elements, ensuring clarity and thoroughness in execution, thus enhancing the effectiveness and efficiency of task completion and ensuring the highest quality of delivery from the agents involved.",
+        "instructions": "            \n            CreateNodes Example:\n                CreateNodes([{\n                    \"name\": \"SetContext\",\n                    \"description\": \"Set the context for the report creation process\",\n                    \"type\": \"lifecycle\",\n                    \"tools\": [\"RetrieveContext\", \"SetContext\"],\n                    \"context_info\": {\n                        \"input_description\": \"Initial customer data and report requirements.\",\n                        \"action_summary\": \"Initialize the report creation context with necessary information.\",\n                        \"outcome_description\": \"A fully set up context for the report creation process.\",\n                        \"feedback\": [\"Ensure all required initial data is properly set in the context.\"],\n                        \"output\": {},\n                        \"context\": {\"user_id\": \"{user_id}\", \"user_context\": \"{user_context}\", \"user_intake\": \"{user_intake}\", \"goals\": [\"Collect relevant intake form\", \"Organize the form into sections\", \"Save the final outputs\"]}\n                    }\n                },\n                {\n                    \"name\": \"Register Outputs\",\n                    \"description\": \"Register the expected outputs for the report\",\n                    \"type\": \"lifecycle\",\n                    \"tools\": [\"RetrieveContext\", \"SetContext\"],\n                    \"context_info\": {\n                        \"input_description\": \"Report requirements and structure.\",\n                        \"action_summary\": \"Define and register all expected outputs for the report.\",\n                        \"outcome_description\": \"A complete list of registered outputs for the report.\",\n                        \"feedback\": [\"Verify that all necessary report sections are included in the registered outputs.\"],\n                        \"output\": {},\n                        \"context\": {\"user_id\": \"{user_id}\", \"user_context\": \"{user_context}\", \"user_intake\": \"{user_intake}\", \"goals\": [\"Collect relevant intake form\", \"Organize the form into sections\", \"Save the final outputs\"]}\n                    }\n                },\n                {\n                    \"name\": \"Register Dependencies\",\n                    \"description\": \"Register the dependencies for the report creation process\",\n                    \"type\": \"lifecycle\",\n                    \"tools\": [\"RetrieveContext\", \"SetContext\"],\n                    \"context_info\": {\n                        \"input_description\": \"Required resources and data sources for the report.\",\n                        \"action_summary\": \"Identify and register all dependencies needed for creating the report.\",\n                        \"outcome_description\": \"A comprehensive list of registered dependencies for the report creation process.\",\n                        \"feedback\": [\"Ensure all necessary data sources and tools are included in the dependencies.\"],\n                        \"output\": {},\n                        \"context\": {\"user_id\": \"{user_id}\", \"user_context\": \"{user_context}\", \"user_intake\": \"{user_intake}\", \"goals\": [\"Collect relevant intake form\", \"Organize the form into sections\", \"Save the final outputs\"]}\n                    }\n                }])\n                )\n            )\n            \n            Goal:\n            - Ensure that the necessary lifecycle nodes are created to support your goals.\n            \n            Your process is as follows:\n            1.) Call RetrieveContext: Use the RetrieveContext tool to retrieve the context for the nodes creation. First start with searching for a 'model' that closely matches the requirements of the task/step.\n            - If a model is found, you will replicate the nodes within this model very closely and only incorporating relevent feedback.\n            2.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that will meet the goals of our workflow/task/step.\n\n            \n            Rules:\n            - You must create lifecycle nodes from the context to complete future tasks using the CreateNodes tool.\n            - If you forget to call the CreateNodes tool, you have failed your task.\n            - Only assign tools that are known. Do not make up tool names.\n            - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.\n            ",
         "metadata": {},
         "model": "gpt-4o",
         "name": "UniverseAgent",
@@ -11,30 +11,45 @@
         "tools": [
             {
                 "function": {
-                    "name": "GetUserContext",
-                    "description": "Tool to get user context from the user context index.",
+                    "name": "RetrieveContext",
+                    "description": "This class represents the RetrieveContext tool which returns seeded data and historical examples that can be used to create new agents, models, workflows, and steps. Models are saved copies of successfully tested node structures that can be used to create a new set of steps.\n\nRetrieveContext('model', 'description of the high-level actions and overall purpose of the model')\nResult: {Should return example context that can be used to create a new model based on this historical example.}",
                     "parameters": {
                         "properties": {
-                            "user_id": {
-                                "description": "The user id of the user.",
-                                "title": "User Id",
+                            "type": {
+                                "description": "The type of the context to retrieve e.g. 'agent', 'workflow', 'step', 'model', 'lifecycle'.",
+                                "enum": [
+                                    "agent",
+                                    "workflow",
+                                    "step",
+                                    "model",
+                                    "lifecycle",
+                                    "log"
+                                ],
+                                "title": "Type",
                                 "type": "string"
                             },
-                            "session_id": {
-                                "description": "The session id to associate with the context.",
-                                "title": "Session Id",
-                                "type": "string"
+                            "key": {
+                                "anyOf": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ],
+                                "default": null,
+                                "description": "The key of the context to retrieve.",
+                                "title": "Key"
                             },
                             "query": {
-                                "description": "The query to run on the user context.",
+                                "description": "The query of the context to retrieval.",
                                 "title": "Query",
                                 "type": "string"
                             }
                         },
                         "required": [
                             "query",
-                            "session_id",
-                            "user_id"
+                            "type"
                         ],
                         "type": "object"
                     },
@@ -44,67 +59,171 @@
             },
             {
                 "function": {
-                    "name": "GetSupplemental",
-                    "description": "Correctly extracted `GetSupplemental` with all the required parameters with correct types",
+                    "name": "CreateNodes",
+                    "description": "Rule: You must RetrieveContext, first.\nCreate a node based on the node examples you were providedand initialize the node with the following steps:\n1. RetrieveContext first to research examples of nodes based on the description and high level actions.\n2. Define the goal of the new nodes.\n3. Identify the intent behind the goal.\n4. Break down the goal into actionable steps.\n5. Create a node object for each of the actionable steps needed.",
                     "parameters": {
-                        "properties": {
-                            "user_id": {
-                                "description": "The user id of the user.",
-                                "title": "User Id",
-                                "type": "string"
+                        "$defs": {
+                            "ContextInfo": {
+                                "properties": {
+                                    "key": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "default": null,
+                                        "description": "The key of the context.",
+                                        "title": "Key"
+                                    },
+                                    "input_keys": {
+                                        "anyOf": [
+                                            {
+                                                "items": {
+                                                    "type": "string"
+                                                },
+                                                "type": "array"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "default": [],
+                                        "description": "The input keys of the context object.",
+                                        "title": "Input Keys"
+                                    },
+                                    "input_description": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "default": null,
+                                        "description": "The input description of the context object.",
+                                        "title": "Input Description"
+                                    },
+                                    "action_summary": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "default": null,
+                                        "description": "The action summary of the context object.",
+                                        "title": "Action Summary"
+                                    },
+                                    "outcome_description": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "default": null,
+                                        "description": "The outcome description of the context object.",
+                                        "title": "Outcome Description"
+                                    },
+                                    "feedback": {
+                                        "anyOf": [
+                                            {
+                                                "items": {
+                                                    "type": "string"
+                                                },
+                                                "type": "array"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "default": null,
+                                        "description": "The feedback of the context object.",
+                                        "title": "Feedback"
+                                    },
+                                    "output": {
+                                        "anyOf": [
+                                            {
+                                                "type": "object"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "default": {},
+                                        "description": "The output structure of the context object.",
+                                        "title": "Output"
+                                    },
+                                    "context": {
+                                        "anyOf": [
+                                            {
+                                                "type": "object"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "default": null,
+                                        "description": "The context of the object.",
+                                        "title": "Context"
+                                    }
+                                },
+                                "title": "ContextInfo",
+                                "type": "object"
                             },
-                            "type": {
-                                "const": "supplemental",
-                                "default": "supplemental",
-                                "description": "The type of the form.",
-                                "enum": [
-                                    "supplemental"
+                            "NodePrototype": {
+                                "additionalProperties": true,
+                                "properties": {
+                                    "name": {
+                                        "title": "Name",
+                                        "type": "string"
+                                    },
+                                    "description": {
+                                        "title": "Description",
+                                        "type": "string"
+                                    },
+                                    "type": {
+                                        "enum": [
+                                            "step",
+                                            "lifecycle"
+                                        ],
+                                        "title": "Type",
+                                        "type": "string"
+                                    },
+                                    "context_info": {
+                                        "$ref": "#/$defs/ContextInfo"
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "description",
+                                    "type",
+                                    "context_info"
                                 ],
-                                "title": "Type",
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "user_id"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "SaveOutput",
-                    "description": "This class represents a tool for saving an output produced by the agent.\nOutput field is required. Utilize the existing output structure of the property if there is no final value.\nOutputs should only be registered for output params listed in the outputs field of your node. Do not save outputs for UserMeta or Context params.\n\nUnrelated Example:\n{\n    \"id\": \"1234\",\n    \"output_name\": \"research_report\",\n    \"output_description\": \"The research report for the property.\",\n    \"output\": {\n        \"research_report\": \"{research_report}\"\n    }\n}",
-                    "parameters": {
-                        "properties": {
-                            "id": {
-                                "description": "The id of the current node.",
-                                "title": "Id",
-                                "type": "string"
-                            },
-                            "output_name": {
-                                "description": "The name of the output e.g. research_report",
-                                "title": "Output Name",
-                                "type": "string"
-                            },
-                            "output_description": {
-                                "description": "The description of the output.",
-                                "title": "Output Description",
-                                "type": "string"
-                            },
-                            "output": {
-                                "description": "The output to save in a json formatted dictionary. Field is required. Utilize the existing output structure of the property if there is no final value.",
-                                "title": "Output",
+                                "title": "NodePrototype",
                                 "type": "object"
                             }
                         },
+                        "properties": {
+                            "nodes": {
+                                "description": "The nodes to be created.",
+                                "items": {
+                                    "$ref": "#/$defs/NodePrototype"
+                                },
+                                "title": "Nodes",
+                                "type": "array"
+                            }
+                        },
                         "required": [
-                            "id",
-                            "output",
-                            "output_description",
-                            "output_name"
+                            "nodes"
                         ],
                         "type": "object"
                     },
