@@ -8,7 +8,7 @@ from app.utilities.logger import get_logger
 
 class ContextManagerFactory:
     @staticmethod
-    def create_context_managers(service_registry: ServiceRegistry) -> Dict[str, ContextManager]:
+    async def create_context_managers(service_registry: ServiceRegistry) -> Dict[str, ContextManager]:
         context_managers = {}
         db_context_managers = settings.service_config.get('context_managers', {})
         logger = get_logger('ContextManagerFactory')
