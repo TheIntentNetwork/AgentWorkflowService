@@ -251,15 +251,25 @@ class Node(BaseModel, IRunnableContext):
         Raises:
             Exception: Any exceptions raised during the execution process.
         """
+        logger = get_logger('Node')
         try:
+            logger.info(f"Starting _assign_and_get_completion for node: {self.id}")
             await self._context_manager.update_property(self, "status", NodeStatus.executing)
+            logger.info(f"Building agency chart for node: {self.id}")
             agency_chart = await self._build_agency_chart()
+            logger.info(f"Agency chart built for node: {self.id}")
+            logger.info(f"Performing agency completion for node: {self.id}")
             response = await self.perform_agency_completion(agency_chart, self.description, self.context_info.context.get('session_id'))
+            logger.info(f"Agency completion performed for node: {self.id}")
             await self._context_manager.update_property(self, "status", NodeStatus.completed)
+            logger.info(f"Node {self.id} execution completed successfully")
         except Exception as e:
-            get_logger('Node').error(f"Error during execution: {str(e)}")
+            logger.error(f"Error during execution of node {self.id}: {str(e)}")
             await self._context_manager.update_property(self, "status", NodeStatus.failed)
+            logger.info(f"Node {self.id} status updated to failed")
             raise
+        finally:
+            logger.info(f"_assign_and_get_completion finished for node: {self.id}")
 
     async def _build_agency_chart(self) -> List:
         logger = get_logger('Node')
