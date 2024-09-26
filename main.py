@@ -112,7 +112,7 @@ def create_app():
             await asyncio.gather(*tasks)
             
         except Exception as e:
-            logger.error(f"Failed to start the application: {e}", traceback.format_exc())
+            logger.error("Failed to start the application: %s\n%s", str(e), traceback.format_exc())
             await shutdown_event()
 
     async def initialize_kafka_service():
@@ -132,7 +132,7 @@ def create_app():
 
     async def initialize_context_managers():
         service_registry.register("context_manager", ContextManager, config=settings.service_config.get('context_managers', {}))
-        context_managers = await ContextManagerFactory.create_context_managers(service_registry)
+        context_managers = ContextManagerFactory.create_context_managers(service_registry)
         logger.info("Context managers created")
 
     async def initialize_session_manager():
