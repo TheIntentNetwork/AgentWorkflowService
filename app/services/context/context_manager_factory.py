@@ -10,13 +10,15 @@ class ContextManagerFactory:
     @staticmethod
     def create_context_managers(service_registry: ServiceRegistry) -> Dict[str, ContextManager]:
         context_managers = {}
-        db_context_managers = settings.service_config
+        db_context_managers = settings.service_config.get('context_managers', {})
         logger = get_logger('ContextManagerFactory')
         
         logger.debug(f"Creating UserContextManager with name: user_context and config: {db_context_managers}")
         try:
             service_registry.register('user_context', UserContextManager, config=db_context_managers)
-            logger.debug(f"UserContextManager created: user_context")
+            user_context_manager = service_registry.get('user_context')
+            await user_context_manager.load_user_context({})
+            logger.debug(f"UserContextManager created and user context loaded: user_context")
         except Exception as e:
             logger.error(f"Failed to create UserContextManager: {e}")
             raise
@@ -26,7 +28,9 @@ class ContextManagerFactory:
                 logger.debug(f"Creating NodeContextManager with name: {manager_config.name} and config: {manager_config}")
                 try:
                     service_registry.register('node_context', NodeContextManager, config=db_context_managers['node_context'])
-                    logger.debug(f"NodeContextManager created: {manager_config.name}")
+                    node_context_manager = service_registry.get('node_context')
+                    await node_context_manager.load_node_context({})
+                    logger.debug(f"NodeContextManager created and node context loaded: {manager_config.name}")
                 except Exception as e:
                     logger.error(f"Failed to create NodeContextManager: {e}")
                     raise
