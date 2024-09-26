@@ -3,6 +3,7 @@ import threading
 
 class IService(ABC):
     service_registry = None
+    name: str
     _instance = None
     _lock = threading.Lock()
 

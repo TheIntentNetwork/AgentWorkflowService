@@ -65,6 +65,7 @@ class KafkaService(IService):
             valid_topics = list(self.subscribed_topics)
             self.consumer.subscribe(valid_topics)
             self.logger.info(f"Subscribed to Kafka topics: {valid_topics}")
+            self.logger.debug(f"Kafka consumer group: {self.consumer_group}, bootstrap servers: {self.bootstrap_servers}")
             
             if self.consumer_thread is None or not self.consumer_thread.is_alive():
                 self.consumer_thread = threading.Thread(target=self.run_consumer, daemon=True)
@@ -148,6 +149,7 @@ class KafkaService(IService):
                                 value = record.value
                                 self.logger.info(f"Processing message from topic: {topic}")
                                 self.logger.debug(f"Message value: {value}")
+                                self.logger.debug(f"Message value: {value}")
                                 if topic in self.subscriptions:
                                     self.logger.debug(f"Subscriptions for topic {topic}: {self.subscriptions[topic]}")
                                     for queue, callback in self.subscriptions[topic]:
@@ -164,6 +166,7 @@ class KafkaService(IService):
                                             self.event_loop.call_soon_threadsafe(queue.put_nowait, record)
                                         except Exception as e:
                                             self.logger.error(f"Error processing message: {e}")
+                                            self.logger.debug(f"Message causing the error: {record.value if 'record' in locals() else 'Unknown'}")
                     else:
                         self.logger.debug("No messages received")
                 except Exception as e:
