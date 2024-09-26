@@ -92,6 +92,7 @@ class RedisService(IService):
         asyncio.set_event_loop(loop)
 
         async def listen():
+            self.logger.debug("Starting Redis listener")
             await self.pubsub.subscribe(*self.subscriptions.keys())
             async for message in self.pubsub.listen():
                 if message['type'] == 'message':
