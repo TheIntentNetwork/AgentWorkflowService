@@ -138,6 +138,8 @@ def configure_logger(name):
 
     return logger
 import logging
+from colorama import Fore, Style
+from colorlog import ColoredFormatter
 
 def configure_logger(name):
     logger = logging.getLogger(name)
@@ -147,8 +149,21 @@ def configure_logger(name):
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
     
-    # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # Create a ColoredFormatter
+    formatter = ColoredFormatter(
+        "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s%(reset)s",
+        datefmt=None,
+        reset=True,
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'red,bg_white',
+        },
+        secondary_log_colors={},
+        style='%'
+    )
     
     # Add formatter to ch
     ch.setFormatter(formatter)
