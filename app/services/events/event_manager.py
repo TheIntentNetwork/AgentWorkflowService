@@ -97,7 +97,6 @@ class EventManager(IService):
         Initializes the EventManager and subscribes to event topics.
         """
         self.logger.info("Subscribing to event topics")
-        self.logger.debug(f"Topics to subscribe: {topics}")
         self.logger.debug(f"Topics to subscribe: ['agency_action']")
         await self.subscribe_to_event_topics(["agency_action"])
         self.logger.info("EventManager started")
