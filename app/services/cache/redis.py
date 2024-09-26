@@ -69,7 +69,7 @@ class RedisService(IService):
                 self.logger.debug(f"Added subscription for channel {channel}")
                 return queue
             except Exception as e:
-                self.logger.error(f"Error creating index {index_name}: {str(e)}")
+                self.logger.error(f"Error subscribing to channel {channel}: {str(e)}")
                 self.logger.error(f"Error subscribing to channel {channel}: {str(e)}")
                 raise
 
