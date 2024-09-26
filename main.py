@@ -105,6 +105,15 @@ def create_app():
             await shutdown_event()
 
     async def initialize_services():
+        await initialize_context_managers()
+
+    async def initialize_context_managers():
+        """
+        Initializes and registers the UserContextManager and NodeContextManager using the ContextManagerFactory.
+        """
+        logger.info("Initializing context managers")
+        context_managers = ContextManagerFactory.create_context_managers(service_registry)
+        logger.info(f"Context managers initialized: {list(context_managers.keys())}")
         services = [
             ("kafka", KafkaService, {"bootstrap_servers": settings.BOOTSTRAP_SERVERS.split(","), "topics": settings.service_config.get('TOPICS', []), "consumer_group": settings.CONSUMER_GROUP}),
             ("redis", RedisService, {"redis_url": settings.REDIS_URL}),
