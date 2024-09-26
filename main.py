@@ -96,27 +96,58 @@ def create_app():
             set_openai_key(settings.OPENAI_API_KEY)
             worker_uuid = str(uuid.uuid4())
             
-            # Register services
-            service_registry.register("kafka", KafkaService, bootstrap_servers=settings.BOOTSTRAP_SERVERS.split(","), topics=settings.service_config.get('TOPICS', []), consumer_group=settings.CONSUMER_GROUP)
-            service_registry.register("redis", RedisService, redis_url=settings.REDIS_URL)
-            service_registry.register("worker", Worker, worker_uuid=worker_uuid)
-            service_registry.register("context_manager", ContextManager, config=settings.service_config.get('context_managers', {}))
+            # Create tasks for async initialization
+            tasks = [
+                initialize_kafka_service(),
+                initialize_redis_service(),
+                initialize_worker_service(worker_uuid),
+                initialize_context_managers(),
+                initialize_session_manager(),
+                initialize_event_manager(),
+                initialize_dependency_service(),
+            ]
             
-            get_logger("main").info("Creating context managers")
-            context_managers = ContextManagerFactory.create_context_managers(service_registry)
-            get_logger("main").info("Context managers created")
-            
-            service_registry.register("session_manager", SessionManager)
-            service_registry.register("event_manager", EventManager)
-            service_registry.register("dependency_service", DependencyService)
-
-            # Initialize services that require async initialization
-            worker_service: Worker = service_registry.get("worker")
-            await worker_service.join()
+            # Run all tasks concurrently
+            await asyncio.gather(*tasks)
             
         except Exception as e:
             logger.error(f"Failed to start the application: {e}", traceback.format_exc())
             await shutdown_event()
+
+    async def initialize_kafka_service():
+        service_registry.register("kafka", KafkaService, bootstrap_servers=settings.BOOTSTRAP_SERVERS.split(","), topics=settings.service_config.get('TOPICS', []), consumer_group=settings.CONSUMER_GROUP)
+        kafka_service = service_registry.get("kafka")
+        await kafka_service.initialize()
+
+    async def initialize_redis_service():
+        service_registry.register("redis", RedisService, redis_url=settings.REDIS_URL)
+        redis_service = service_registry.get("redis")
+        await redis_service.initialize()
+
+    async def initialize_worker_service(worker_uuid):
+        service_registry.register("worker", Worker, worker_uuid=worker_uuid)
+        worker_service = service_registry.get("worker")
+        await worker_service.initialize()
+
+    async def initialize_context_managers():
+        service_registry.register("context_manager", ContextManager, config=settings.service_config.get('context_managers', {}))
+        context_managers = await ContextManagerFactory.create_context_managers(service_registry)
+        logger.info("Context managers created")
+
+    async def initialize_session_manager():
+        service_registry.register("session_manager", SessionManager)
+        session_manager = service_registry.get("session_manager")
+        await session_manager.initialize()
+
+    async def initialize_event_manager():
+        service_registry.register("event_manager", EventManager)
+        event_manager = service_registry.get("event_manager")
+        await event_manager.initialize()
+
+    async def initialize_dependency_service():
+        service_registry.register("dependency_service", DependencyService)
+        dependency_service = service_registry.get("dependency_service")
+        await dependency_service.initialize()
 
     @app.on_event("shutdown")
     async def shutdown_event():
