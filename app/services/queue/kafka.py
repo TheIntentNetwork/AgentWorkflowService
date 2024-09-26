@@ -138,14 +138,14 @@ class KafkaService(IService):
         """
         Run the Kafka consumer in a separate thread.
         """
-        self.logger.debug("Starting Kafka consumer thread")
+        self.logger.info("Starting Kafka consumer thread")
         self.consumer_thread_running = True
         while self.consumer_thread_running:
             if self.consumer is not None:
                 try:
-                    self.logger.debug("Polling for messages from Kafka")
+                    self.logger.info("Polling for messages from Kafka")
                     messages = self.consumer.poll(timeout_ms=1000)
-                    self.logger.debug(f"Polled messages: {messages}")
+                    self.logger.info(f"Polled messages: {messages}")
                     if messages:
                         self.logger.info(f"Received {len(messages)} message(s)")
                         for topic_partition, records in messages.items():
