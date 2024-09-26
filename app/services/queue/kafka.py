@@ -154,7 +154,7 @@ class KafkaService(IService):
                                         try:
                                             if callback:
                                                 self.logger.debug(f"Callback for topic {topic}: {callback}")
-                                                result = callback(value)
+                                                result = await callback(value)
                                                 if asyncio.iscoroutine(result):
                                                     self.logger.debug("Scheduling coroutine task")
                                                     self.event_loop.call_soon_threadsafe(
