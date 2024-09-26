@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional
 import asyncio
+import uuid
 from app.config.service_config import ServiceConfig
 from app.services.cache.redis import RedisService
 from app.interfaces.service import IService
