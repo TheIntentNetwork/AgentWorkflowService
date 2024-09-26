@@ -13,7 +13,7 @@ from app.services.cache.redis import RedisService
 from app.interfaces.irunnablecontext import IRunnableContext
 from app.models.Dependency import Dependency
 from app.services.context.context_manager import ContextManager
-from app.utilities.logger import get_logger
+from app.utilities.logger import get_logger, configure_logger
 from app.models.ContextInfo import ContextInfo
 from app.models.NodeStatus import NodeStatus
 from app.services.discovery.service_registry import ServiceRegistry
@@ -54,6 +54,7 @@ class Node(BaseModel, IRunnableContext):
         self._event_manager = service_registry.get('event_manager')
         self._dependency_service: IDependencyService = service_registry.get('dependency_service')
         self.id = data.get('id', str(uuid.uuid4()))
+        self.logger = configure_logger(f'Node_{self.id}')
     
     @classmethod
     async def create(cls, **node_data):
@@ -154,8 +155,7 @@ class Node(BaseModel, IRunnableContext):
     
     async def execute(self):
         """Execute the node's main functionality."""
-        logger = get_logger('Node')
-        logger.info(f"Executing node: {self.id}")
+        self.logger.info(f"Executing node: {self.id}")
         
         await self.PreExecute()
         await self.Executing()
@@ -166,20 +166,17 @@ class Node(BaseModel, IRunnableContext):
         await self.Executed()
     
     async def PreExecute(self):
-        logger = get_logger('Node')
         await self._context_manager.update_property(self, "status", NodeStatus.pre_execute)
-        logger.info(f"Node {self.id} PreExecute")
+        self.logger.info(f"Node {self.id} PreExecute")
     
     async def Executing(self):
-        logger = get_logger('Node')
-        logger.info(f"Node {self.id} executing")
+        self.logger.info(f"Node {self.id} executing")
         await self._context_manager.update_property(self, "status", NodeStatus.executing)
         await self._assign_and_get_completion()
         
     async def Executed(self):
-        logger = get_logger('Node')
         await self._context_manager.update_property(self, "status", NodeStatus.completed)
-        logger.info(f"Node {self.id} Executed: status 'completed'")
+        self.logger.info(f"Node {self.id} Executed: status 'completed'")
         redis: RedisService = ServiceRegistry.instance().get("redis")
         # Look up subscribers to this node
         subscribers = await redis.client.lrange(f"node:{self.id}:subscribers", 0, -1)
@@ -188,14 +185,13 @@ class Node(BaseModel, IRunnableContext):
             await redis.client.publish(subscriber, f"node:{self.id}:event->dependency_met")
 
     async def execute_child_nodes(self):
-        logger = get_logger('Node')
         if self.collection:
-            logger.info(f"Executing child nodes for node: {self.id}")
+            self.logger.info(f"Executing child nodes for node: {self.id}")
             for child_node in self.collection:
                 await child_node.execute()
-            logger.info(f"Finished executing child nodes for node: {self.id}")
+            self.logger.info(f"Finished executing child nodes for node: {self.id}")
         else:
-            logger.debug(f"No child nodes to execute for node: {self.id}")
+            self.logger.debug(f"No child nodes to execute for node: {self.id}")
 
     async def clear_dependencies(self) -> None:
         await self._dependency_service.clear_dependencies(self)
@@ -251,44 +247,42 @@ class Node(BaseModel, IRunnableContext):
         Raises:
             Exception: Any exceptions raised during the execution process.
         """
-        logger = get_logger('Node')
         try:
-            logger.info(f"Starting _assign_and_get_completion for node: {self.id}")
+            self.logger.info(f"Starting _assign_and_get_completion for node: {self.id}")
             await self._context_manager.update_property(self, "status", NodeStatus.executing)
-            logger.info(f"Building agency chart for node: {self.id}")
+            self.logger.info(f"Building agency chart for node: {self.id}")
             agency_chart = await self._build_agency_chart()
-            logger.info(f"Agency chart built for node: {self.id}")
-            logger.info(f"Performing agency completion for node: {self.id}")
+            self.logger.info(f"Agency chart built for node: {self.id}")
+            self.logger.info(f"Performing agency completion for node: {self.id}")
             response = await self.perform_agency_completion(agency_chart, self.description, self.context_info.context.get('session_id'))
-            logger.info(f"Agency completion performed for node: {self.id}")
+            self.logger.info(f"Agency completion performed for node: {self.id}")
             await self._context_manager.update_property(self, "status", NodeStatus.completed)
-            logger.info(f"Node {self.id} execution completed successfully")
+            self.logger.info(f"Node {self.id} execution completed successfully")
         except Exception as e:
-            logger.error(f"Error during execution of node {self.id}: {str(e)}")
+            self.logger.error(f"Error during execution of node {self.id}: {str(e)}")
             await self._context_manager.update_property(self, "status", NodeStatus.failed)
-            logger.info(f"Node {self.id} status updated to failed")
+            self.logger.info(f"Node {self.id} status updated to failed")
             raise
         finally:
-            logger.info(f"_assign_and_get_completion finished for node: {self.id}")
+            self.logger.info(f"_assign_and_get_completion finished for node: {self.id}")
 
     async def _build_agency_chart(self) -> List:
-        logger = get_logger('Node')
-        logger.info(f"Building agency chart for task: {self.description}")
+        self.logger.info(f"Building agency chart for task: {self.description}")
         
         universe_agent = await self._create_universe_agent()
         
         assign_agents_chart = [universe_agent]
         assign_agents_agency = Agency(agency_chart=assign_agents_chart, shared_instructions="", session_id=self.context_info.context['session_id'])
         
-        logger.info("Starting completion generation")
+        self.logger.info("Starting completion generation")
         completion_gen = assign_agents_agency.get_completion_stream(message="AssignAgent most appropriate for the task.")
         
         try:
-            logger.info("Awaiting stream.list")
+            self.logger.info("Awaiting stream.list")
             result = await stream.list(completion_gen)
-            logger.info(f"Assign agents result: {result}")
+            self.logger.info(f"Assign agents result: {result}")
         except Exception as e:
-            logger.error(f"Error during stream.list: {str(e)}")
+            self.logger.error(f"Error during stream.list: {str(e)}")
             raise
         
         return await self._construct_agency_chart(universe_agent)
@@ -368,6 +362,6 @@ class Node(BaseModel, IRunnableContext):
             for agent in agent_group:
                 agency_chart.append([agency_chart[0], agent])
         
-        get_logger('Node').info(f"Agency Chart Built: {agency_chart}")
+        self.logger.info(f"Agency Chart Built: {agency_chart}")
         return agency_chart
 
