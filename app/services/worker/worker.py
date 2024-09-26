@@ -8,6 +8,11 @@ from app.utilities.logger import get_logger
 
 class Worker(IService):
     name = "worker"
+
+    async def initialize(self):
+        self.logger.info("Initializing Worker service")
+        # Add any initialization logic here
+        self.logger.info("Worker service initialized successfully")
     _instance = None
 
     def __init__(self, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: ServiceConfig, ):
