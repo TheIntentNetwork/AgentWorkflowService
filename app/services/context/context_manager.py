@@ -42,6 +42,11 @@ class ContextManager(IService):
         self.config = kwargs.get('config', {})
         self.service_name = name
 
+    async def initialize(self):
+        self.logger.info(f"Initializing {self.name}")
+        # Add any initialization logic here
+        self.logger.info(f"{self.name} initialized successfully")
+
     async def set_session_context(self, session_id, context_type, context_data):
         if session_id not in self.session_contexts:
             self.session_contexts[session_id] = {}
