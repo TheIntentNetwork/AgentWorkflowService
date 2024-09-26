@@ -55,6 +55,11 @@ def setup_logging():
 
 class CustomFormatter(ColoredFormatter):
     """A custom formatter for colored console output."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.last_message = None
+        self.repeat_count = 0
+
     def format(self, record):
         log_colors = {
             'DEBUG': Fore.CYAN,
@@ -67,11 +72,16 @@ class CustomFormatter(ColoredFormatter):
         log_level = f"{log_colors[record.levelname]}{record.levelname:<8}{Style.RESET_ALL}"
         message = f"{Fore.WHITE}{record.getMessage()}{Style.RESET_ALL}"
         
-        # Add a hash of the message to help identify duplicates
-        message_hash = hash(message)
-        
-        formatted_message = f"{log_level} - {log_label}: {message} [{message_hash}]\n"
-        return formatted_message
+        if message == self.last_message:
+            self.repeat_count += 1
+            return None
+        else:
+            formatted_message = f"{log_level} - {log_label}: {message}"
+            if self.repeat_count > 0:
+                formatted_message = f"Last message repeated {self.repeat_count} times\n{formatted_message}"
+            self.last_message = message
+            self.repeat_count = 0
+            return formatted_message
 
 def configure_logger(name):
     """Configure a logger with the given name and conditionally add CloudWatch logging based on the environment."""
@@ -81,7 +91,7 @@ def configure_logger(name):
 
     logger = logging.getLogger(name)
     if not logger.handlers:
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.INFO)  # Changed from DEBUG to INFO
 
         # Define a ColoredFormatter with colors for different parts of the log message
         custom_formatter = CustomFormatter(
@@ -101,28 +111,13 @@ def configure_logger(name):
 
         # File handler for local file logs
         file_handler = logging.FileHandler(f"logs/{name}.log")
-        file_handler.setFormatter(logging.Formatter("%(message)s"))
+        file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
         logger.addHandler(file_handler)
 
         # Stream handler for console output
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(custom_formatter)
         logger.addHandler(stream_handler)
-
-        # Add a filter to reduce duplicate log messages
-        class DuplicateFilter(logging.Filter):
-            def __init__(self, name=''):
-                self.records = set()
-
-            def filter(self, record):
-                key = (record.module, record.levelno, record.msg)
-                if key not in self.records:
-                    self.records.add(key)
-                    return True
-                return False
-
-        duplicate_filter = DuplicateFilter()
-        logger.addFilter(duplicate_filter)
         environment=os.getenv("NODE_ENV")
         try:            
             cloudwatch_handler = watchtower.CloudWatchLogHandler(
