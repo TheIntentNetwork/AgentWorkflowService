@@ -42,10 +42,10 @@ class UserContextManager(IService):
         self.logger.info(f"{self.__class__.__name__} initialized successfully")
         from app.services.cache.redis import RedisService
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
-        self.logger.info(f"Loading user context for user_id: {user_id}")
+        self.logger.info(f"Loading user context")
         context = {}
-        context['user_meta'] = await self.context_managers['user_meta'].fetch_data('get_user_meta', {'p_user_id': user_id})
-        context['forms'] = await self.context_managers['forms'].fetch_data('get_user_forms', {'p_user_id': user_id})
+        context['user_meta'] = await self.context_managers['user_meta'].fetch_data('get_user_meta', {})
+        context['forms'] = await self.context_managers['forms'].fetch_data('get_user_forms', {})
         
         self.logger.debug(f"Fetched user_meta: {len(context['user_meta'])} records")
         self.logger.debug(f"Fetched forms: {len(context['forms'])} records")
