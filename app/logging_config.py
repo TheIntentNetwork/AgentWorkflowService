@@ -63,14 +63,10 @@ class CustomFormatter(ColoredFormatter):
             'ERROR': Fore.RED,
             'CRITICAL': Fore.RED + Style.BRIGHT,
         }
-        log_label = (f"{log_colors[record.levelname]}{record.classname}."
-                     f"{record.funcName}{Style.RESET_ALL}")
+        log_label = f"{Fore.BLUE}{record.classname}.{record.funcName}{Style.RESET_ALL}"
         log_level = f"{log_colors[record.levelname]}{record.levelname}{Style.RESET_ALL}"
-        additional_info = (
-            f"{log_level} - {log_label}\n"
-            f"{Fore.YELLOW}Message:{Style.RESET_ALL} "
-            f"{log_colors[record.levelname]}{record.getMessage()}{Style.RESET_ALL}\n"
-        )
+        message = f"{Style.RESET_ALL}{record.getMessage()}"
+        additional_info = f"{log_level} - {log_label}: {message}\n"
         return additional_info
 
 def configure_logger(name):
