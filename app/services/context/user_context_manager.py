@@ -36,7 +36,7 @@ class UserContextManager(IService):
         self.logger.info(f"UserContextManager initialized successfully")
         self.logger.debug(f"UserContextManager context_managers: {self.context_managers}")
 
-    async def initialize(self):
+    async def initialize(self, user_id: str):
         self.logger.info(f"Initializing {self.__class__.__name__}")
         # Add any initialization logic here
         self.logger.info(f"{self.__class__.__name__} initialized successfully")
