@@ -52,6 +52,7 @@ class EventManager(IService):
             return
 
         self.logger.info("Initializing EventManager")
+        self.logger.debug(f"EventManager name: {self.name}, Kafka: {self.kafka}, Redis: {self.redis}")
         # Add any initialization logic here
         self.logger.info(f"EventManager initialized with name: {self.name}")
         self.logger.info("EventManager initialized successfully")
@@ -96,6 +97,7 @@ class EventManager(IService):
         Initializes the EventManager and subscribes to event topics.
         """
         self.logger.info("Subscribing to event topics")
+        self.logger.debug(f"Topics to subscribe: {topics}")
         self.logger.debug(f"Topics to subscribe: ['agency_action']")
         await self.subscribe_to_event_topics(["agency_action"])
         self.logger.info("EventManager started")
@@ -123,6 +125,7 @@ class EventManager(IService):
         for topic in topics:
             await self.kafka.subscribe(topic, self.queue, self.__event_listener)
             self.logger.info(f"Subscribed to topic: {topic}")
+            self.logger.debug(f"Subscription details: queue={self.queue}, callback={self.__event_listener}")
 
     async def unsubscribe(self, key: str, callback: callable, property_path: str = None):
         """
