@@ -69,6 +69,7 @@ class RedisService(IService):
                 self.logger.debug(f"Added subscription for channel {channel}")
                 return queue
             except Exception as e:
+                self.logger.error(f"Error creating index {index_name}: {str(e)}")
                 self.logger.error(f"Error subscribing to channel {channel}: {str(e)}")
                 raise
 
@@ -228,8 +229,10 @@ class RedisService(IService):
 
     async def async_search_index(self, query_data: str, vector_field: str, index: str, top_k: int, return_fields: Optional[List[str]] = None, filter_expression: Optional[FilterExpression] = None):
         index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", index + ".yaml")
+        self.logger.debug(f"Loading index schema from file: {index_schema_file}")
         index = AsyncSearchIndex.from_yaml(index_schema_file)
         index.connect(self.redis_url)
+        self.logger.debug(f"Connected to Redis URL: {self.redis_url} for index: {index}")
         query_embedding = self.model.embed(self.preprocess_text(query_data))
         #get_logger('RedisService').info(f"Query: {query_embedding}")
         
@@ -284,8 +287,10 @@ class RedisService(IService):
 
         # Create the index definition
         index_definition = IndexDefinition(prefix=[f"{index_name}:"], index_type=IndexType.HASH)
+        self.logger.debug(f"Creating index definition for {index_name} with prefix: {index_definition.prefix}")
 
         if not await self.index_exists(index_name):
+            self.logger.debug(f"Index {index_name} does not exist. Proceeding to create it.")
             try:
                 # Create the index
                 await self.client.ft(index_name).create_index(index_schema, definition=index_definition)
@@ -294,6 +299,7 @@ class RedisService(IService):
                 self.logger.error(f'Error creating index {index_name}: {str(e)}')
                 raise
         else:
+            self.logger.debug(f"Index {index_name} already exists. Skipping creation.")
             self.logger.info(f'Index {index_name} already exists')
 
         # Return an AsyncSearchIndex object (you might need to adjust this part)

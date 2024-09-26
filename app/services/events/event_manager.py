@@ -81,6 +81,7 @@ class EventManager(IService):
         while True:
             event = await self.queue.get()
             self.logger.info(f"Event received: {event}")
+            self.logger.debug(f"Event details: {event}")
             callback, data = event
             if callback:
                 await callback(data)
@@ -92,6 +93,7 @@ class EventManager(IService):
         Initializes the EventManager and subscribes to event topics.
         """
         self.logger.info("Subscribing to event topics")
+        self.logger.debug(f"Topics to subscribe: {topics}")
         await self.subscribe_to_event_topics(["agency_action"])
         self.logger.info("EventManager started")
 
@@ -208,6 +210,7 @@ class EventManager(IService):
         context = event.value.get('context')
         
         self.logger.info(f"Handling event: {event}")
+        self.logger.debug(f"Event action: {event.get('action')}, key: {event.get('key')}, context: {event.get('context')}")
         self.logger.debug(f"Action: {action}, Key: {key}, Context: {context}")
         
         if action == 'context_update':
