@@ -116,8 +116,7 @@ def create_app():
         ]
 
         for name, service_class, kwargs in services:
-            service_registry.register(name, service_class, **kwargs)
-            service = service_registry.get(name)
+            service = service_registry.register(name, service_class, **kwargs)
             await service.initialize()
             logger.info(f"{name.capitalize()} service initialized")
 
