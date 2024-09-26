@@ -33,6 +33,16 @@ class EventManager(IService):
         """
         self.name = name
         self.service_registry = service_registry
+        self.logger = get_logger(self.name)
+
+    async def initialize(self):
+        """
+        Initializes the EventManager.
+        """
+        self.logger.info("Initializing EventManager")
+        # Add any initialization logic here
+        self.logger.info("EventManager initialized successfully")
+        self.service_registry = service_registry
         self.logger = get_logger(name)
         self.logger.info("EventManager __init__ method called")
         self.logger.info(f"EventManager initialized with name: {name}")
