@@ -143,9 +143,9 @@ class KafkaService(IService):
         while self.consumer_thread_running:
             if self.consumer is not None:
                 try:
-                    #self.logger.debug("Polling for messages")
+                    self.logger.debug("Polling for messages from Kafka")
                     messages = self.consumer.poll(timeout_ms=1000)
-                    #self.logger.debug(f"Messages: {messages}")
+                    self.logger.debug(f"Polled messages: {messages}")
                     if messages:
                         self.logger.info(f"Received {len(messages)} message(s)")
                         for topic_partition, records in messages.items():
