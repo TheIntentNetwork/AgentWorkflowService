@@ -1,9 +1,9 @@
 """Module for configuring logging in the AgentWorkflowService application."""
 import os
 import uuid
-import boto3
 import logging
 import watchtower
+
 from logging.handlers import RotatingFileHandler
 
 from colorama import Fore, Style

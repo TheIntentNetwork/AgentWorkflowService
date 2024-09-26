@@ -172,7 +172,18 @@ def create_app():
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        return PlainTextResponse(str(exc), status_code=HTTP_422_UNPROCESSABLE_ENTITY)
+        return JSONResponse(
+            status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": exc.errors(), "body": exc.body}
+        )
+
+    @app.exception_handler(Exception)
+    async def general_exception_handler(request: Request, exc: Exception):
+        logger.error(f"Unhandled exception: {str(exc)}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"}
+        )
 
     @app.get("/profile")
     async def get_profile():
