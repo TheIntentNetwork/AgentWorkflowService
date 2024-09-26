@@ -32,6 +32,18 @@ class KafkaService(IService):
         self.bootstrap_servers = kwargs.get("bootstrap_servers", "localhost:9092")
         self.topics = set() if kwargs.get("topics") is None else set(kwargs.get("topics"))
         self.consumer_group = kwargs.get("consumer_group", "default")
+        self.consumer = None
+        self.producer = None
+        self.subscribed_topics = set()
+        self.subscriptions = {}
+
+        self.event_loop = asyncio.get_event_loop()
+        self.consumer_thread = None
+        self.logger = get_logger("KafkaService")
+        self.logger.info("KafkaService initialized")
+
+    async def initialize(self):
+        self.logger.info("Initializing KafkaService")
         self.consumer = KafkaConsumer(
             bootstrap_servers=self.bootstrap_servers,
             group_id=self.consumer_group,
@@ -42,13 +54,7 @@ class KafkaService(IService):
             bootstrap_servers=self.bootstrap_servers,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
-        self.subscribed_topics = set()
-        self.subscriptions = {}
-
-        self.event_loop = asyncio.get_event_loop()
-        self.consumer_thread = None
-        self.logger = get_logger("KafkaService")
-        self.logger.info("KafkaService initialized")
+        self.logger.info("KafkaService initialized successfully")
 
     async def _subscribe_to_topic(self, topic):
         if not isinstance(topic, str) or not topic.strip():
