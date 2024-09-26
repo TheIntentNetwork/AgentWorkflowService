@@ -28,23 +28,42 @@ class DBContextManager(IService):
         self.logger.debug(f"Available queries: {json.dumps(self.queries, indent=2)}")
 
     async def get_context(self, key: str) -> Dict[str, Any]:
-        return await self.db.fetch_one(self.queries['get_by_id'], {'id': key}, self.service_name)
+        try:
+            return await self.db.fetch_one(self.queries['get_by_id'], {'id': key}, self.service_name)
+        except Exception as e:
+            self.logger.error(f"Error fetching context for key {key}: {str(e)}")
+            raise
 
     async def save_context(self, key: str, context: Dict[str, Any]) -> None:
         self.logger.debug(f"Attempting to save context for key: {key}")
-        self.logger.debug(f"Available queries: {json.dumps(self.queries, indent=2)}")
         
         if 'insert' not in self.queries:
-            self.logger.error(f"Insert query not found for service: {self.service_name}")
-            raise ValueError(f"Insert query not found for service: {self.service_name}")
+            error_msg = f"Insert query not found for service: {self.service_name}"
+            self.logger.error(error_msg)
+            raise ValueError(error_msg)
         
-        await self.db.execute(self.queries['insert'], {**context, 'id': key}, self.service_name)
+        try:
+            await self.db.execute(self.queries['insert'], {**context, 'id': key}, self.service_name)
+            self.logger.info(f"Context saved successfully for key: {key}")
+        except Exception as e:
+            self.logger.error(f"Error saving context for key {key}: {str(e)}")
+            raise
 
     async def update_context(self, key: str, context: Dict[str, Any]) -> None:
-        await self.db.execute(self.queries['update'], {**context, 'id': key}, self.service_name)
+        try:
+            await self.db.execute(self.queries['update'], {**context, 'id': key}, self.service_name)
+            self.logger.info(f"Context updated successfully for key: {key}")
+        except Exception as e:
+            self.logger.error(f"Error updating context for key {key}: {str(e)}")
+            raise
 
     async def delete_context(self, key: str) -> None:
-        await self.db.execute(self.queries['delete'], {'id': key}, self.service_name)
+        try:
+            await self.db.execute(self.queries['delete'], {'id': key}, self.service_name)
+            self.logger.info(f"Context deleted successfully for key: {key}")
+        except Exception as e:
+            self.logger.error(f"Error deleting context for key {key}: {str(e)}")
+            raise
 
     async def fetch_data(self, query_name: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         query = self.queries.get(query_name)

@@ -50,19 +50,27 @@ class RedisService(IService):
         self.logger.info("RedisService initialized successfully")
 
     async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
-        try:
-            if queue is None:
-                queue = asyncio.Queue()
-            if channel not in self.subscriptions:
-                self.subscriptions[channel] = []
-                await self.pubsub.subscribe(channel)
+        if not isinstance(channel, str):
+            raise ValueError("Channel must be a string")
+        
+        if queue is None:
+            queue = asyncio.Queue()
+        
+        async with self.client.pipeline(transaction=True) as pipe:
+            try:
+                if channel not in self.subscriptions:
+                    self.subscriptions[channel] = []
+                    await pipe.subscribe(channel)
+                
+                self.subscriptions[channel].append((queue, callback, filter_func))
+                await pipe.execute()
+                
                 self.logger.info(f"Subscribed to channel: {channel}")
-            self.subscriptions[channel].append((queue, callback, filter_func))
-            self.logger.debug(f"Added subscription for channel {channel}")
-            return queue
-        except Exception as e:
-            self.logger.error(f"Error subscribing to channel {channel}: {str(e)}")
-            raise
+                self.logger.debug(f"Added subscription for channel {channel}")
+                return queue
+            except Exception as e:
+                self.logger.error(f"Error subscribing to channel {channel}: {str(e)}")
+                raise
 
     async def unsubscribe(self, channel, queue):
         try:
