@@ -17,31 +17,23 @@ class UserContextManager(IService):
         self.logger = get_logger(name)
         self.logger.info(f"Initializing UserContextManager")
         self.logger.debug(f"UserContextManager config: {config}")
-        self.context_managers = {}
-        self.service_registry = service_registry
-        self.config = config
-
-        self.logger.info(f"UserContextManager initialized successfully")
-
-    async def initialize(self):
-        await self._initialize_node_context()
-        if hasattr(self.config, '__dict__'):
-            config_dict = self.config.__dict__
-        elif isinstance(self.config, dict):
-            config_dict = self.config
-        else:
-            self.logger.warning(f"Config is not a dictionary or ServiceConfig object. Type: {type(self.config)}")
-            return
-
-        for context_name, context_config in config_dict.items():
-            if context_name not in self.context_managers:
-                db_context_manager = self.service_registry.get(context_name)
-                if not db_context_manager:
-                    db_context_manager = DBContextManager(context_name, self.service_registry, context_config)
-                    self.service_registry.register(context_name, DBContextManager, config=context_config)
-                self.context_managers[context_name] = db_context_manager
-                self.logger.debug(f"Registered {context_name} in ServiceRegistry")
+        self.context_managers = {
+            'user_context': DBContextManager('user_context', service_registry, config['user_context']),
+            'user_meta': DBContextManager('user_meta', service_registry, config['user_meta']),
+            'forms': DBContextManager('forms', service_registry, config['forms']),
+            'courses': DBContextManager('courses', service_registry, config['courses']),
+            'purchases': DBContextManager('purchases', service_registry, config['purchases']),
+            'subscriptions': DBContextManager('subscriptions', service_registry, config['subscriptions']),
+            'notes': DBContextManager('notes', service_registry, config['notes']),
+            'events': DBContextManager('events', service_registry, config['events']),
+            'videos': DBContextManager('videos', service_registry, config['videos']),
+        }
+        #Load an instance of the DBContextManager for each context manager in the config
+        for name, manager in self.context_managers.items():
+            service_registry.register(name, DBContextManager, config=manager.config)
+            self.logger.debug(f"Registered {name} in ServiceRegistry")
         
+        self.logger.info(f"UserContextManager initialized successfully")
         self.logger.debug(f"UserContextManager context_managers: {self.context_managers}")
 
     async def load_user_context(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -50,16 +42,8 @@ class UserContextManager(IService):
         user_id = task_data['context']['user_context']['user_id']
         self.logger.info(f"Loading user context for user_id: {user_id}")
         context = {}
-        if 'user_meta' in self.context_managers:
-            context['user_meta']: DBContextManager = await self.context_managers['user_meta'].fetch_data('get_user_meta', {'p_user_id': user_id})
-        else:
-            self.logger.warning(f"'user_meta' not found in context_managers for user_id: {user_id}")
-            context['user_meta'] = []
-        if 'forms' in self.context_managers:
-            context['forms'] = await self.context_managers['forms'].fetch_data('get_user_forms', {'p_user_id': user_id})
-        else:
-            self.logger.warning(f"'forms' not found in context_managers for user_id: {user_id}")
-            context['forms'] = []
+        context['user_meta'] = await self.context_managers['user_meta'].fetch_data('get_user_meta', {'p_user_id': user_id})
+        context['forms'] = await self.context_managers['forms'].fetch_data('get_user_forms', {'p_user_id': user_id})
         
         self.logger.debug(f"Fetched user_meta: {len(context['user_meta'])} records")
         self.logger.debug(f"Fetched forms: {len(context['forms'])} records")
