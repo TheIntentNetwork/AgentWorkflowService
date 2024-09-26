@@ -7,15 +7,10 @@ def get_logger(name):
 def configure_logger(name):
     logger = base_configure_logger(name)
 
-    # Create a CloudWatch handler if AWS credentials are available
-    if 'AWS_ACCESS_KEY_ID' in os.environ and 'AWS_SECRET_ACCESS_KEY' in os.environ:
+    # Create a CloudWatch handler if AWS credentials and region are available
+    if all(key in os.environ for key in ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION']):
         try:
-            # Get the AWS region from an environment variable
-            aws_region = os.environ.get('AWS_REGION')
-            if not aws_region:
-                logger.warning("AWS_REGION not set. CloudWatch logging disabled.")
-                return logger
-
+            aws_region = os.environ['AWS_REGION']
             import watchtower
             import boto3
             cloudwatch_client = boto3.client('logs', region_name=aws_region)
@@ -26,6 +21,7 @@ def configure_logger(name):
         except Exception as e:
             logger.error(f"Failed to initialize CloudWatch handler: {str(e)}")
     else:
-        logger.warning("AWS credentials not found. CloudWatch logging disabled.")
+        missing_vars = [var for var in ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION'] if var not in os.environ]
+        logger.warning(f"CloudWatch logging disabled. Missing environment variables: {', '.join(missing_vars)}")
 
     return logger
