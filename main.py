@@ -112,7 +112,8 @@ def create_app():
             ("context_manager", ContextManager, {"config": settings.service_config.get('context_managers', {})}),
             ("session_manager", SessionManager, {}),
             ("event_manager", EventManager, {}),
-            ("dependency_service", DependencyService, {})
+            ("dependency_service", DependencyService, {}),
+            ("user_context", UserContextManager, {"config": settings.service_config.get('user_context', {})})
         ]
 
         for name, service_class, kwargs in services:
@@ -120,8 +121,9 @@ def create_app():
             await service.initialize()
             logger.info(f"{name.capitalize()} service initialized")
 
-        context_managers = ContextManagerFactory.create_context_managers(service_registry)
-        logger.info("Context managers created")
+        user_context_manager = service_registry.get("user_context")
+        await user_context_manager.initialize()
+        logger.info("User context manager initialized")
 
     @app.on_event("shutdown")
     async def shutdown_event():

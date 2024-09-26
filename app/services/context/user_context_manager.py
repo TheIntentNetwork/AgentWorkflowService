@@ -18,12 +18,21 @@ class UserContextManager(IService):
         self.logger.info(f"Initializing UserContextManager")
         self.logger.debug(f"UserContextManager config: {config}")
         self.context_managers = {}
-        for context_name, context_config in config.items():
-            self.context_managers[context_name] = DBContextManager(context_name, service_registry, context_config)
-            service_registry.register(context_name, DBContextManager, config=context_config)
-            self.logger.debug(f"Registered {context_name} in ServiceRegistry")
+        self.service_registry = service_registry
+        self.config = config
         
         self.logger.info(f"UserContextManager initialized successfully")
+
+    async def initialize(self):
+        for context_name, context_config in self.config.items():
+            if context_name not in self.context_managers:
+                db_context_manager = self.service_registry.get(context_name)
+                if not db_context_manager:
+                    db_context_manager = DBContextManager(context_name, self.service_registry, context_config)
+                    self.service_registry.register(context_name, DBContextManager, config=context_config)
+                self.context_managers[context_name] = db_context_manager
+                self.logger.debug(f"Registered {context_name} in ServiceRegistry")
+        
         self.logger.debug(f"UserContextManager context_managers: {self.context_managers}")
 
     async def load_user_context(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
