@@ -21,6 +21,10 @@ class UserContextManager(IService):
         
     
     async def initialize(self):
+        if hasattr(self, '_initialized') and self._initialized:
+            self.logger.info("UserContextManager is already initialized.")
+            return
+
         self.logger.info(f"Initializing UserContextManager")
         service_registry = self.service_registry
         config = self.config
@@ -40,6 +44,7 @@ class UserContextManager(IService):
             service_registry.register(name, DBContextManager, config=manager.config)
             self.logger.debug(f"Registered {name} in ServiceRegistry")
         
+        self._initialized = True
         self.logger.info(f"UserContextManager initialized successfully")
         self.logger.debug(f"UserContextManager context_managers: {self.context_managers}")
         

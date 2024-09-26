@@ -43,6 +43,10 @@ class KafkaService(IService):
         self.logger.info("KafkaService initialized")
 
     async def _initialize_service(self):
+        if hasattr(self, '_initialized') and self._initialized:
+            self.logger.info("KafkaService is already initialized.")
+            return
+
         self.logger.info("Initializing KafkaService")
         self.consumer = KafkaConsumer(
             bootstrap_servers=self.bootstrap_servers,
@@ -54,6 +58,7 @@ class KafkaService(IService):
             bootstrap_servers=self.bootstrap_servers,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
+        self._initialized = True
         self.logger.info("KafkaService initialized successfully")
 
     async def _subscribe_to_topic(self, topic):

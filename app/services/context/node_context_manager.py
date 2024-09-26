@@ -12,10 +12,15 @@ class NodeContextManager(DBContextManager):
     _instance = None
     
     def __init__(self, name: str, service_registry: 'ServiceRegistry', config: ServiceConfig):
+        if hasattr(self, '_initialized') and self._initialized:
+            self.logger.info("NodeContextManager is already initialized.")
+            return
+
         super().__init__(name, service_registry, config)
         from app.services.cache.redis import RedisService
         self.redis_service: RedisService = service_registry.get('redis')
         self.logger = get_logger(name)
+        self._initialized = True
 
     async def load_node_context(self, node: Union[Node, Dict[str, Any]]):
         node_id = node.id if isinstance(node, Node) else node.get('id')

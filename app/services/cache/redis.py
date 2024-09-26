@@ -39,6 +39,10 @@ class RedisService(IService):
         self.model = None
 
     async def _initialize_service(self):
+        if hasattr(self, '_initialized') and self._initialized:
+            self.logger.info("RedisService is already initialized.")
+            return
+
         self.logger = get_logger("RedisService")
         self.logger.debug("Initializing RedisService")
         self.client = AsyncRedis.from_url(self.redis_url)
@@ -46,7 +50,7 @@ class RedisService(IService):
         self.listener_thread = threading.Thread(target=self.run_listener, daemon=True)
         self.listener_thread.start()
         self.model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
-        self.initialized = True
+        self._initialized = True
         self.logger.debug("RedisService initialized successfully")
 
     async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):

@@ -47,6 +47,10 @@ class EventManager(IService):
         """
         Initializes the EventManager.
         """
+        if hasattr(self, '_initialized') and self._initialized:
+            self.logger.info("EventManager is already initialized.")
+            return
+
         self.logger.info("Initializing EventManager")
         # Add any initialization logic here
         self.logger.info(f"EventManager initialized with name: {self.name}")
@@ -54,8 +58,7 @@ class EventManager(IService):
         self.notified = set()
         self.start_consumer_thread()
         self.logger.info("EventManager initialization completed")
-        self.notified = set()
-        self.start_consumer_thread()
+        self._initialized = True
 
     def start_consumer_thread(self):
         """
