@@ -41,6 +41,7 @@ class KafkaService(IService):
         self.consumer_thread = None
         self.logger = get_logger("KafkaService")
         self.logger.info("KafkaService initialized")
+        self.logger.debug(f"KafkaService bootstrap_servers: {self.bootstrap_servers}, consumer_group: {self.consumer_group}")
 
     async def _initialize_service(self):
         if hasattr(self, '_initialized') and self._initialized:
@@ -70,6 +71,7 @@ class KafkaService(IService):
             valid_topics = list(self.subscribed_topics)
             self.consumer.subscribe(valid_topics)
             self.logger.info(f"Subscribed to Kafka topics: {valid_topics}")
+            self.logger.debug(f"Kafka consumer details: {self.consumer}")
             self.logger.debug(f"Kafka consumer group: {self.consumer_group}, bootstrap servers: {self.bootstrap_servers}")
             
             if self.consumer_thread is None or not self.consumer_thread.is_alive():
@@ -153,6 +155,7 @@ class KafkaService(IService):
                                 topic = record.topic
                                 value = record.value
                                 self.logger.info(f"Processing message from topic: {topic}")
+                                self.logger.debug(f"Message details: {record.value}")
                                 self.logger.debug(f"Message value: {value}")
                                 self.logger.debug(f"Message value: {value}")
                                 if topic in self.subscriptions:
