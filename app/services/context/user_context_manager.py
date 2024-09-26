@@ -61,7 +61,7 @@ class UserContextManager(IService):
         self.logger.info(f"Loading user context for user_id: {user_id}")
         context = {}
         if 'user_meta' in self.context_managers:
-            context['user_meta'] = await self.context_managers['user_meta'].fetch_data('get_user_meta', {'p_user_id': user_id})
+            context['user_meta']: DBContextManager = await self.context_managers['user_meta'].fetch_data('get_user_meta', {'p_user_id': user_id})
         else:
             self.logger.warning(f"'user_meta' not found in context_managers for user_id: {user_id}")
             context['user_meta'] = []
