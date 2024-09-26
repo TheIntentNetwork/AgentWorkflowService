@@ -40,14 +40,14 @@ class RedisService(IService):
 
     async def initialize(self):
         self.logger = get_logger("RedisService")
-        self.logger.info("Initializing RedisService")
+        self.logger.debug("Initializing RedisService")
         self.client = AsyncRedis.from_url(self.redis_url)
         self.pubsub = self.client.pubsub()
         self.listener_thread = threading.Thread(target=self.run_listener, daemon=True)
         self.listener_thread.start()
         self.model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
         self.initialized = True
-        self.logger.info("RedisService initialized successfully")
+        self.logger.debug("RedisService initialized successfully")
 
     async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
         if not isinstance(channel, str):
@@ -65,7 +65,7 @@ class RedisService(IService):
                 self.subscriptions[channel].append((queue, callback, filter_func))
                 await pipe.execute()
                 
-                self.logger.info(f"Subscribed to channel: {channel}")
+                self.logger.debug(f"Subscribed to channel: {channel}")
                 self.logger.debug(f"Added subscription for channel {channel}")
                 return queue
             except Exception as e:
@@ -80,7 +80,7 @@ class RedisService(IService):
                 if not self.subscriptions[channel]:
                     del self.subscriptions[channel]
                     await self.pubsub.unsubscribe(channel)
-                    self.logger.info(f"Unsubscribed from channel: {channel}")
+                    self.logger.debug(f"Unsubscribed from channel: {channel}")
         except Exception as e:
             self.logger.error(f"Error unsubscribing from channel {channel}: {str(e)}")
             raise
