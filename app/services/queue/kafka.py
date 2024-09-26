@@ -42,7 +42,7 @@ class KafkaService(IService):
         self.logger = get_logger("KafkaService")
         self.logger.info("KafkaService initialized")
 
-    async def initialize(self):
+    async def _initialize_service(self):
         self.logger.info("Initializing KafkaService")
         self.consumer = KafkaConsumer(
             bootstrap_servers=self.bootstrap_servers,

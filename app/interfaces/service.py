@@ -7,6 +7,24 @@ class IService(ABC):
     _instance = None
     _lock = threading.Lock()
 
+    _instance = None
+
+    @classmethod
+    async def initialize(cls, name: str, service_registry=None, config=None, **kwargs):
+        """
+        Ensures only one instance of the service is created.
+        """
+        if cls._instance is None:
+            cls._instance = cls(name, service_registry, config=config, **kwargs)
+            await cls._instance._initialize_service()
+        return cls._instance
+
+    async def _initialize_service(self):
+        """
+        Placeholder for service-specific initialization logic.
+        """
+        pass
+
     @classmethod
     def instance(cls, name: str, service_registry=None, config=None, **kwargs):
         from app.utilities.logger import get_logger

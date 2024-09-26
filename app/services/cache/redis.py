@@ -38,7 +38,7 @@ class RedisService(IService):
         self.listener_thread = None
         self.model = None
 
-    async def initialize(self):
+    async def _initialize_service(self):
         self.logger = get_logger("RedisService")
         self.logger.debug("Initializing RedisService")
         self.client = AsyncRedis.from_url(self.redis_url)

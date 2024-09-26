@@ -43,7 +43,7 @@ class EventManager(IService):
         self.tasks = []
         self.running = False
 
-    async def initialize(self):
+    async def _initialize_service(self):
         """
         Initializes the EventManager.
         """
