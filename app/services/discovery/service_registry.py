@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 from app.interfaces import IService
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +32,17 @@ class ServiceRegistry:
         return cls._instance
 
     def register(self, name: str, service_class: type, config: Optional[Dict[str, Any]] = None, **kwargs):
-        if name not in self.services:
-            self.services[name] = service_class(name=name, service_registry=self, config=config, **kwargs)
-        return self.services[name]
         logger.info(f"Registering service: {name}")
-        if issubclass(service, IService):
-            instance = service.instance(name=name, service_registry=self, config=config, **kwargs)
-
-            self.services[name] = instance
-            logger.info(f"Registered service: {name}")
-            logger.debug(f"Instance details: {instance.__dict__}")
-            logger.info(f"Service {name} registration complete")
+        if name not in self.services:
+            if issubclass(service_class, IService):
+                instance = service_class.instance(name=name, service_registry=self, config=config, **kwargs)
+                self.services[name] = instance
+                logger.info(f"Registered service: {name}")
+                logger.debug(f"Instance details: {instance.__dict__}")
+            else:
+                self.services[name] = service_class(name=name, service_registry=self, config=config, **kwargs)
+        logger.info(f"Service {name} registration complete")
+        return self.services[name]
 
     def get(self, name: str):
         if name not in self.services:
@@ -73,7 +74,7 @@ class ServiceRegistry:
                 self.register(name, DependencyService)
             elif name == 'user_context':
                 from app.services.context.user_context_manager import UserContextManager
-                self.register(name, UserContextManager, config=config)
+                self.register(name, UserContextManager)
         return self.services[name]
 
     def __iter__(self):
