@@ -13,8 +13,18 @@ def configure_logger(name):
             aws_region = os.environ['AWS_REGION']
             import watchtower
             import boto3
+            import re
+            
+            # Create a valid log stream name
+            valid_name = re.sub(r'[^a-zA-Z0-9_\-/]', '_', name)
+            log_stream_name = f"{valid_name}_{os.getpid()}"
+            
             cloudwatch_client = boto3.client('logs', region_name=aws_region)
-            cloudwatch_handler = watchtower.CloudWatchLogHandler(log_group=f"{name}_logs", boto3_client=cloudwatch_client)
+            cloudwatch_handler = watchtower.CloudWatchLogHandler(
+                log_group=f"{valid_name}_logs",
+                stream_name=log_stream_name,
+                boto3_client=cloudwatch_client
+            )
             cloudwatch_handler.setFormatter(logger.handlers[0].formatter)  # Use the same formatter as the existing handler
             logger.addHandler(cloudwatch_handler)
             logger.info("CloudWatch logging enabled.")
