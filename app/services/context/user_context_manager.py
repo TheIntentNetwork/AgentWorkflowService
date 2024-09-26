@@ -32,6 +32,8 @@ class UserContextManager(IService):
         self.context_managers['node_context'] = node_context_manager
         self.logger.debug(f"Registered 'node_context' via NodeContextManager")
 
+        # Initialize node context asynchronously in the initialize method
+
         await self._initialize_node_context()
 
         self.logger.info(f"UserContextManager initialized successfully")
