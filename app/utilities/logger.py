@@ -10,7 +10,7 @@ def configure_logger(name):
     # Create a CloudWatch handler
     try:
         # Get the AWS region from an environment variable
-        aws_region = os.environ.get('AWS_REGION', 'us-east-1')  # Default to 'us-east-1' if not set
+        aws_region = os.environ.get('AWS_REGION', 'us-west-1')  # Default to 'us-west-1' if not set
         import watchtower
         cloudwatch_handler = watchtower.CloudWatchLogHandler(log_group=f"{name}_logs", region_name=aws_region)
         cloudwatch_handler.setFormatter(logger.handlers[0].formatter)  # Use the same formatter as the existing handler
