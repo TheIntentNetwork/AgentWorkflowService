@@ -36,7 +36,10 @@ class UserContextManager(IService):
         self.logger.info(f"UserContextManager initialized successfully")
         self.logger.debug(f"UserContextManager context_managers: {self.context_managers}")
 
-    async def load_user_context(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def initialize(self):
+        self.logger.info(f"Initializing {self.__class__.__name__}")
+        # Add any initialization logic here
+        self.logger.info(f"{self.__class__.__name__} initialized successfully")
         from app.services.cache.redis import RedisService
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
         user_id = task_data['context']['user_context']['user_id']
