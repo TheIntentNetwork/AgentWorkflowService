@@ -1,3 +1,5 @@
+from typing import Any, Dict, Optional
+from app.config.service_config import ServiceConfig
 from app.services.cache.redis import RedisService
 from app.interfaces.service import IService
 from app.services import ServiceRegistry
@@ -8,7 +10,7 @@ class Worker(IService):
     name = "worker"
     _instance = None
 
-    def __init__(self, name: str, service_registry: ServiceRegistry, worker_uuid: str, **kwargs):
+    def __init__(self, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: ServiceConfig, ):
         super().__init__()
         self.name = name
         self.worker_uuid = worker_uuid
@@ -17,9 +19,9 @@ class Worker(IService):
         self.logger = get_logger(name)
 
     @classmethod
-    def instance(cls, name: str, service_registry: ServiceRegistry, **kwargs):
+    def instance(cls, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: Optional[Dict[str, Any]] = None):
         if cls._instance is None:
-            cls._instance = cls(name=name, service_registry=service_registry, **kwargs)
+            cls._instance = cls(name=name, service_registry=service_registry, worker_uuid=worker_uuid, config=config)
         return cls._instance
 
     def __str__(self):

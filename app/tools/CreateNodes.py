@@ -30,8 +30,7 @@ class NodePrototype(BaseModel, extra='allow'):
     context_info: 'ContextInfo'
 
 class CreateNodes(BaseTool):
-    """    
-
+    """
     Rule: You must RetrieveContext, first.
     Create a node based on the node examples you were providedand initialize the node with the following steps:
     1. RetrieveContext first to research examples of nodes based on the description and high level actions.
@@ -50,7 +49,7 @@ class CreateNodes(BaseTool):
         return ['node_context']
     
     async def run(self) -> str:
-        
+        self._logger.info("Creating nodes")
         from app.services.discovery import ServiceRegistry
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
         kafka_service: KafkaService = ServiceRegistry.instance().get('kafka')
@@ -59,14 +58,21 @@ class CreateNodes(BaseTool):
             node.id = str(uuid4())
             node.status = "pending"
             node.session_id = self.caller_agent.session_id
+            node.context_info.context['session_id'] = self.caller_agent.session_id
+            # Check if context_info and context attributes exist
+            if hasattr(self.caller_agent, 'context_info') and hasattr(self.caller_agent.context_info, 'context'):
+                # Use .get() method with a default value to avoid KeyError
+                user_context = self.caller_agent.context_info.context.get('user_context')
+                if user_context is not None:
+                    node.context_info.context['user_context'] = user_context
             
-        payload = { "session_id": self.caller_agent.session_id, "nodes": [node.model_dump_json() for node in self.nodes] }
+        payload = {
+            "session_id": self.caller_agent.session_id,
+            "nodes": [node.model_dump() for node in self.nodes]
+        }
         
         for node in self.nodes:
-            await redis_service.save_context(f"node:{node.id}", node.model_dump_json())
-            kafka_service.send_message_sync("agency_action", {"key": f"node:{node.id}", "action": "initialize"})
+            await redis_service.save_context(f"node:{node.id}", node.model_dump())
+            kafka_service.send_message_sync("agency_action", {"key": f"node:{node.id}", "action": "initialize", "node": node.model_dump(), "context": self.caller_agent.context_info.context})
 
-        return payload
-        
-        
-
+        return json.dumps(payload)

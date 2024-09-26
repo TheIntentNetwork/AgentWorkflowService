@@ -4,6 +4,7 @@ import threading
 import json
 import traceback
 from typing import Callable, Optional, Union
+from uuid import uuid4
 from kafka.consumer.fetcher import ConsumerRecord
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -63,7 +64,6 @@ class EventManager(IService):
         self.logger.info("Setting up event loop and tasks")
         asyncio.set_event_loop(self.event_loop)
         self.event_loop.create_task(self.start())
-        self.event_loop.create_task(self.process_queue())
         self.logger.info("Event loop and tasks set up")
     
     async def process_queue(self):
@@ -222,13 +222,34 @@ class EventManager(IService):
             'task': Task,
             'node': Node
         }
+        context = None
+        if message.get('action') == "create_run":
+            uuid = uuid4()
+            action = "execute"
+            if message.get('key') == "task":
+                key = f"task:{uuid}"
+                context = message.get('task')
+            elif message.get('key') == "node":
+                key = f"node:{uuid}"
+                context = message.get('node')
+            else:
+                key = f"task:{uuid}"
+                context = message.get('task')
+        else:
+            action = message.get('action')
+            key = message.get('key')
+            context = message.get('context')
+            
+            if message.get('node'):
+                context = message.get('node')
+            
+            if message.get('task'):
+                context = message.get('task')
         
-        key: str = message.get('key')
-        action = message.get('action')
-        context = message.get('context')
+        
         
         self.logger.info(f"Received event: {message}")
-        self.logger.info(f"Key: {key}, Action: {action}, Context: {context}")
+        self.logger.info(f"Key: {key}, Action: {action}, Context: {context or 'No context provided'}")
         
         try:
             type_class: Union[Task, Node] = event_mapping[key.split(':')[0]]
@@ -337,3 +358,8 @@ class EventManager(IService):
             update = await queue.get()
             await callback(json.loads(update))
             queue.task_done()
+
+    async def publish_update(self, channel: str, update_event: dict):
+        redis: RedisService = self.service_registry.get('redis')
+        await redis.publish(channel, json.dumps(update_event))
+        self.logger.info(f"Published update event to channel: {channel}")

@@ -1,6 +1,7 @@
 from .CreateNodes import CreateNodes
 from .ReadPageText import ReadPageText
 from .ReadPDF import ReadPDF
+from .browsing import AnalyzeContent, ClickElement, GoBack, ReadURL, Scroll, SelectDropdown, SendKeys, SolveCaptcha
 from .SearchTool import SearchTool
 from .GetIntake import GetIntake
 from .SaveOutput import SaveOutput

@@ -1,5 +1,4 @@
 from enum import Enum
-
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 class NodeStatus(str, Enum):
@@ -23,3 +22,4 @@ class NodeStatus(str, Enum):
     monitoring = "monitoring"
     completed = "completed"
     failed = "failed"
+    no_action = "no-action"

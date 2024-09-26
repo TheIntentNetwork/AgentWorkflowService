@@ -1,6 +1,7 @@
 # app/tools/load_user_context.py
 from pydantic import Field
 from typing import Dict, Optional
+from app.services.discovery.service_registry import ServiceRegistry
 from app.tools.base_tool import BaseTool
 from app.services.context.user_context_manager import UserContextManager
 from app.utilities.logger import get_logger
@@ -34,7 +35,10 @@ class GetUserContext(BaseTool):
         if not self.query:
             return f"Query is required to get user context for user_id: {self.user_id}, session_id: {self.session_id}"
         
-        user_context_manager = UserContextManager()
+        
+        service_registry = ServiceRegistry.instance()
+        
+        user_context_manager = UserContextManager(name="user_context_manager", service_registry=service_registry)
         context = await user_context_manager.query_user_context(self.user_id, self.session_id, self.query)
         
         return f"User context for user_id: {self.user_id}, session_id: {self.session_id} is: {context}"

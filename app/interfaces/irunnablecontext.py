@@ -11,5 +11,4 @@ class IRunnableContext(ABC):
     description: str
     context_info: ContextInfo
     dependencies: List[Dependency]
-    
     status: NodeStatus

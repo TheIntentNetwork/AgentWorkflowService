@@ -12,7 +12,7 @@ class ContextInfo(BaseModel, from_attributes=True):
     outcome_description: Optional[str] = Field(None, description="The outcome description of the context object.")
     feedback: Optional[List[str]] = Field(None, description="The feedback of the context object.")
     output: Optional[dict] = Field({}, description="The output structure of the context object.")
-    context: Optional[Dict[str, Any]] = Field(None, description="The context of the object.")
+    context: Optional[Dict[str, Any]] = Field({}, description="The context of the object.")
     
     async def query_vector_database_for_workflows(self, metadata: Dict[str, str] = None):
         embeddings = self.redis_service.generate_embeddings({"metadata": metadata}, ["metadata"])

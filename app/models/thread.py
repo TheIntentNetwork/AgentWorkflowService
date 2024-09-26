@@ -4,6 +4,7 @@ import re
 import time
 import inspect
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import traceback
 from typing import Any, List, Union, Optional, AsyncGenerator, Dict
 from openai import BadRequestError
 from openai.types.beta import AssistantToolChoice
@@ -334,7 +335,7 @@ class Thread:
             get_logger('Thread').debug(f"Function completed with output: {output}")
             return output
         except Exception as e:
-            error_message = f"Error: {e}"
+            error_message = f"Error: {e}" + traceback.format_exc()
             get_logger('Thread').error(error_message)
             if "For further information visit" in error_message:
                 error_message = error_message.split("For further information visit")[0]

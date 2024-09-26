@@ -1,0 +1,52 @@
+version: '0.1.0'
+
+index:
+  name: user_forms_index
+  prefix: user_forms
+  storage_type: hash
+
+fields:
+- name: id
+  type: tag
+  attrs:
+    weight: 1.0
+- name: user_id
+  type: tag
+  attrs:
+    weight: 1.0
+- name: title
+  type: text
+  attrs:
+    weight: 1.0
+- name: type
+  type: tag
+  attrs:
+    weight: 1.0
+- name: status
+  type: tag
+  attrs:
+    weight: 1.0
+- name: decrypted_form
+  type: text
+  attrs:
+    weight: 1.0
+- name: created_by
+  type: tag
+  attrs:
+    weight: 1.0
+- name: created_at
+  type: numeric
+  attrs:
+    weight: 1.0
+- name: updated_at
+  type: numeric
+  attrs:
+    weight: 1.0
+- name: metadata_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: FLOAT32
+    dims: 384
+    distance_metric: COSINE
+    ef_construction: 6

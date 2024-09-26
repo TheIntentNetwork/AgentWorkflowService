@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from attr import dataclass
@@ -8,13 +9,10 @@ import uuid
 from app.factories.agent_factory import AgentFactory
 from aiostream import stream
 from app.models.agency import Agency
-
-if TYPE_CHECKING:
-    from app.services.context.context_manager import ContextManager
-    from app.services.events.event_manager import EventManager
-    from app.services.orchestrators.lifecycle.Execution import ExecutionService
+from app.services.cache.redis import RedisService
 from app.interfaces.irunnablecontext import IRunnableContext
 from app.models.Dependency import Dependency
+from app.services.context.context_manager import ContextManager
 from app.utilities.logger import get_logger
 from app.models.ContextInfo import ContextInfo
 from app.models.NodeStatus import NodeStatus
@@ -23,6 +21,7 @@ from app.services.discovery.service_registry import ServiceRegistry
 from app.utilities.context_update import ContextUpdate, context_update_manager
 
 class Node(BaseModel, IRunnableContext):
+    # Basic attributes
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="The ID of the node.", init=False, init_var=False, type=pydantic.SkipValidation())
     name: str = Field(..., description="The name of the node.")
     type: Literal['step', 'workflow', 'model', 'lifecycle', 'goal'] = Field(..., description="The type of the node.", init=False, init_var=False)
@@ -32,15 +31,7 @@ class Node(BaseModel, IRunnableContext):
     dependencies: List[Dependency] = Field(default_factory=list, description="The dependencies of the node.")
     collection: List['Node'] = Field(None, description="The collection of nodes.")
     status: NodeStatus = Field(default=NodeStatus.created, description="The status of the node.", exclude=True)
-    _context_manager: Optional['ContextManager'] = PrivateAttr(default=None)
-    _event_manager: Optional['EventManager'] = PrivateAttr(default=None)
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        service_registry = ServiceRegistry.instance()
-        self._context_manager = service_registry.get('context_manager')
-        self._event_manager = service_registry.get('event_manager')
-    
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         extra=Extra.allow,
@@ -48,32 +39,178 @@ class Node(BaseModel, IRunnableContext):
         from_attributes=True  # Corrected from orm_mode to from_attributes
     )
 
-    async def next(self):
+    # Initialization and setup
+    def __init__(self, **data):
         """
-        Method to be implemented by subclasses to continue any additional operations.
+        Initialize the Node instance.
+        
+        This method sets up the node with its basic attributes and initiates the
+        subscription to relevant Redis patterns.
         """
-        pass
+        super().__init__(**data)
+        service_registry = ServiceRegistry.instance()
+        from app.interfaces.idependencyservice import IDependencyService
+        self._context_manager: ContextManager = service_registry.get('context_manager')
+        self._event_manager = service_registry.get('event_manager')
+        self._dependency_service: IDependencyService = service_registry.get('dependency_service')
+        self.id = data.get('id', str(uuid.uuid4()))
     
     @classmethod
     async def create(cls, **node_data):
         from app.services.discovery.service_registry import ServiceRegistry
+        from app.services.context.context_manager import ContextManager
+        service_registry = ServiceRegistry.instance()
+        context_manager: ContextManager = service_registry.get('context_manager')
+        session_id = node_data.get('session_id')
+        
+        # Merge contexts
+        merged_context = await context_manager.get_merged_context(session_id)
+        
+        # Ensure context_info is a ContextInfo object
+        if 'context_info' not in node_data or not isinstance(node_data['context_info'], ContextInfo):
+            node_data['context_info'] = ContextInfo()
+
+        # Ensure context is a dictionary
+        if not hasattr(node_data['context_info'], 'context') or not isinstance(node_data['context_info'].context, dict):
+            node_data['context_info'].context = {}
+        
+        # Update the context
+        node_data['context_info'].context.update(merged_context)
+        
         if node_data.get('type') == 'lifecycle':
             from app.models.LifecycleNode import LifecycleNode
             node = LifecycleNode(**node_data)
         else:
             node = cls(**node_data)
         
-        service_registry = ServiceRegistry.instance()
-        node._context_manager = service_registry.get('context_manager')
-        node._event_manager = service_registry.get('event_manager')
+        node.context_info.context.update(merged_context)
+        node.context_info.context['session_id'] = node.session_id
+        await context_manager.save_context(f'node:{node.id}', node)
         
         if not node._context_manager:
             raise Exception("Failed to get ContextManager")
         if not node._event_manager:
             raise Exception("Failed to get EventManager")
         
+        await node.initialize()
+        
         return node
+    
+    @classmethod
+    async def handle(cls, key, action, context):
+        from app.services.discovery.service_registry import ServiceRegistry
+        from app.services.context.context_manager import ContextManager
+        service_registry = ServiceRegistry.instance()
+        context_manager: ContextManager = service_registry.get('context_manager')
+        
+        if action == 'initialize':
+            node_data = context
+            if node_data.get('type') == 'lifecycle':
+                from app.models.LifecycleNode import LifecycleNode
+                node = LifecycleNode(**node_data)
+            else:
+                node = cls(**node_data)
+        else:
+            node = await context_manager.get_context(key)
+        
+        # Merge contexts
+        merged_context = await context_manager.get_merged_context(context['session_id'])
+        
+        # Ensure context_info is a ContextInfo object
+        if 'context_info' not in node_data:
+            node_data['context_info'] = ContextInfo()
+        else:
+            node_data['context_info'] = ContextInfo(**node_data['context_info'])
 
+        # Ensure context is a dictionary
+        if not hasattr(node_data['context_info'], 'context') or not isinstance(node_data['context_info'].context, dict):
+            node_data['context_info'].context = {}
+        
+        # Update the context
+        node_data['context_info'].context.update(merged_context)
+        
+        node.context_info.context.update(merged_context)
+        node.context_info.context['session_id'] = node.session_id
+        await context_manager.save_context(f'node:{node.id}', node.dict())
+        
+        if not node._context_manager:
+            raise Exception("Failed to get ContextManager")
+        if not node._event_manager:
+            raise Exception("Failed to get EventManager")
+        
+        await node.initialize()
+        if node.collection and len(node.collection) > 0:
+            for child in node.collection:
+                await child.initialize()
+                
+        await context_manager.save_context(f'node:{node.id}', node.dict())
+        
+        await node.execute()
+        
+    
+    async def initialize(self) -> None:
+        await self._context_manager.update_property(self, "status", NodeStatus.created)
+        await self._dependency_service.discover_and_register_dependencies(self)
+    
+    async def execute(self):
+        """Execute the node's main functionality."""
+        logger = get_logger('Node')
+        logger.info(f"Executing node: {self.id}")
+        
+        await self.PreExecute()
+        await self.Executing()
+        
+        # Execute child nodes
+        await self.execute_child_nodes()
+        
+        await self.Executed()
+    
+    async def PreExecute(self):
+        logger = get_logger('Node')
+        await self._context_manager.update_property(self, "status", NodeStatus.pre_execute)
+        logger.info(f"Node {self.id} PreExecute")
+    
+    async def Executing(self):
+        logger = get_logger('Node')
+        logger.info(f"Node {self.id} executing")
+        await self._context_manager.update_property(self, "status", NodeStatus.executing)
+        await self._assign_and_get_completion()
+        
+    async def Executed(self):
+        logger = get_logger('Node')
+        await self._context_manager.update_property(self, "status", NodeStatus.completed)
+        logger.info(f"Node {self.id} Executed: status 'completed'")
+        redis: RedisService = ServiceRegistry.instance().get("redis")
+        # Look up subscribers to this node
+        subscribers = await redis.client.lrange(f"node:{self.id}:subscribers", 0, -1)
+        for subscriber in subscribers:
+            # Send the output to the subscriber
+            await redis.client.publish(subscriber, f"node:{self.id}:event->dependency_met")
+
+    async def execute_child_nodes(self):
+        logger = get_logger('Node')
+        if self.collection:
+            logger.info(f"Executing child nodes for node: {self.id}")
+            for child_node in self.collection:
+                await child_node.execute()
+            logger.info(f"Finished executing child nodes for node: {self.id}")
+        else:
+            logger.debug(f"No child nodes to execute for node: {self.id}")
+
+    async def clear_dependencies(self) -> None:
+        await self._dependency_service.clear_dependencies(self)
+
+    async def get_dependencies(self) -> None:
+        await self._dependency_service.discover_and_register_dependencies(self)
+
+    async def on_dependency_update(self, data: dict):
+        """Handle updates to the node's dependencies."""
+        # Handle updates to the node's dependencies using the DependencyService
+        await self._dependency_service.on_dependency_update(self, data)
+        if await self._dependency_service.dependencies_met(self):
+            await self.execute()
+
+    # Context and property management
     async def update_property(self, path: str, value: Any, handler_type: str = 'string'):
         """
         Update a specific property within the context data using a hierarchical path.
@@ -85,114 +222,6 @@ class Node(BaseModel, IRunnableContext):
         """
         handler: ContextUpdate = context_update_manager.get_handler(handler_type)
         handler.update(self, path, value)
-        
-    async def get_dependencies(self) -> None:
-        """
-        Get the dependencies for the node by searching for outputs that match the needs within the node's input description.
-        """
-        #payload_object_type = self.node.context_info.item.get('type', '')
-        
-        instructions = f"""
-        Search for outputs that will produce context that match the needs within this node's input_description using the RetrieveOutputs tool.
-        Return a list of the context_keys that will be used to produce the output based on the outcome_description.
-        This incoming context will be used to produce the output based on the outcome_description.
-        
-        Once you've found outputs that match the specific requirements either as identifiers within the description or specific mentions of necessary context, register them as dependencies using the RegisterDependencies tool.
-        
-        Rule:
-        - You must RegisterDependencies for each required context necessary for you to complete the action_summary and produce the output_description.
-        - Do not RegisterDependencies for a outputs of the current node.
-        - You are not responsible for the outcome of the current task, you are only responsible for creating the dependencies necessary for the task to be completed. Which means you may not have any tools or capabilities to complete the task.
-        - Focus on creating dependencies only.
-        """
-        
-        tools = ['RetrieveOutputs', 'RegisterDependencies']
-        universe_agent = await AgentFactory.from_name(name="UniverseAgent", session_id=self.context_info.context.get('session_id'), tools=tools, instructions=instructions, context_info=self.context_info, self_assign=False)
-        agency_chart = [universe_agent]
-        response = await self.perform_agency_completion(agency_chart, instructions, self.context_info.context.get('session_id'))
-
-        dependencies: List[Dependency] = universe_agent.context_info.context['dependencies']
-        get_logger('Node').info(f"Summarized Incoming Context: {dependencies}")
-        for dependency in dependencies:
-            await self.add_dependency(dependency)
-        
-        #for dependency in dependencies:
-        #    context_key = dependency.context_key
-        #    property_name = dependency.property_name
-        #    await redis.subscribe_to_property_updates(context_key, property_name)
-
-        #await kafka.send_message('dependencies_update', {
-        #    "id": self.node.id,
-        #    "session_id": self.node.context_info.context.get('session_id'),
-        #    "dependencies": json.dumps([dependency.model_dump_json() for dependency in dependencies])
-        #})
-    
-    async def initialize(self) -> None:
-        await self._context_manager.update_property(self, "status", NodeStatus.created)
-    
-    async def add_dependency(self, dependency: Dependency) -> None:
-        from app.services.discovery.service_registry import ServiceRegistry
-        from app.services.cache.redis import RedisService
-        # Add this node as a subscriber of the output of the dependency node
-        redis: RedisService = ServiceRegistry.instance().get("redis")
-        
-        if dependency not in self.dependencies:
-            get_logger('Node').info(f"Adding dependency: {dependency}")
-            redis.client.sadd(f"{dependency.context_key}:subscribers", {'key': self.id, 'property': dependency.property_name})
-            self.dependencies.append(dependency)
-        
-        if self.dependencies.count() > 0:
-            await self._context_manager.update_property(self, "status", NodeStatus.resolving_dependencies)
-            await self._event_manager.subscribe(f"node:{self.id}", self.on_dependency_update, "output")
-    
-    async def on_dependency_update(self, message: dict) -> None:
-        output = message.get('data', {})
-        self.context_info.output.update(output)
-
-    async def clear_dependencies(self) -> None:
-        for dependency in self.dependencies:
-            await self._event_manager.unsubscribe(f"node:{dependency.context_key}:output", self.on_dependency_update)
-        self.dependencies.clear()
-        self.context_info.context["dependencies"] = {}
-
-    async def resolve_dependencies(self) -> None:
-        await self._context_manager.update_property(self, "status", NodeStatus.resolving_dependencies)
-        await self.get_dependencies()
-        if self.dependencies:
-            await self._context_manager.update_property(self, "status", NodeStatus.DEPENDENCIES_MET)
-            for dependency in self.dependencies:
-                await self._event_manager.subscribe(f"node:{dependency.context_key}", self.on_dependency_update, "output")
-        else:
-            await self._context_manager.save_context(self)
-
-    async def dependencies_met(self) -> bool:
-        return all(dependency.is_met() for dependency in self.dependencies)
-
-    async def on_dependencies_met(self) -> None:
-        if await self.dependencies_met():
-            await self._context_manager.update_property(self, "status", NodeStatus.dependencies_resolved)
-            await self.next()
-    
-
-    async def execute(self):
-        await self.PreExecute()
-        await self.Executing()
-        await self.Executed()
-
-    async def Executing(self):
-        logger = get_logger('BaseNode')
-        logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
-        log_message = f"Node {self.id} executing"
-        logger.info(log_message)
-        await self._context_manager.update_property(self, "status", NodeStatus.executing)
-        await self._assign_and_get_completion()
-    
-    async def PreExecute(self):
-        logger = get_logger('BaseNode')
-        logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
-        await self._context_manager.update_property(f"node:{self.id}", "status", NodeStatus.pre_execute)
-        log_message = f"Node {self.id} PreExecute"
-        logger.info(log_message)
         
     async def perform_agency_completion(self, agency_chart: list, instructions: str, session_id: str, description: str = "") -> dict:
         """
@@ -210,12 +239,8 @@ class Node(BaseModel, IRunnableContext):
         
         agency = Agency(agency_chart=agency_chart, shared_instructions=description, session_id=session_id)
         response = await agency.get_completion(instructions)
-        return response  
+        return response
     
-    
-    # Removed set_context, register_outputs, and get_dependencies methods
-    # These functionalities will now be handled by lifecycle nodes
-
     async def _assign_and_get_completion(self) -> None:
         """
         Execute the node by building the agency chart and performing agency completion.
@@ -336,66 +361,3 @@ class Node(BaseModel, IRunnableContext):
         get_logger('Node').info(f"Agency Chart Built: {agency_chart}")
         return agency_chart
 
-    async def Executed(self):
-        logger = get_logger('Node')
-        logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
-        log_message = f"Node {self.id} Executed: status 'completed'"
-        logger.info(log_message)
-
-    async def publish_updates(self) -> None:
-        """
-        Publish the node's outputs to any subscribers.
-        """
-        logger = get_logger('Node')
-        logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
-        
-        # Notify subscribers about the entire node update
-        await self._event_manager.notify_subscribers(f"node:{self.id}", self.model_dump(), "Node.publish_updates")
-        
-        logger.info(f"Published updates for node {self.id}")
-
-        # Clear notifications after publishing all updates
-        await self._event_manager.clear_notifications()
-
-        return self.model_dump_json()
-
-    
-    @classmethod
-    async def handle(cls, key: str, action: str, context: Optional[dict] = None):
-        """
-        Handle events such as initialize and execute.
-
-        Args:
-            key (str): The key identifying the node.
-            action (str): The action to perform (e.g., 'initialize', 'execute').
-            context (dict): The context to use for the action.
-        """
-        from app.services.discovery.service_registry import ServiceRegistry
-        context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
-        
-        node_data = await context_manager.get_context(key)
-        if isinstance(node_data, dict):
-            node_data = json.dumps(node_data)
-        node_data: dict = json.loads(node_data)
-        get_logger('Node').info(f"Node data: {node_data}")
-        node_data['status'] = node_data.get('status', NodeStatus.created)
-        
-        if 'type' in node_data:
-            if node_data['type'] == 'lifecycle':
-                from app.models.LifecycleNode import LifecycleNode
-                node_instance: Node = await LifecycleNode.create(**node_data)
-                await node_instance.init_task
-            else:
-                node_instance: Node = await cls.create(**node_data)
-        
-        logger = get_logger('BaseNode')
-        logger = logging.LoggerAdapter(logger, {'classname': cls.__name__})
-        logger.info(f"Node {node_instance.id} handling action: {action}")
-        logger.info(f"Current Node: {node_instance}")
-        
-        if action == 'initialize':
-            await node_instance.initialize()
-        elif action == 'execute':
-            await node_instance.execute()
-        else:
-            raise ValueError(f"Unhandled action: {action}")

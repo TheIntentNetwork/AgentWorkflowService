@@ -1,0 +1,52 @@
+version: '0.1.0'
+
+index:
+  name: node_context
+  prefix: node_context
+  storage_type: hash
+
+fields:
+- name: key
+  type: tag
+  attrs:
+    weight: 1.0
+- name: id
+  type: tag
+  attrs:
+    weight: 1.0
+- name: name
+  type: tag
+  attrs:
+    weight: 1.0
+- name: type
+  type: tag
+  attrs:
+    weight: 1.0
+- name: description
+  type: text
+  attrs:
+    weight: 1.0
+- name: data
+  type: text
+  attrs:
+    weight: 1.0
+- name: context_info
+  type: text
+  attrs:
+    weight: 1.0
+- name: metadata_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: float32
+    dims: 384
+    distance_metric: cosine
+    ef_construction: 6
+- name: description_vector
+  type: vector
+  attrs:
+    algorithm: HNSW
+    data_type: float32
+    dims: 384
+    distance_metric: cosine
+    ef_construction: 6

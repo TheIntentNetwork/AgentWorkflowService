@@ -69,9 +69,6 @@ class WriteConditionReportSection(BaseTool):
     user_id: str = Field(..., description="The user id.")
     delta: Union[Report, ConditionSection] = Field(..., description="Updates, changes, or new sections to add to the report as a whole or for a particular ConditionSection with a specific condition.")
     
-    class Config:
-        orm_mode = True
-    
     async def run(self) -> str:
         get_logger(self.__class__.__name__).info(f"Writing report section for user {self.user_id}")      
         return await self.upsert_report(self.user_id, self.delta)

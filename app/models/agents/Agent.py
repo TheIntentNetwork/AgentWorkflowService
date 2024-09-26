@@ -622,7 +622,8 @@ class Agent:
             tool_class = getattr(tools_module, tool_name, None)
 
             if tool_class is None:
-                raise Exception(f"Tool {tool_name} not found in tools module.")
+                self.tools.remove(tool_name)
+                return None
             
             if callable(tool_class) and issubclass(tool_class, BaseTool):
                 self.tools.remove(tool_class.__name__)

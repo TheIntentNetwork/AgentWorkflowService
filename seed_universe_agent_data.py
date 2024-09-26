@@ -88,7 +88,7 @@ def get_universe_agent_seed_data():
             Simple Task Description Example:
             Find 3 examples of research on the web for the customer's condition.
             
-            1.) Based on the step/task context e.g. description, retrieve 'agent' context based on the input_description, action_summary, and outcome_description combining the information within your query.
+            1.) Based on the step/task context e.g. description, retrieve 'agent' context based on the input_description, action_summary, and outcome_description combining the information within your query. You must use the RetrieveContext tool to retrieve the context prior to assigning agents to ensure you are only assigning agents and tools that are known.
             2.) If the task or step is complex and is more than should be handled by two agents, then assign the UniverseAgent.
             3.) If the UniverseAgent is assigned, provide the CreateNodes tool to the UniverseAgent to create a new set of nodes that will meet the goals of the task/step context.
             
@@ -125,58 +125,12 @@ def get_universe_agent_seed_data():
         ),
         Agent(
             name="UniverseAgent",
-            instructions="""            
-            CreateNodes Example:
-                CreateNodes([{
-                    "name": "GetCustomerIntake",
-                    "description": "Collect the intake for our customer",
-                    "type": "step",
-                    "tools": ["GetIntake", "SetContext"],
-                    "context_info": {
-                        "input_description": "UserContext will be used to understand the conditions for the customer.",
-
-                    "action_summary": "Gather the intake form to attain the list of conditions. For each condition, generate a report with information from the intake.",
-                    "outcome_description": "At the end of this step, you will have a list of condition reports for the customer from their intake forms.",
-                    "feedback": ["UniverseAgent should assign the IntakeAgent for gathering intake forms specifically."],
-
-                    "output": {
-                        "condition_reports": [{"condition_name": "{condition_name}", "condition_report": "{condition_report}", "user_id": "{user_id}"}]
-                    },
-
-                    "context": {
-                        "user_id": "{user_id}",
-                        "user_context": "{user_context}",
-
-                        "user_intake": "{user_intake}",
-                        "goals": ["Collect relevant intake form", "Organize the form into sections", "Save the final outputs"]
-                    }}]
-                )
-            )
-            The object types for the context_info tool are:
-                input_description: String
-                outcome_description: String
-                output: Dictionary
-                context: Dictionary
-            SetContext parameters example:  
-                context_info=ContextInfo(
-                    input_description="UserContext will be used to understand the conditions for the customer.",
-                    outcome_description="At the end of this step, you will have a list of condition reports for the customer from their intake forms.",
-                    output={"condition_reports": [{"condition_name": "{condition_name}", "condition_report": "{condition_report}", "user_id": "{user_id}"}]},
-                    context={"user_id": "{user_id}", "user_context": "{user_context}", "user_intake": "{user_intake}", "goals": ["Collect relevant intake form", "Organize the form into sections", "Save the final outputs"]}
-                )
-            
+            instructions="""
             Goal:
             - Create one or more new nodes that meet the goals of the task/step context. You should look to include as many nodes as necessary to complete the task/step but closely model your nodes after the examples provided.
             
             Your process is as follows:
-            1.) Call RetrieveContext: Use the RetrieveContext tool to retrieve the context for the nodes creation. First start with searching for a workflow that closely matches the requirements of the task/step.
-            - If the request is for lifecycle nodes, you will first search for "model" type nodes and find any models that match your goals.
-            - If a model is found, you will replicate the nodes within this model very closely and only incorporating relevent feedback.
-            - If a model is not found, you will search for a step that closely matches the requirements of the task/step.
-            - If a step is found, you will replicate this step very closely and only incorporating relevent feedback.
-            - If a step is not found, you will create a new set of nodes that will meet the goals of the task/step context using your best judgement and following the rules listed below.
-            2.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that will meet the goals of our workflow/task/step.
-
+            1.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that will meet the goals of our workflow/task/step based on the model example provided.
             
             Rules:
             - You must create a new node that meets the goals of the workflow/task/step context to complete your task using the CreateNodes tool.
@@ -185,10 +139,10 @@ def get_universe_agent_seed_data():
             - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.
             """,
             description="The UniverseAgent, renowned as the ultimate planner with comprehensive knowledge of all human history and creation, excels in transforming user requests into meticulously detailed workflow created from nodes. It specializes in deconstructing tasks into their most fundamental elements, ensuring clarity and thoroughness in execution, thus enhancing the effectiveness and efficiency of task completion and ensuring the highest quality of delivery from the agents involved.",
-            tools=["RetrieveContext", "CreateNodes"],
+            tools=["CreateNodes"],
             context_info=ContextInfo(
                 input_description="UserContext will be used to understand the conditions for the customer.",
-                action_summary="We will research the customer conditions by creating nodes and breaking down tasks into the smallest possible units to create a consistent set of nodes that will generate quality research for our customer for their VA Claim.",
+                action_summary="We will research the customer conditions by creating nodes based on the model example provided.",
                 outcome_description="A new set of nodes that meets the goals of the step context.",
                 feedback=[
                     "If you forget to call the CreateNodes tool, you have failed your task",
@@ -201,91 +155,6 @@ def get_universe_agent_seed_data():
                     "CoreContext such as session_id and user_context should be populated into the context field of context_info for created nodes. The system will error is we do not include this information within any new node context.",
                     "Only assign tools that are known. Do not make up tool names.",
                     "Create lifecycle methods consistent with our lifecycle model. Ensure that each node has the necessary lifecycle methods (e.g., initialize, execute, complete) as defined in the CreateReportLifecycle model.",
-                ],
-                output={},
-            ),
-        ),
-        Agent(
-            name="UniverseAgent",
-            instructions="""            
-            CreateNodes Example:
-                CreateNodes([{
-                    "name": "SetContext",
-                    "description": "Set the context for the report creation process",
-                    "type": "lifecycle",
-                    "tools": ["RetrieveContext", "SetContext"],
-                    "context_info": {
-                        "input_description": "Initial customer data and report requirements.",
-                        "action_summary": "Initialize the report creation context with necessary information.",
-                        "outcome_description": "A fully set up context for the report creation process.",
-                        "feedback": ["Ensure all required initial data is properly set in the context."],
-                        "output": {},
-                        "context": {"user_id": "{user_id}", "user_context": "{user_context}", "user_intake": "{user_intake}", "goals": ["Collect relevant intake form", "Organize the form into sections", "Save the final outputs"]}
-                    }
-                },
-                {
-                    "name": "Register Outputs",
-                    "description": "Register the expected outputs for the report",
-                    "type": "lifecycle",
-                    "tools": ["RetrieveContext", "SetContext"],
-                    "context_info": {
-                        "input_description": "Report requirements and structure.",
-                        "action_summary": "Define and register all expected outputs for the report.",
-                        "outcome_description": "A complete list of registered outputs for the report.",
-                        "feedback": ["Verify that all necessary report sections are included in the registered outputs."],
-                        "output": {},
-                        "context": {"user_id": "{user_id}", "user_context": "{user_context}", "user_intake": "{user_intake}", "goals": ["Collect relevant intake form", "Organize the form into sections", "Save the final outputs"]}
-                    }
-                },
-                {
-                    "name": "Register Dependencies",
-                    "description": "Register the dependencies for the report creation process",
-                    "type": "lifecycle",
-                    "tools": ["RetrieveContext", "SetContext"],
-                    "context_info": {
-                        "input_description": "Required resources and data sources for the report.",
-                        "action_summary": "Identify and register all dependencies needed for creating the report.",
-                        "outcome_description": "A comprehensive list of registered dependencies for the report creation process.",
-                        "feedback": ["Ensure all necessary data sources and tools are included in the dependencies."],
-                        "output": {},
-                        "context": {"user_id": "{user_id}", "user_context": "{user_context}", "user_intake": "{user_intake}", "goals": ["Collect relevant intake form", "Organize the form into sections", "Save the final outputs"]}
-                    }
-                }])
-                )
-            )
-            
-            Goal:
-            - Ensure that the necessary lifecycle nodes are created to support your goals.
-            
-            Your process is as follows:
-            1.) Call RetrieveContext: Use the RetrieveContext tool to retrieve the context for the nodes creation. First start with searching for a 'model' that closely matches the requirements of the task/step.
-            - If a model is found, you will replicate the nodes within this model very closely and only incorporating relevent feedback.
-            2.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that will meet the goals of our workflow/task/step.
-
-            
-            Rules:
-            - You must create lifecycle nodes from the context to complete future tasks using the CreateNodes tool.
-            - If you forget to call the CreateNodes tool, you have failed your task.
-            - Only assign tools that are known. Do not make up tool names.
-            - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.
-            """,
-            description="The UniverseAgent, renowned as the ultimate planner with comprehensive knowledge of all human history and creation, excels in transforming user requests into meticulously detailed workflow created from nodes. It specializes in deconstructing tasks into their most fundamental elements, ensuring clarity and thoroughness in execution, thus enhancing the effectiveness and efficiency of task completion and ensuring the highest quality of delivery from the agents involved.",
-            tools=["RetrieveContext", "CreateNodes"],
-            context_info=ContextInfo(
-                input_description="Goals found within the context of the request",
-                action_summary="Find the 'model' using RetrieveContext that best matches the goals assigned to you.",
-                outcome_description="A new set of nodes that will manage the requests that are similar to your goals.",
-                feedback=[
-                    "If you forget to call the CreateNodes tool, you have failed your task",
-                    "For situations where the step requires multiple steps to collect information for a list of conditions, you should create a new set of nodes that will assign a single agent to each step.",
-                    "Do not create nodes that are specific to steps for the UniverseAgent. Nodes should only be created for other agents.",
-                    "If a step is too complex, the UniverseAgent should break this step down into smaller steps and assign them to other agents.",
-                    "You should closely follow the examples provided without making significant changes to the nodes unless specific feedback provides information that changes can be helpful.",
-                    "Do not add dependencies to nodes.",
-                    "The UniverseAgent should always populate known context into any created nodes based on the current task context which includes the task context and user_context",
-                    "CoreContext such as session_id and user_context should be populated into the context field of context_info for created nodes. The system will error is we do not include this information within any new node context.",
-                    "Only assign tools that are known. Do not make up tool names.",
-                    "Create lifecycle methods consistent with our lifecycle model. Ensure that each node has the necessary lifecycle methods (e.g., set_context, register_outputs, register_dependencies) as defined in the CreateReportLifecycle model.",
                 ],
                 output={},
             ),

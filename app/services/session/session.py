@@ -66,20 +66,6 @@ class SessionManager(IService):
         await self.kafka.send_message('session_start', session.id)
 
         return session
-
-    async def add_context(self, session_id: str, user_id: str):
-        if session_id not in self.sessions:
-            raise KeyError("Session not found.")
-
-        user_context_manager = UserContextManager()
-        await user_context_manager.load_user_context(user_id, session_id)
-
-        session_context = self.sessions.get(session_id, None)
-        if session_context:
-            session_context.contexts.append(f"user_context:{session_id}")
-            await self.redis.hset('sessions', session_id, session_context.to_dict())
-        else:
-            raise KeyError("Session context not found.")
     
     def get_session(self, session_id: str):
         # return self.sessions.get(session_id)  # Removed direct task management within sessions

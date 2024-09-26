@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 import time
+import traceback
 import uuid
 from contextlib import asynccontextmanager
 import gc
@@ -20,6 +21,7 @@ import tracemalloc
 from memory_profiler import memory_usage
 
 from app.services import ServiceRegistry
+from app.services.context.context_manager import ContextManager
 from app.services.worker.worker import Worker
 from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
@@ -27,7 +29,11 @@ from app.services.cache.redis import RedisService
 from app.services.session.session import SessionManager
 from app.services.lifecycle.lifecycle_manager import LifecycleManager
 from app.utilities import get_logger, llm_client
+from app.config.settings import settings
 from app.utilities.llm_client import set_openai_key
+from app.services.dependencies.dependency_service import DependencyService
+from app.services.context.context_manager_factory import ContextManagerFactory
+from app.services.context.user_context_manager import UserContextManager
 
 sys.dont_write_bytecode = True
 load_dotenv()
@@ -51,6 +57,11 @@ MONITORED_OBJECT_TYPES: List[Dict[str, str]] = [
     {"name": "Agency", "module": "app.models.agency.agency"},
     {"name": "Agent", "module": "app.models.agents.Agent"},
     {"name": "Task", "module": "app.models.task"},
+    {"name": "Node", "module": "app.models.Node"},
+    {"name": "LifecycleNode", "module": "app.models.LifecycleNode"},
+    {"name": "Goal", "module": "app.models.Goal"},
+    {"name": "DependencyService", "module": "app.services.dependencies.dependency_service"},
+    
 ]
 
 def create_app():
@@ -77,39 +88,34 @@ def create_app():
         global profiler
         
         try:
-            if os.getenv("PROFILE") == "true":
+            if settings.PROFILE:
                 logger.info("Starting application with profiling enabled")
                 profiler = Profiler()
                 profiler.start()
             
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            logger.info("OpenAI API Key: " + openai_api_key)
-            set_openai_key(openai_api_key)
+            set_openai_key(settings.OPENAI_API_KEY)
             worker_uuid = str(uuid.uuid4())
-            bootstrap_servers = os.getenv("BOOTSTRAP_SERVERS").split(",")
-            topics = os.getenv("TOPICS").split(",")
-            consumer_group = os.getenv("CONSUMER_GROUP")
-            redis_url = os.getenv("REDIS_URL")
-            service_registry.register("kafka", KafkaService, bootstrap_servers=bootstrap_servers, topics=topics, consumer_group=consumer_group)
-            service_registry.register("redis", RedisService, redis_url=redis_url)
+            
+            # Register services
+            service_registry.register("kafka", KafkaService, bootstrap_servers=settings.BOOTSTRAP_SERVERS.split(","), topics=settings.service_config.get('TOPICS', []), consumer_group=settings.CONSUMER_GROUP)
+            service_registry.register("redis", RedisService, redis_url=settings.REDIS_URL)
             service_registry.register("worker", Worker, worker_uuid=worker_uuid)
+            service_registry.register("context_manager", ContextManager, config=settings.service_config.get('context_managers', {}))
+            
+            get_logger("main").info("Creating context managers")
+            context_managers = ContextManagerFactory.create_context_managers(service_registry)
+            get_logger("main").info("Context managers created")
+            
             service_registry.register("session_manager", SessionManager)
             service_registry.register("event_manager", EventManager)
-            from app.services.context.context_manager import ContextManager
-            service_registry.register("context_manager", ContextManager)
-            from app.services.orchestrators.lifecycle.Execution import ExecutionService
-            service_registry.register("execution_service", ExecutionService)
-            service_registry.register("lifecycle_manager", LifecycleManager)
+            service_registry.register("dependency_service", DependencyService)
 
             # Initialize services that require async initialization
             worker_service: Worker = service_registry.get("worker")
-            worker_service.join()
-
-            lifecycle_manager: LifecycleManager = service_registry.get("lifecycle_manager")
-            await lifecycle_manager.initialize()
+            await worker_service.join()
             
-        except KeyboardInterrupt as e:
-            logger.error(f"Failed to start the application: {e}")
+        except Exception as e:
+            logger.error(f"Failed to start the application: {e}", traceback.format_exc())
             await shutdown_event()
 
     @app.on_event("shutdown")
@@ -297,9 +303,3 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="debug", reload=True, loop="asyncio", env_file=".env")
-
-    if profiler:
-        profiler.stop()
-        with open("profile_results.html", "w") as f:
-            f.write(profiler.output_html())
-        logger.info("Profile results saved to profile_results.html")

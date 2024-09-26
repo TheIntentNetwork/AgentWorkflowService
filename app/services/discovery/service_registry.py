@@ -1,3 +1,4 @@
+from typing import Any, Dict, Optional
 from app.interfaces import IService
 import logging
 
@@ -20,16 +21,17 @@ class ServiceRegistry:
             logger.debug("Using existing instance of ServiceRegistry")
         return cls._instance
 
-    def register(self, name: str, service: any, **kwargs):
+    def register(self, name: str, service: any, config: Optional[Dict[str, Any]] = None, **kwargs):
         logger.info(f"Registering service: {name}")
         if issubclass(service, IService):
-            instance = service.instance(name=name, service_registry=self, **kwargs)
+            instance = service.instance(name=name, service_registry=self, config=config, **kwargs)
+
             self.services[name] = instance
             logger.info(f"Registered service: {name}")
             logger.debug(f"Instance details: {instance.__dict__}")
             logger.info(f"Service {name} registration complete")
 
-    def get(self, name: str):
+    def get(self, name: str, config: Optional[Dict[str, Any]] = None):
         if name not in self.services:
             if name == 'redis':
                 from app.services.cache.redis import RedisService
@@ -52,9 +54,12 @@ class ServiceRegistry:
             elif name == 'session_manager':
                 from app.services.session.session import SessionManager
                 self.register(name, SessionManager)
-            else:
-                logger.error(f"Service '{name}' not found in ServiceRegistry.")
-                raise KeyError(f"Service '{name}' not found in ServiceRegistry.")
+            elif name == 'dependency_service':
+                from app.services.dependencies.dependency_service import DependencyService
+                self.register(name, DependencyService)
+            elif name == 'user_context':
+                from app.services.context.user_context_manager import UserContextManager
+                self.register(name, UserContextManager, config=config)
         return self.services[name]
 
     def __iter__(self):

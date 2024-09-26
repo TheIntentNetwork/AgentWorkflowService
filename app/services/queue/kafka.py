@@ -7,6 +7,7 @@ import re
 import string
 import threading
 import time
+import traceback
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -18,6 +19,12 @@ from app.utilities.logger import get_logger
 
 load_dotenv()
 
+def safe_decode(m):
+    try:
+        return json.loads(m.decode('utf-8'))
+    except json.JSONDecodeError:
+        return {"raw_message": m.decode('utf-8', errors='replace')}
+
 class KafkaService(IService):
     name = "kafka"
 
@@ -28,7 +35,7 @@ class KafkaService(IService):
         self.consumer = KafkaConsumer(
             bootstrap_servers=self.bootstrap_servers,
             group_id=self.consumer_group,
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            value_deserializer=safe_decode,
             auto_offset_reset='earliest'
         )
         self.producer = KafkaProducer(
@@ -67,43 +74,6 @@ class KafkaService(IService):
             self.consumer.unsubscribe(topic)
             if topic in self.subscriptions:
                 del self.subscriptions[topic]
-
-    def run_consumer(self):
-        """
-        Run the Kafka consumer in a separate thread.
-        """
-        self.logger.debug("Starting Kafka consumer thread")
-        self.consumer_thread_running = True
-        while self.consumer_thread_running:
-            try:
-                messages = self.consumer.poll(timeout_ms=1000)
-                if messages:
-                    self.logger.info(f"Received messages from {len(messages)} topic-partitions")
-                    for topic_partition, records in messages.items():
-                        self.logger.info(f"Processing {len(records)} messages from {topic_partition}")
-                        for record in records:
-                            topic = record.topic
-                            value = record.value
-                            self.logger.debug(f"Processing message from topic: {topic}")
-                            if topic in self.subscriptions:
-                                for queue, callback in self.subscriptions[topic]:
-                                    try:
-                                        if callback:
-                                            result = callback(value)
-                                            if asyncio.iscoroutine(result):
-                                                self.logger.debug("Scheduling coroutine task")
-                                                self.event_loop.call_soon_threadsafe(
-                                                    self.event_loop.create_task, result
-                                                )
-                                        self.logger.debug(f"Putting message in queue for topic: {topic}")
-                                        self.event_loop.call_soon_threadsafe(queue.put_nowait, record)
-                                    except Exception as e:
-                                        self.logger.error(f"Error processing message: {e}")
-                else:
-                    self.logger.debug("No messages received in this poll")
-            except Exception as e:
-                self.logger.error(f"Error in Kafka consumer thread: {e}")
-        self.logger.info("Kafka consumer thread stopped")
     
     async def stop_consumer(self):
         self.consumer_thread.join()
@@ -159,20 +129,25 @@ class KafkaService(IService):
         while self.consumer_thread_running:
             if self.consumer is not None:
                 try:
-                    self.logger.debug("Polling for messages")
+                    #self.logger.debug("Polling for messages")
                     messages = self.consumer.poll(timeout_ms=1000)
+                    #self.logger.debug(f"Messages: {messages}")
                     if messages:
                         self.logger.info(f"Received {len(messages)} message(s)")
                         for topic_partition, records in messages.items():
+                            self.logger.debug(f"Topic partition: {topic_partition}")
+                            self.logger.debug(f"Records: {records}")
                             for record in records:
                                 topic = record.topic
                                 value = record.value
                                 self.logger.info(f"Processing message from topic: {topic}")
                                 self.logger.debug(f"Message value: {value}")
                                 if topic in self.subscriptions:
+                                    self.logger.debug(f"Subscriptions for topic {topic}: {self.subscriptions[topic]}")
                                     for queue, callback in self.subscriptions[topic]:
                                         try:
                                             if callback:
+                                                self.logger.debug(f"Callback for topic {topic}: {callback}")
                                                 result = callback(value)
                                                 if asyncio.iscoroutine(result):
                                                     self.logger.debug("Scheduling coroutine task")
@@ -188,6 +163,8 @@ class KafkaService(IService):
                 except Exception as e:
                     if self.consumer_thread_running:
                         self.logger.error(f"Error in Kafka consumer thread: {e}")
+                        self.logger.error(f"Error details: {traceback.format_exc()}")
+                        self.logger.error(f"Message causing the error: {record.value if 'record' in locals() else 'Unknown'}")
                     else:
                         self.logger.info("Kafka consumer thread stopped")
                         self.logger.debug(f"Consumer state: {self.consumer}")

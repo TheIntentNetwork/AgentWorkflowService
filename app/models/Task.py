@@ -10,7 +10,6 @@ from app.models.agents.Agent import Agent
 from app.models import ProcessingState
 from app.models.ContextInfo import ContextInfo
 from app.models.agency import Agency
-from app.services.context.user_context_manager import UserContextManager
 from app.services.queue.kafka import KafkaService
 from app.utilities.logger import get_logger
 from app.factories.agent_factory import AgentFactory
@@ -65,23 +64,40 @@ class Task(BaseModel):
         """
         from app.services.cache.redis import RedisService
         from app.services.discovery.service_registry import ServiceRegistry
-        from app.tools.LoadUserContext import LoadUserContext
         
         redis: RedisService = ServiceRegistry.instance().get('redis')
-        task_data = await redis.client.hget(name=key, key='context')
-        task_data = json.loads(task_data)
         logger = get_logger('Task')
         logger = logging.LoggerAdapter(logger, {'classname': cls.__name__})
+        logger.debug(f"Task.handle: Task key: {key}")
+        logger.debug(f"Task.handle: Task context: {context}")
+        task_data = await redis.client.hget(name=key, key='context')
+        if task_data is not None:
+            task_data = json.loads(task_data)
+            task_data['context']['session_id'] = task_data.get('session_id', "")
+        else:
+            task_data = {}
+        logger = get_logger('Task')
+        logger = logging.LoggerAdapter(logger, {'classname': cls.__name__})
+        task_data.update(context)
         logger.debug(f"Task.handle: Task data: {task_data}")
-        key = task_data.get('key', "")
-        task_data['context'] = context
-        task_data['context']['session_id'] = task_data.get('session_id', "")
-        if task_data['context'].get('user_context', None) is not None:
-            user_context_manager = UserContextManager(name="UserContextManager", service_registry=ServiceRegistry.instance())
-            await user_context_manager.load_user_context(task_data['context']['user_context']['user_id'], task_data['context']['session_id'])
+        
+        from app.services.context.user_context_manager import UserContextManager
+        from app.services.context.node_context_manager import NodeContextManager
+        
         logger.debug(f"Task.handle: Task key: {key}")
         id = key.split(":")[-1]
+        task_data['key'] = key
+        task_data['description'] = context['description']
         task_data['id'] = id
+        
+        logger.debug(f"Task.handle: Task data: {task_data}")
+        if task_data['context'].get('user_context', None) is not None:
+            user_context_manager: UserContextManager = ServiceRegistry.instance().get('user_context')
+            await user_context_manager.load_user_context(task_data)
+        if task_data['node_template_name'] is not None:
+            node_context_manager: NodeContextManager = ServiceRegistry.instance().get('node_context')
+            await node_context_manager.load_node_context(task_data)
+        
         instance: Task = cls(**task_data)
         logger.debug(f"Task.handle: Task instance: {instance}")
         if action == 'execute':
@@ -168,12 +184,34 @@ class Task(BaseModel):
         """
         from app.factories.agent_factory import AgentFactory
         from app.services.discovery.service_registry import ServiceRegistry
+        from app.services.context.context_manager import ContextManager
         
         logger = get_logger('Task')
         logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
         logger.debug(f"Task context: {self.context}")
         
-        context_info = ContextInfo(key=self.key, input_description=self.context.get('input_description', ''), action_summary=self.context.get('action_summary', ''), outcome_description=self.context.get('outcome_description', ''), output=self.context.get('output', ''), context=self.context)
+        context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
+        
+        # Set task context
+        await context_manager.set_session_context(self.session_id, 'task_context', self.context)
+        
+        # Set user context
+        user_context = self.context.get('user_context', {})
+        await context_manager.set_session_context(self.session_id, 'user_context', user_context)
+        
+        # Set object context
+        object_contexts = self.context.get('object_contexts', [])
+
+        await context_manager.set_session_context(self.session_id, f'object_contexts', object_contexts)
+        
+        parent_context = await context_manager.get_merged_context(self.session_id)
+        
+        output = self.context.get('output', '')
+        if output.startswith('{') and output.endswith('}'):
+            output = json.loads(output)
+        else:
+            output = {}
+        context_info = ContextInfo(key=self.key, input_description=self.context.get('input_description', ''), action_summary=self.context.get('action_summary', ''), outcome_description=self.context.get('outcome_description', ''), output=output, context=parent_context)
         
         # Instantiate the Universe Agent with the enhanced prompt
         agent_data = {
@@ -206,7 +244,7 @@ class Task(BaseModel):
             - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.
             
             """,
-            "session_id": self.context['session_id'],
+            "session_id": self.session_id,
             "context_info": context_info,
             "tools": [ "CreateNodes", "RetrieveContext"],
             "self_assign": False

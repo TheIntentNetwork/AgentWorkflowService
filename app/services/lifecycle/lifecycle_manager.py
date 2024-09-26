@@ -7,6 +7,8 @@ from typing import Dict, List
 import json
 from redisvl.query.filter import Tag
 
+from seed_lifecycle_data import get_lifecycle_seed_data
+
 class LifecycleManager(IService):
     name = "lifecycle_manager"
     _instance = None
@@ -26,36 +28,54 @@ class LifecycleManager(IService):
         from app.services.orchestrators.lifecycle.Execution import ExecutionService
         from app.services.discovery.service_registry import ServiceRegistry
         from app.services.cache.redis import RedisService
+        from app.services.context.context_manager import ContextManager
         
         service_registry: ServiceRegistry = ServiceRegistry.instance()
         redis_service: RedisService = service_registry.get('redis')
+        context_manager: ContextManager = service_registry.get('context_manager')
         
-        filter_condition = Tag("type") == "goal"
-        goals = await redis_service.async_search_index("goal", "metadata_vector", "context", 10, ["item"], filter_condition)
+        ##filter_condition = Tag("type") == "goal"
+        ##goals = await redis_service.async_search_index("goal", "metadata_vector", "context", 10, ##["item"], filter_condition)
+        ##
+        ##goals = [json.loads(goal['item']) for goal in goals]
+        ##
+        ##from app.services.worker.worker import Worker
+        ##
+        ##worker_process: Worker = ServiceRegistry.instance().get("worker")
+        ##
+        ##node_data = {
+        ##    "name": "Review Goals",
+        ##    "type": "lifecycle",
+        ##    "description": "Review your goals and ensure the proper lifecycle nodes are created to ##support the Universe.",
+        ##    "context_info": ContextInfo(
+        ##        input_description="Goals context",
+        ##        action_summary="Review goals. Using various search terms derived from the goals, search ##for a 'model' type node that contains a collection of lifecycle nodes meant to support ##your goals and ensure the proper lifecycle nodes are created. All lifecycle nodes found ##within the model should be created to support your goals if they do not already exist.",
+        ##        outcome_description="Lifecycle nodes created",
+        ##        feedback=["You should only create the lifecycle nodes if they do not already exist.", ##"Do not create other nodes other than lifecycle nodes from this task."],
+        ##        output={},
+        ##        context={"goals": goals, "session_id": f"worker:{worker_process.worker_uuid}"}
+        ##    ),
+        ##}
+        ##
+        ##node = await Node.create(**node_data)
+        ##await node.execute()
         
-        goals = [json.loads(goal['item']) for goal in goals]
-        
-        from app.services.worker.worker import Worker
-        
-        worker_process: Worker = ServiceRegistry.instance().get("worker")
-        
-        node_data = {
-            "name": "Review Goals",
-            "type": "lifecycle",
-            "description": "Review your goals and ensure the proper lifecycle nodes are created to support the Universe.",
-            "context_info": ContextInfo(
-                input_description="Goals context",
-                action_summary="Review goals. Using various search terms derived from the goals, search for a 'model' type node that contains a collection of lifecycle nodes meant to support your goals and ensure the proper lifecycle nodes are created. All lifecycle nodes found within the model should be created to support your goals if they do not already exist.",
-                outcome_description="Lifecycle nodes created",
-                feedback=["You should only create the lifecycle nodes if they do not already exist.", "Do not create other nodes other than lifecycle nodes from this task."],
-                output={},
-                context={"goals": goals, "session_id": f"worker:{worker_process.worker_uuid}"}
-            ),
-        }
-        
-        node = await Node.create(**node_data)
-        await node.execute()
+        lifecycle_nodes = get_lifecycle_seed_data()
+        for node in lifecycle_nodes:
+            if await context_manager.get_context(f"node:{node.name}") is not None:
+                continue
+            
+            embeddings = await redis_service.generate_embeddings(
+                fields=["input_description", "action_summary", "outcome_description", "feedback"],
+                key=f"node:{node.name}",
+                record=await self.get_node_dict(node)
+            )
+            await context_manager.save_context(f"node:{node.name}", node, embeddings)
         
         #from app.services.context.context_manager import ContextManager
         #context_manager: ContextManager = ServiceRegistry.instance().get("context_manager")
         #await context_manager.diff_and_notify_changes(f"worker:{worker_process.worker_uuid}", worker_process)
+
+    async def get_node_dict(self, node):
+        # Implement a method to return an awaitable dictionary
+        return await node.dict()
