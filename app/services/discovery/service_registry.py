@@ -22,15 +22,6 @@ class ServiceRegistry:
                     cls._instance = cls()
         return cls._instance
 
-    @classmethod
-    def instance(cls):
-        if cls._instance is None:
-            logger.debug("Creating new instance of ServiceRegistry")
-            cls._instance = ServiceRegistry()
-        else:
-            logger.debug("Using existing instance of ServiceRegistry")
-        return cls._instance
-
     def register(self, name: str, service_class: type, config: Optional[Dict[str, Any]] = None, **kwargs):
         logger.info(f"Registering service: {name}")
         if name not in self.services:
