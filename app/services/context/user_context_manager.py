@@ -24,17 +24,22 @@ class UserContextManager(IService):
         self.logger.info(f"UserContextManager initialized successfully")
 
     async def initialize(self):
-        if isinstance(self.config, dict):
-            for context_name, context_config in self.config.items():
-                if context_name not in self.context_managers:
-                    db_context_manager = self.service_registry.get(context_name)
-                    if not db_context_manager:
-                        db_context_manager = DBContextManager(context_name, self.service_registry, context_config)
-                        self.service_registry.register(context_name, DBContextManager, config=context_config)
-                    self.context_managers[context_name] = db_context_manager
-                    self.logger.debug(f"Registered {context_name} in ServiceRegistry")
+        if hasattr(self.config, '__dict__'):
+            config_dict = self.config.__dict__
+        elif isinstance(self.config, dict):
+            config_dict = self.config
         else:
-            self.logger.warning(f"Config is not a dictionary. Type: {type(self.config)}")
+            self.logger.warning(f"Config is not a dictionary or ServiceConfig object. Type: {type(self.config)}")
+            return
+
+        for context_name, context_config in config_dict.items():
+            if context_name not in self.context_managers:
+                db_context_manager = self.service_registry.get(context_name)
+                if not db_context_manager:
+                    db_context_manager = DBContextManager(context_name, self.service_registry, context_config)
+                    self.service_registry.register(context_name, DBContextManager, config=context_config)
+                self.context_managers[context_name] = db_context_manager
+                self.logger.debug(f"Registered {context_name} in ServiceRegistry")
         
         self.logger.debug(f"UserContextManager context_managers: {self.context_managers}")
 
