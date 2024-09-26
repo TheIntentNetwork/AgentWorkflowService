@@ -25,6 +25,11 @@ class SessionManager(IService):
         self.redis: RedisService = ServiceRegistry.instance().get("redis")
         self.kafka: KafkaService = ServiceRegistry.instance().get("kafka")
         self.sessions: Dict[str, SessionContext] = {}
+
+    async def initialize(self):
+        logger.info("Initializing SessionManager")
+        # Add any initialization logic here if needed
+        logger.info("SessionManager initialized successfully")
     
     async def initialize_sessions(self):
         try:
