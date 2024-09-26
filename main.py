@@ -345,4 +345,4 @@ if __name__ == "__main__":
 
     logger = logging.getLogger(__name__)
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="debug", reload=True, loop="asyncio", env_file=".env")
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="info", reload=True, loop="asyncio", env_file=".env")
