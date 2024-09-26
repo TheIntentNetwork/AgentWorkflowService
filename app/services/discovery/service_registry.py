@@ -37,35 +37,24 @@ class ServiceRegistry:
 
     def get(self, name: str):
         if name not in self.services:
-            raise KeyError(f"Service '{name}' not registered")
-        if name not in self.services:
-            if name == 'redis':
-                from app.services.cache.redis import RedisService
-                self.register(name, RedisService)
-            elif name == 'kafka':
-                from app.services.queue.kafka import KafkaService
-                self.register(name, KafkaService)
-            elif name == 'event_manager':
-                from app.services.events.event_manager import EventManager
-                self.register(name, EventManager)
-            elif name == 'context_manager':
-                from app.services.context.context_manager import ContextManager
-                self.register(name, ContextManager)
-            elif name == 'worker':
-                from app.services.worker.worker import Worker
-                self.register(name, Worker)
-            elif name == 'lifecycle_manager':
-                from app.services.lifecycle.lifecycle_manager import LifecycleManager
-                self.register(name, LifecycleManager)
-            elif name == 'session_manager':
-                from app.services.session.session import SessionManager
-                self.register(name, SessionManager)
-            elif name == 'dependency_service':
-                from app.services.dependencies.dependency_service import DependencyService
-                self.register(name, DependencyService)
-            elif name == 'user_context':
-                from app.services.context.user_context_manager import UserContextManager
-                self.register(name, UserContextManager)
+            service_map = {
+                'redis': 'app.services.cache.redis.RedisService',
+                'kafka': 'app.services.queue.kafka.KafkaService',
+                'event_manager': 'app.services.events.event_manager.EventManager',
+                'context_manager': 'app.services.context.context_manager.ContextManager',
+                'worker': 'app.services.worker.worker.Worker',
+                'lifecycle_manager': 'app.services.lifecycle.lifecycle_manager.LifecycleManager',
+                'session_manager': 'app.services.session.session.SessionManager',
+                'dependency_service': 'app.services.dependencies.dependency_service.DependencyService',
+                'user_context': 'app.services.context.user_context_manager.UserContextManager'
+            }
+            if name in service_map:
+                module_path, class_name = service_map[name].rsplit('.', 1)
+                module = __import__(module_path, fromlist=[class_name])
+                service_class = getattr(module, class_name)
+                self.register(name, service_class)
+            else:
+                raise KeyError(f"Service '{name}' not registered")
         return self.services[name]
 
     def __iter__(self):

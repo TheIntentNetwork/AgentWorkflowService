@@ -17,21 +17,11 @@ class UserContextManager(IService):
         self.logger = get_logger(name)
         self.logger.info(f"Initializing UserContextManager")
         self.logger.debug(f"UserContextManager config: {config}")
-        self.context_managers = {
-            'user_context': DBContextManager('user_context', service_registry, config['user_context']),
-            'user_meta': DBContextManager('user_meta', service_registry, config['user_meta']),
-            'forms': DBContextManager('forms', service_registry, config['forms']),
-            'courses': DBContextManager('courses', service_registry, config['courses']),
-            'purchases': DBContextManager('purchases', service_registry, config['purchases']),
-            'subscriptions': DBContextManager('subscriptions', service_registry, config['subscriptions']),
-            'notes': DBContextManager('notes', service_registry, config['notes']),
-            'events': DBContextManager('events', service_registry, config['events']),
-            'videos': DBContextManager('videos', service_registry, config['videos']),
-        }
-        #Load an instance of the DBContextManager for each context manager in the config
-        for name, manager in self.context_managers.items():
-            service_registry.register(name, DBContextManager, config=manager.config)
-            self.logger.debug(f"Registered {name} in ServiceRegistry")
+        self.context_managers = {}
+        for context_name, context_config in config.items():
+            self.context_managers[context_name] = DBContextManager(context_name, service_registry, context_config)
+            service_registry.register(context_name, DBContextManager, config=context_config)
+            self.logger.debug(f"Registered {context_name} in ServiceRegistry")
         
         self.logger.info(f"UserContextManager initialized successfully")
         self.logger.debug(f"UserContextManager context_managers: {self.context_managers}")
