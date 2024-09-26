@@ -68,7 +68,8 @@ class CustomFormatter(ColoredFormatter):
             'ERROR': Fore.RED,
             'CRITICAL': Fore.RED + Style.BRIGHT,
         }
-        log_label = f"{Fore.BLUE}{record.classname}.{record.funcName}{Style.RESET_ALL}"
+        timestamp = f"{Fore.WHITE}{self.formatTime(record, self.datefmt)}{Style.RESET_ALL}"
+        log_label = f"{Fore.MAGENTA}{record.classname}.{record.funcName}{Style.RESET_ALL}"
         log_level = f"{log_colors[record.levelname]}{record.levelname:<8}{Style.RESET_ALL}"
         message = f"{Fore.WHITE}{record.getMessage()}{Style.RESET_ALL}"
         
@@ -76,7 +77,7 @@ class CustomFormatter(ColoredFormatter):
             self.repeat_count += 1
             return None
         else:
-            formatted_message = f"{log_level} - {log_label}: {message}"
+            formatted_message = f"{timestamp} - {log_level} - {log_label}: {message}"
             if self.repeat_count > 0:
                 formatted_message = f"Last message repeated {self.repeat_count} times\n{formatted_message}"
             self.last_message = message
