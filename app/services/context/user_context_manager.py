@@ -15,8 +15,15 @@ class UserContextManager(IService):
     
     def __init__(self, name: str, service_registry: ServiceRegistry, config: ServiceConfig, **kwargs):
         self.logger = get_logger(name)
-        self.logger.info(f"Initializing UserContextManager")
+        self.service_registry = service_registry
+        self.config = config
         self.logger.debug(f"UserContextManager config: {config}")
+        
+    
+    async def initialize(self):
+        self.logger.info(f"Initializing UserContextManager")
+        service_registry = self.service_registry
+        config = self.config
         self.context_managers = {
             'user_context': DBContextManager('user_context', service_registry, config['user_context']),
             'user_meta': DBContextManager('user_meta', service_registry, config['user_meta']),
@@ -35,11 +42,9 @@ class UserContextManager(IService):
         
         self.logger.info(f"UserContextManager initialized successfully")
         self.logger.debug(f"UserContextManager context_managers: {self.context_managers}")
+        
 
-    async def initialize(self, user_id: str):
-        self.logger.info(f"Initializing {self.__class__.__name__}")
-        # Add any initialization logic here
-        self.logger.info(f"{self.__class__.__name__} initialized successfully")
+    async def load_user_context(self, user_id: str):
         from app.services.cache.redis import RedisService
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
         self.logger.info(f"Loading user context")

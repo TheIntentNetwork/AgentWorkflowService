@@ -20,6 +20,7 @@ class NodeContextManager(DBContextManager):
     async def load_node_context(self, node: Union[Node, Dict[str, Any]]):
         node_id = node.id if isinstance(node, Node) else node.get('id')
         node_name = node.name if isinstance(node, Node) else node.get('node_template_name')
+        node_type = node.type if isinstance(node, Node) else node.get('type')
         
         if not node_id:
             self.logger.error("Node ID is missing")
@@ -29,8 +30,12 @@ class NodeContextManager(DBContextManager):
         templates = await self.load_node_templates(node_name)
         dynamic_context = await self._load_dynamic_context(node)
 
+        # Use a single index for all node contexts
+        index_name = "node_context"
+        
         # Ensure the index exists
-        await self.redis_service.create_index('node_context.yaml')
+        if not await self.redis_service.index_exists(index_name):
+            await self.redis_service.create_index('node_context.yaml')
 
         # Prepare the data for Redis
         redis_data = []
@@ -74,7 +79,7 @@ class NodeContextManager(DBContextManager):
             redis_data.append(dynamic_data)
 
         # Load the data into Redis
-        await self.redis_service.load_records(redis_data, "node_context", {'data': False}, False)
+        await self.redis_service.load_records(redis_data, index_name, {'data': False}, False)
 
         self.logger.info(f"Context loaded for node: {node_id}")
         return node
