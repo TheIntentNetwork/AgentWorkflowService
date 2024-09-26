@@ -25,51 +25,66 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
+          python --version
 
       - name: Installing Dependencies
         run: |
           source venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          pip3 install -r requirements.txt
 
       - name: Create env file
         run: |
           touch .env
           echo PORT='8000' >> .env
-          echo SUPABASE_ANON_KEY='${{ secrets.SUPABASE_ANON_KEY_DEV }}' >> .env
-          echo SUPABASE_URL='${{ secrets.SUPABASE_URL_DEV }}' >> .env
-          echo KAFKA_BROKER_URL='${{ secrets.KAFKA_BROKER_URL_DEV }}' >> .env
-          echo REDIS_URL='${{ secrets.REDIS_URL_DEV }}' >> .env
           echo NODE_ENV='development' >> .env
+          echo TOPICS='${{ secrets.DEV_TOPICS }}' >> .env
+          echo PROFILE='${{ secrets.DEV_PROFILE }}' >> .env
+          echo REDIS_URL='${{ secrets.DEV_REDIS_URL }}' >> .env
+          echo SUPABASE_URL='${{ secrets.DEV_SUPABASE_URL }}' >> .env
+          echo CONSUMER_GROUP='${{ secrets.DEV_CONSUMER_GROUP }}' >> .env
+          echo OPENAI_API_KEY='${{ secrets.DEV_OPENAI_API_KEY }}' >> .env
+          echo BOOTSTRAP_SERVERS='${{ secrets.DEV_BOOTSTRAP_SERVERS }}' >> .env
+          echo SUPABASE_AUTH_SERVICE_ROLE_KEY='${{ secrets.DEV_SUPABASE_AUTH_SERVICE_ROLE_KEY }}' >> .env
           cat .env
 
-      - name: Install Supervisor
-        run: sudo apt-get install -y supervisor
-
-      - name: Create Supervisor config
+      - name: Restart Server
         run: |
-          sudo bash -c 'cat > /etc/supervisor/conf.d/fastapi-dev.conf <<EOF
-          [program:fastapi-dev]
-          command=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService/venv/bin/uvicorn main:app --reload
-          directory=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService
-          user=ubuntu
-          autostart=true
-          autorestart=true
-          stopasgroup=true
-          killasgroup=true
-          stdout_logfile=/var/log/fastapi-dev.log
-          stderr_logfile=/var/log/fastapi-dev_err.log
-          EOF'
-
-      - name: Check Supervisor Configuration
-        run: |
-          sudo supervisorctl reread
-          sudo supervisorctl update
-          sudo supervisorctl status
-
-      - name: Start FastAPI with Supervisor
-        run: |
+          sudo supervisorctl stop fastapi-dev
+          sudo sh -c 'echo > /var/log/fastapi-dev_err.log'
           sudo supervisorctl start fastapi-dev
+          sudo supervisorctl status
+      # - name: Start Server
+      #   run: |
+      #     source venv/bin/activate
+      #     uvicorn main:app --reload
+
+      # - name: Install Supervisor
+      #   run: sudo apt-get install -y supervisor
+
+      # - name: Create Supervisor config
+      #   run: |
+      # sudo bash -c 'cat > /etc/supervisor/conf.d/fastapi-dev.conf <<EOF
+      # [program:fastapi-dev]
+      # command=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService/venv/bin/uvicorn main:app --reload --port 8000
+      # directory=/home/ubuntu/actions-runner/_work/AgentWorkflowService/AgentWorkflowService
+      # user=ubuntu
+      # autostart=true
+      # autorestart=true
+      # stopasgroup=true
+      # killasgroup=true
+      # stdout_logfile=/var/log/fastapi-dev.log
+      # stderr_logfile=/var/log/fastapi-dev_err.log
+      # EOF'
+
+      # - name: Check Supervisor Configuration
+      #   run: |
+      #     sudo supervisorctl reread
+      #     sudo supervisorctl update
+      #     sudo supervisorctl status
+
+      # - name: Start FastAPI with Supervisor
+      #   run: |
+      #     sudo supervisorctl start fastapi-dev
 
     environment:
       name: Development

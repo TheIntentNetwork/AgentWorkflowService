@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import AsyncMock, patch
 from app.models.BaseNode import Node
@@ -41,7 +42,7 @@ from app.models.Node import Node
 
 @pytest.fixture
 async def redis_service():
-    redis_service = RedisService(redis_url="redis://localhost:6379")
+    redis_service = RedisService(redis_url=os.getenv('REDIS_URL', 'redis://localhost:6379'))
     await redis_service.client.flushall()
     yield redis_service
     await redis_service.client.close()

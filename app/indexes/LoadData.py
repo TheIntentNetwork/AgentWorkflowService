@@ -38,7 +38,7 @@ class LoadData:
         current_dir = os.path.dirname(os.path.realpath(__file__))
         self.index_schema_file = os.path.join(current_dir, "schemas/workflow.yaml")
         self.data = self.create_test_data()
-        self.redis_uri = "redis://localhost:6379"
+        self.redis_uri = os.getenv('REDIS_URL', 'redis://localhost:6379')
 
     async def load(self):
         index = await self.create_index(self.index_schema_file, self.redis_uri)
@@ -258,7 +258,7 @@ if __name__ == '__main__':
 #async def main(workflow_test_data, model_test_data):
 #
 #    # Connect to Redis
-#    REDIS_HOST = "localhost"
+#    REDIS_HOST = os.getenv("REDIS_URL").split('//')[1].split(':')[0]
 #    REDIS_PORT = 6379
 #    r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT)
 #
