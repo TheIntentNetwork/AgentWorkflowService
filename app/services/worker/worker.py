@@ -8,20 +8,47 @@ from app.utilities.logger import get_logger
 
 class Worker(IService):
     name = "worker"
-
-    async def initialize(self):
-        self.logger.info("Initializing Worker service")
-        # Add any initialization logic here
-        self.logger.info("Worker service initialized successfully")
     _instance = None
 
-    def __init__(self, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: ServiceConfig, ):
+    def __init__(self, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: ServiceConfig):
         super().__init__()
         self.name = name
         self.worker_uuid = worker_uuid
         self.service_registry = service_registry
         self.redis: RedisService = self.service_registry.get("redis")
         self.logger = get_logger(name)
+        self.is_active = False
+        self.task_queue = asyncio.Queue()
+
+    async def initialize(self):
+        self.logger.info("Initializing Worker service")
+        await self.join()
+        self.is_active = True
+        asyncio.create_task(self.process_tasks())
+        self.logger.info("Worker service initialized successfully")
+
+    async def process_tasks(self):
+        while self.is_active:
+            try:
+                task = await self.task_queue.get()
+                await self.execute_task(task)
+                self.task_queue.task_done()
+            except Exception as e:
+                self.logger.error(f"Error processing task: {str(e)}")
+
+    async def execute_task(self, task):
+        # Implement task execution logic here
+        pass
+
+    async def add_task(self, task):
+        await self.task_queue.put(task)
+
+    async def shutdown(self):
+        self.logger.info("Shutting down Worker service")
+        self.is_active = False
+        await self.leave()
+        await self.task_queue.join()
+        self.logger.info("Worker service shut down successfully")
 
     @classmethod
     def instance(cls, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: Optional[Dict[str, Any]] = None):
@@ -34,10 +61,18 @@ class Worker(IService):
     
     # Function to register the worker UUID in Redis
     async def join(self):
-        self.logger.debug(f"Worker {self.worker_uuid} joined the pool")
-        await self.redis.client.sadd("workers", self.worker_uuid)
+        try:
+            await self.redis.client.sadd("workers", self.worker_uuid)
+            self.logger.info(f"Worker {self.worker_uuid} joined the pool")
+        except Exception as e:
+            self.logger.error(f"Failed to join worker {self.worker_uuid} to the pool: {str(e)}")
+            raise
 
     async def leave(self):
-        self.logger.debug("Leaving worker from the pool")
-        await self.redis.client.srem("workers", self.worker_uuid)
+        try:
+            await self.redis.client.srem("workers", self.worker_uuid)
+            self.logger.info(f"Worker {self.worker_uuid} left the pool")
+        except Exception as e:
+            self.logger.error(f"Failed to remove worker {self.worker_uuid} from the pool: {str(e)}")
+            raise
 
