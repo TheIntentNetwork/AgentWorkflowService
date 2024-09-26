@@ -51,6 +51,8 @@ class EventManager(IService):
         # Add any initialization logic here
         self.logger.info(f"EventManager initialized with name: {self.name}")
         self.logger.info("EventManager initialized successfully")
+        self.notified = set()
+        self.start_consumer_thread()
         self.logger.info("EventManager initialization completed")
         self.notified = set()
         self.start_consumer_thread()
