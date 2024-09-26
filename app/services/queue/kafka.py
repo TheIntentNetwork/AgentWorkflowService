@@ -139,9 +139,12 @@ class KafkaService(IService):
         Run the Kafka consumer in a separate thread.
         """
         self.logger.info("Starting Kafka consumer thread")
+        self.logger.debug(f"Consumer thread running: {self.consumer_thread_running}")
+        self.logger.debug(f"Kafka consumer initialized: {self.consumer is not None}")
         self.consumer_thread_running = True
         while self.consumer_thread_running:
             if self.consumer is not None:
+                self.logger.debug("Kafka consumer is initialized, starting polling loop")
                 try:
                     self.logger.info("Polling for messages from Kafka")
                     messages = self.consumer.poll(timeout_ms=1000)
@@ -176,7 +179,7 @@ class KafkaService(IService):
                                             self.logger.error(f"Error processing message: {e}")
                                             self.logger.debug(f"Message causing the error: {record.value if 'record' in locals() else 'Unknown'}")
                     else:
-                        self.logger.debug("No messages received")
+                        self.logger.debug("No messages received, continuing polling")
                 except Exception as e:
                     if self.consumer_thread_running:
                         self.logger.error(f"Error in Kafka consumer thread: {e}")
