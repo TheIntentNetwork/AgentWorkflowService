@@ -64,10 +64,14 @@ class CustomFormatter(ColoredFormatter):
             'CRITICAL': Fore.RED + Style.BRIGHT,
         }
         log_label = f"{Fore.BLUE}{record.classname}.{record.funcName}{Style.RESET_ALL}"
-        log_level = f"{log_colors[record.levelname]}{record.levelname}{Style.RESET_ALL}"
-        message = f"{Style.RESET_ALL}{record.getMessage()}"
-        additional_info = f"{log_level} - {log_label}: {message}\n"
-        return additional_info
+        log_level = f"{log_colors[record.levelname]}{record.levelname:<8}{Style.RESET_ALL}"
+        message = f"{Fore.WHITE}{record.getMessage()}{Style.RESET_ALL}"
+        
+        # Add a hash of the message to help identify duplicates
+        message_hash = hash(message)
+        
+        formatted_message = f"{log_level} - {log_label}: {message} [{message_hash}]\n"
+        return formatted_message
 
 def configure_logger(name):
     """Configure a logger with the given name and conditionally add CloudWatch logging based on the environment."""
@@ -104,6 +108,21 @@ def configure_logger(name):
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(custom_formatter)
         logger.addHandler(stream_handler)
+
+        # Add a filter to reduce duplicate log messages
+        class DuplicateFilter(logging.Filter):
+            def __init__(self, name=''):
+                self.records = set()
+
+            def filter(self, record):
+                key = (record.module, record.levelno, record.msg)
+                if key not in self.records:
+                    self.records.add(key)
+                    return True
+                return False
+
+        duplicate_filter = DuplicateFilter()
+        logger.addFilter(duplicate_filter)
         environment=os.getenv("NODE_ENV")
         try:            
             cloudwatch_handler = watchtower.CloudWatchLogHandler(
