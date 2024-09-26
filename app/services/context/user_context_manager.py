@@ -20,7 +20,7 @@ class UserContextManager(IService):
         self.logger.debug(f"UserContextManager config: {config}")
         
     
-    async def initialize(self):
+    async def _initialize_service(self):
         if hasattr(self, '_initialized') and self._initialized:
             self.logger.info("UserContextManager is already initialized.")
             return
