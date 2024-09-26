@@ -54,7 +54,11 @@ class UserContextManager(IService):
         else:
             self.logger.warning(f"'user_meta' not found in context_managers for user_id: {user_id}")
             context['user_meta'] = []
-        context['forms'] = await self.context_managers['forms'].fetch_data('get_user_forms', {'p_user_id': user_id})
+        if 'forms' in self.context_managers:
+            context['forms'] = await self.context_managers['forms'].fetch_data('get_user_forms', {'p_user_id': user_id})
+        else:
+            self.logger.warning(f"'forms' not found in context_managers for user_id: {user_id}")
+            context['forms'] = []
         
         self.logger.debug(f"Fetched user_meta: {len(context['user_meta'])} records")
         self.logger.debug(f"Fetched forms: {len(context['forms'])} records")
