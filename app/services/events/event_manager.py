@@ -100,6 +100,9 @@ class EventManager(IService):
         self.logger.debug(f"Topics to subscribe: ['agency_action']")
         await self.subscribe_to_event_topics(["agency_action"])
         self.logger.info("EventManager started")
+        self.logger.debug("Subscribing to commands for EventManager")
+        await self.subscribe_to_commands("event_manager_commands", self.__event_listener)
+        self.logger.debug("Subscribed to commands for EventManager")
 
     async def subscribe_to_channels(self, channels, callback, filter_func=None):
         """
@@ -156,6 +159,7 @@ class EventManager(IService):
         """
         redis: RedisService = self.service_registry.get('redis')
         kafka: KafkaService = self.service_registry.get('kafka')
+        self.logger.debug(f"Subscribing to commands on topic: {topic}")
 
         # Publish update to Redis
         if context_key.startswith("node:"):
@@ -367,6 +371,7 @@ class EventManager(IService):
     async def subscribe_to_commands(self, topic: str, callback: Callable = None):
         kafka: KafkaService = self.service_registry.get('kafka')
         queue = await kafka.subscribe(topic, callback)
+        self.logger.debug(f"Subscribed to commands on topic: {topic}, queue: {queue}")
         return queue
 
     async def _process_update_queue(self, queue: asyncio.Queue, callback: Callable):
