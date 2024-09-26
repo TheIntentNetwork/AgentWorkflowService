@@ -34,6 +34,14 @@ class EventManager(IService):
         self.name = name
         self.service_registry = service_registry
         self.logger = get_logger(self.name)
+        self.eventListeners = {}
+        self.taskIDs = {}
+        self.redis: RedisService = self.service_registry.get("redis")
+        self.kafka: KafkaService = self.service_registry.get("kafka")
+        self.queue = asyncio.Queue()
+        self.event_loop = asyncio.get_event_loop()
+        self.tasks = []
+        self.running = False
 
     async def initialize(self):
         """
@@ -41,20 +49,8 @@ class EventManager(IService):
         """
         self.logger.info("Initializing EventManager")
         # Add any initialization logic here
+        self.logger.info(f"EventManager initialized with name: {self.name}")
         self.logger.info("EventManager initialized successfully")
-        self.service_registry = service_registry
-        self.logger = get_logger(name)
-        self.logger.info("EventManager __init__ method called")
-        self.logger.info(f"EventManager initialized with name: {name}")
-        self.eventListeners = {}
-        self.taskIDs = {}
-        self.service_registry = service_registry
-        self.redis: RedisService = self.service_registry.get("redis")
-        self.kafka: KafkaService = self.service_registry.get("kafka")
-        self.queue = asyncio.Queue()
-        self.event_loop = asyncio.get_event_loop()
-        self.tasks = []
-        self.running = False
         self.logger.info("EventManager initialization completed")
         self.notified = set()
         self.start_consumer_thread()
