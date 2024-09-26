@@ -6,6 +6,7 @@ def get_logger(name):
 
 def configure_logger(name):
     logger = base_configure_logger(name)
+    logger.setLevel(logging.INFO)
 
     # Create a CloudWatch handler if AWS credentials and region are available
     if all(key in os.environ for key in ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION']):
