@@ -25,7 +25,9 @@ class DBContextManager(IService):
         
         # Debug logging
         self.logger.debug(f"DBContextManager initialized for service: {name}")
-        self.logger.debug(f"Available queries: {json.dumps(self.queries, indent=2)}")
+        self.logger.debug(f"Available queries:")
+        for query_name, query_details in self.queries.items():
+            self.logger.debug(f"  {query_name}: {query_details}")
 
     async def get_context(self, key: str) -> Dict[str, Any]:
         try:
