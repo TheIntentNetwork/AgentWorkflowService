@@ -26,7 +26,7 @@ class Worker(IService):
         await self.join()
         self.is_active = True
         asyncio.create_task(self.process_tasks())
-        self.logger.info("Worker service initialized successfully")
+        self.logger.debug("Worker service initialized successfully")
 
     async def process_tasks(self):
         while self.is_active:
@@ -49,7 +49,7 @@ class Worker(IService):
         self.is_active = False
         await self.leave()
         await self.task_queue.join()
-        self.logger.info("Worker service shut down successfully")
+        self.logger.debug("Worker service shut down successfully")
 
     @classmethod
     def instance(cls, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: Optional[Dict[str, Any]] = None):
@@ -64,7 +64,7 @@ class Worker(IService):
     async def join(self):
         try:
             await self.redis.client.sadd("workers", self.worker_uuid)
-            self.logger.info(f"Worker {self.worker_uuid} joined the pool")
+            self.logger.debug(f"Worker {self.worker_uuid} joined the pool")
         except Exception as e:
             self.logger.error(f"Failed to join worker {self.worker_uuid} to the pool: {str(e)}")
             raise
@@ -72,7 +72,7 @@ class Worker(IService):
     async def leave(self):
         try:
             await self.redis.client.srem("workers", self.worker_uuid)
-            self.logger.info(f"Worker {self.worker_uuid} left the pool")
+            self.logger.debug(f"Worker {self.worker_uuid} left the pool")
         except Exception as e:
             self.logger.error(f"Failed to remove worker {self.worker_uuid} from the pool: {str(e)}")
             raise
