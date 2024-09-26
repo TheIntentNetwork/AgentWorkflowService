@@ -121,8 +121,8 @@ def create_app():
     @app.on_event("shutdown")
     async def shutdown_event():
         worker_service: Worker = service_registry.get("worker")
-        #await worker_service.leave()
-        #logger.debug("Shutting down the application")
+        await worker_service.shutdown()
+        logger.debug("Shutting down the application")
 
     @app.middleware("http")
     async def middleware(request, call_next):
