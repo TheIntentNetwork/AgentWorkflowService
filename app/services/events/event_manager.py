@@ -159,7 +159,6 @@ class EventManager(IService):
         """
         redis: RedisService = self.service_registry.get('redis')
         kafka: KafkaService = self.service_registry.get('kafka')
-        self.logger.debug(f"Subscribing to commands on topic: {topic}")
 
         # Publish update to Redis
         if context_key.startswith("node:"):
