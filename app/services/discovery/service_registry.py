@@ -21,7 +21,10 @@ class ServiceRegistry:
             logger.debug("Using existing instance of ServiceRegistry")
         return cls._instance
 
-    def register(self, name: str, service: any, config: Optional[Dict[str, Any]] = None, **kwargs):
+    def register(self, name: str, service_class: type, config: Optional[Dict[str, Any]] = None, **kwargs):
+        if name not in self.services:
+            self.services[name] = service_class(name=name, service_registry=self, config=config, **kwargs)
+        return self.services[name]
         logger.info(f"Registering service: {name}")
         if issubclass(service, IService):
             instance = service.instance(name=name, service_registry=self, config=config, **kwargs)
@@ -31,7 +34,9 @@ class ServiceRegistry:
             logger.debug(f"Instance details: {instance.__dict__}")
             logger.info(f"Service {name} registration complete")
 
-    def get(self, name: str, config: Optional[Dict[str, Any]] = None):
+    def get(self, name: str):
+        if name not in self.services:
+            raise KeyError(f"Service '{name}' not registered")
         if name not in self.services:
             if name == 'redis':
                 from app.services.cache.redis import RedisService
