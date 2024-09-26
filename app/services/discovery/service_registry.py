@@ -6,11 +6,20 @@ logger = logging.getLogger(__name__)
 
 class ServiceRegistry:
     _instance = None
+    _lock = threading.Lock()
 
     def __init__(self):
         self.services = {}
         self.service_classes = {}
         logger.debug("ServiceRegistry initialized")
+
+    @classmethod
+    def instance(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
 
     @classmethod
     def instance(cls):
