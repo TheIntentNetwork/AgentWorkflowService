@@ -20,39 +20,11 @@ class UserContextManager(IService):
         self.context_managers = {}
         self.service_registry = service_registry
         self.config = config
-        
-        # Ensure 'node_context' is registered in the service registry using NodeContextManager
-        try:
-            node_context_manager = self.service_registry.get('node_context')
-        except KeyError:
-            self.logger.warning(f"'node_context' not found in ServiceRegistry, registering it via NodeContextManager.")
-            node_context_manager = self.service_registry.get('node_context_manager')
-            node_context_manager.register_node_context()
-        
-        self.context_managers['node_context'] = node_context_manager
-        self.logger.debug(f"Registered 'node_context' via NodeContextManager")
-
-        # Initialize node context asynchronously in the initialize method
-
-        await self._initialize_node_context()
 
         self.logger.info(f"UserContextManager initialized successfully")
 
-    async def _initialize_node_context(self):
-        """
-        Ensure 'node_context' is registered using NodeContextManager.
-        """
-        try:
-            node_context_manager = self.service_registry.get('node_context')
-        except KeyError:
-            self.logger.warning(f"'node_context' not found in ServiceRegistry, registering it via NodeContextManager.")
-            node_context_manager = self.service_registry.get('node_context_manager')
-            await node_context_manager.register_node_context()
-
-        self.context_managers['node_context'] = node_context_manager
-        self.logger.debug(f"Registered 'node_context' via NodeContextManager")
-
     async def initialize(self):
+        await self._initialize_node_context()
         if hasattr(self.config, '__dict__'):
             config_dict = self.config.__dict__
         elif isinstance(self.config, dict):
