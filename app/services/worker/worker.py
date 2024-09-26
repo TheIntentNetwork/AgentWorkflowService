@@ -21,8 +21,9 @@ class Worker(IService):
         self.is_active = False
         self.task_queue = asyncio.Queue()
 
-    async def initialize(self):
-        self.logger.info("Initializing Worker service")
+    async def initialize(self, name: str, service_registry: ServiceRegistry, worker_uuid: str = None, config: Optional[Dict[str, Any]] = None):
+        self.worker_uuid = worker_uuid or str(uuid.uuid4())
+        self.logger.info(f"Initializing Worker service with UUID: {self.worker_uuid}")
         await self.join()
         self.is_active = True
         asyncio.create_task(self.process_tasks())
