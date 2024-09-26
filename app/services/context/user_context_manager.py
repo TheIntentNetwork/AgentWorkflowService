@@ -21,16 +21,16 @@ class UserContextManager(IService):
         self.service_registry = service_registry
         self.config = config
         
-        # Ensure 'node_context' is registered in the service registry
+        # Ensure 'node_context' is registered in the service registry using NodeContextManager
         try:
             node_context_manager = self.service_registry.get('node_context')
         except KeyError:
-            self.logger.warning(f"'node_context' not found in ServiceRegistry, registering it now.")
-            node_context_manager = DBContextManager('node_context', self.service_registry, self.config)
-            self.service_registry.register('node_context', DBContextManager, config=self.config)
+            self.logger.warning(f"'node_context' not found in ServiceRegistry, registering it via NodeContextManager.")
+            node_context_manager = self.service_registry.get('node_context_manager')
+            await node_context_manager.register_node_context()
         
         self.context_managers['node_context'] = node_context_manager
-        self.logger.debug(f"Registered 'node_context' in ServiceRegistry")
+        self.logger.debug(f"Registered 'node_context' via NodeContextManager")
 
         self.logger.info(f"UserContextManager initialized successfully")
 
