@@ -69,8 +69,8 @@ class CustomFormatter(ColoredFormatter):
             'CRITICAL': Fore.RED + Style.BRIGHT,
         }
         timestamp = f"{Fore.WHITE}{self.formatTime(record, self.datefmt)}{Style.RESET_ALL}"
-        log_label = f"{Fore.MAGENTA}{record.classname}.{record.funcName}{Style.RESET_ALL}"
-        log_level = f"{log_colors[record.levelname]}{record.levelname:<8}{Style.RESET_ALL}"
+        log_label = f"{Fore.CYAN}{record.classname}.{record.funcName}{Style.RESET_ALL}"
+        log_level = f"{Fore.YELLOW}{record.levelname:<8}{Style.RESET_ALL}"
         message = f"{Fore.WHITE}{record.getMessage()}{Style.RESET_ALL}"
         
         if message == self.last_message:
