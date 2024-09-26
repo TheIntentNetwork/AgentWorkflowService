@@ -28,15 +28,25 @@ class RedisService(IService):
     def __init__(self, **kwargs):
         self.redis_url = kwargs.get("redis_url")
         self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-        self.client = AsyncRedis.from_url(self.redis_url)
-        self.pubsub = self.client.pubsub()
+        self.client = None
+        self.pubsub = None
         self.service_registry = __class__.service_registry
         self.subscriptions = {}
-        self.initialized = True
+        self.initialized = False
         self.event_loop = asyncio.get_event_loop()
+        self.listener_thread = None
+        self.model = None
+
+    async def initialize(self):
+        self.logger = get_logger("RedisService")
+        self.logger.info("Initializing RedisService")
+        self.client = AsyncRedis.from_url(self.redis_url)
+        self.pubsub = self.client.pubsub()
         self.listener_thread = threading.Thread(target=self.run_listener, daemon=True)
         self.listener_thread.start()
         self.model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
+        self.initialized = True
+        self.logger.info("RedisService initialized successfully")
 
     async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
         try:
