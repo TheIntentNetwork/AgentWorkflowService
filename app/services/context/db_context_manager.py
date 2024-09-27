@@ -12,6 +12,7 @@ class DBContextManager(IService):
     _lock = threading.Lock()  # Add lock
     
     def __init__(self, name: str, service_registry: 'ServiceRegistry', config: 'ServiceConfig'):
+        super().__init__(name=name, service_registry=service_registry, config=config)  # Call the parent class constructor
         self.config = config
         self.table_name = config.table_name
         self.allowed_operations = config.allowed_operations
