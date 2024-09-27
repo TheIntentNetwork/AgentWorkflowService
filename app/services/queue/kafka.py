@@ -3,6 +3,8 @@ from abc import ABC
 import asyncio
 import json
 import logging
+import uuid
+import uuid
 import re
 import string
 import threading
@@ -14,8 +16,6 @@ from pydantic import BaseModel
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.consumer.fetcher import ConsumerRecord
 from app.interfaces.service import IService
-
-from app.utilities.logger import get_logger
 
 load_dotenv()
 
@@ -48,7 +48,7 @@ class KafkaService(IService):
 
         self.event_loop = asyncio.get_event_loop()
         self.consumer_thread = None
-        self.logger = get_logger("KafkaService")
+        self.logger = self.get_logger_with_instance_id("KafkaService")
         self.logger.info("KafkaService initialized")
 
     async def _subscribe_to_topic(self, topic):

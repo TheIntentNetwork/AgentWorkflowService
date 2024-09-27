@@ -6,18 +6,12 @@ import traceback
 from typing import Callable, Optional, Union
 from uuid import uuid4
 from kafka.consumer.fetcher import ConsumerRecord
-import logging
-from concurrent.futures import ThreadPoolExecutor
-
-from pydantic import ValidationError
-from app.factories.agent_factory import AgentFactory
 from app.interfaces import IService
 
 from app.models.Task import Task
 from app.services.cache.redis import RedisService
 from app.services.queue.kafka import KafkaService
 from app.services.discovery.service_registry import ServiceRegistry
-from app.utilities import get_logger
 from kafka.consumer.fetcher import ConsumerRecord
 
 class EventManager(IService):

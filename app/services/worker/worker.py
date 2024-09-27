@@ -5,7 +5,6 @@ from app.config.service_config import ServiceConfig
 from app.services.cache.redis import RedisService
 from app.interfaces.service import IService
 from app.services import ServiceRegistry
-from app.utilities.logger import get_logger
 
 
 class Worker(IService):
@@ -19,7 +18,7 @@ class Worker(IService):
         self.worker_uuid = worker_uuid
         self.service_registry = service_registry
         self.redis: RedisService = self.service_registry.get("redis")
-        self.logger = get_logger(name)
+        self.logger = self.get_logger_with_instance_id(name)
         self.is_active = False
         self.task_queue = asyncio.Queue()
 
