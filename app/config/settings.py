@@ -10,7 +10,7 @@ from .service_config import ServiceConfig
 load_dotenv()
 
 class Settings(BaseModel):
-    service_config = {}
+    service_config: dict = {}
     
     BOOTSTRAP_SERVERS: str = Field(default=os.getenv("BOOTSTRAP_SERVERS"))
     TOPICS: str = Field(default=os.getenv("TOPICS"))
@@ -24,8 +24,7 @@ class Settings(BaseModel):
     SUPABASE_AUTH_JWT_SECRET: str = Field(default=os.getenv("SUPABASE_AUTH_JWT_SECRET"))
     SUPABASE_AUTH_SERVICE_ROLE_KEY: str = Field(default=os.getenv("SUPABASE_AUTH_SERVICE_ROLE_KEY"))
     SUPABASE_DB_PASSWORD: str = Field(default=os.getenv("SUPABASE_DB_PASSWORD"))
-    PROFILE: bool = Field(default=os.getenv("PROFILE"))
-    service_config: Dict[str, ServiceConfig] = {}
+    PROFILE: bool = Field(default=os.getenv("PROFILE", False))
     
     class Config:
         env_file = '.env'

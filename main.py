@@ -20,21 +20,8 @@ from pyinstrument import Profiler
 import objgraph
 import tracemalloc
 from memory_profiler import memory_usage
-
-from app.services import ServiceRegistry
-from app.services.context.context_manager import ContextManager
-from app.services.worker.worker import Worker
-from app.services.events.event_manager import EventManager
-from app.services.queue.kafka import KafkaService
-from app.services.cache.redis import RedisService
-from app.services.session.session import SessionManager
-from app.services.lifecycle.lifecycle_manager import LifecycleManager
-from app.utilities import get_logger, llm_client
-from app.config.settings import settings
+from app.config.settings import Settings
 from app.utilities.llm_client import set_openai_key
-from app.services.dependencies.dependency_service import DependencyService
-from app.services.context.context_manager_factory import ContextManagerFactory
-from app.services.context.user_context_manager import UserContextManager
 
 sys.dont_write_bytecode = True
 load_dotenv()
@@ -80,37 +67,59 @@ def create_app():
     global agency_instances
     agency_instances = {}
     global logger
-    logger = get_logger('AgentWorkflowService')
+    
     global service_registry
-    service_registry = ServiceRegistry.instance()
+    
 
     @app.on_event("startup")
     async def startup_event():
+        
         global profiler
+        from app.services import ServiceRegistry
+        
+        global service_registry
+        service_registry = ServiceRegistry.instance()
+        global logger
+        from app.utilities.logger import get_logger
+        
         
         try:
-            if settings.PROFILE:
+            if Settings.PROFILE:
                 logger.info("Starting application with profiling enabled")
                 profiler = Profiler()
                 profiler.start()
             
-            set_openai_key(settings.OPENAI_API_KEY)
+            set_openai_key(Settings.OPENAI_API_KEY)
             
             # Initialize all services
             await initialize_services()
             
-            logger.info("Application startup complete")
+            
         except Exception as e:
+            
+            logger = get_logger(f'AgentWorkflowService_{uuid.uuid4()}')
             logger.error("Failed to start the application: %s\n%s", str(e), traceback.format_exc())
             await shutdown_event()
 
     async def initialize_services():
+        
         await initialize_context_managers()
+        logger.info("Application startup complete")
 
     async def initialize_context_managers():
         """
         Initializes and registers the UserContextManager and NodeContextManager using the ContextManagerFactory.
         """
+        from app.services.session.session import SessionManager
+        from app.services.dependencies.dependency_service import DependencyService
+        from app.services.context.context_manager import ContextManager
+        from app.services.worker.worker import Worker
+        from app.services.events.event_manager import EventManager
+        from app.services.queue.kafka import KafkaService
+        from app.services.cache.redis import RedisService
+        from app.services.context.context_manager_factory import ContextManagerFactory
+        from app.services.context.user_context_manager import UserContextManager
+        from app.config.settings import settings
         logger.info("Initializing context managers")
         context_managers = ContextManagerFactory.create_context_managers(service_registry)
         logger.info(f"Context managers initialized: {list(context_managers.keys())}")
@@ -132,6 +141,7 @@ def create_app():
 
     @app.on_event("shutdown")
     async def shutdown_event():
+        from app.services.worker.worker import Worker
         worker_service: Worker = service_registry.get("worker")
         await worker_service.shutdown()
         logger.debug("Shutting down the application")
