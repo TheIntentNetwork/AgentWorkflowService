@@ -11,6 +11,7 @@ load_dotenv()
 
 class Settings(BaseModel):
     service_config: dict = Field(default_factory=dict)  # Ensure service_config is always a dict
+    settings: Dict[str, Any] = Field(default_factory=dict)
     
     BOOTSTRAP_SERVERS: str = Field(default=os.getenv("BOOTSTRAP_SERVERS", "localhost:9092"))
     TOPICS: str = Field(default=os.getenv("TOPICS", "default_topic"))
@@ -30,11 +31,17 @@ class Settings(BaseModel):
         env_file = '.env'
         env_file_encoding = 'utf-8'
         extra = 'allow'
-
+    
+    def __init__(self, **data):
+       self.load_from_yaml('service_config.yml')
+    
     @classmethod
     def load_from_yaml(cls, yaml_file: str):
         from app.utilities.logger import get_logger
         
+        if cls._instance is not None:
+            return cls._instance
+        cls._instance = {}
         instance = cls()
         with open(yaml_file, 'r') as f:
             config = yaml.safe_load(f)
@@ -56,3 +63,5 @@ class Settings(BaseModel):
     @classmethod
     def get_instance(cls) -> 'Settings':
         return cls._instance
+
+    
