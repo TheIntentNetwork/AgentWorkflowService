@@ -14,7 +14,7 @@ def get_logger(name: str):
 def configure_logger(name):
     logger = base_configure_logger(name)  # Initialize logger before using it
     logger.info(f"Using service name from config: {name}")
-    while Settings['service_config'] is None:
+    while Settings.instance().service_config is None:
         logger.warning("Service config not yet loaded. Waiting for service config...")
         time.sleep(1)
         
