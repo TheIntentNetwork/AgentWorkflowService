@@ -1,32 +1,20 @@
 import os
 import logging
+from typing import TYPE_CHECKING
 import uuid
 from app.logging_config import configure_logger as base_configure_logger
-
+from app.config.settings import Settings
 
 def get_logger(name):
-    global settings
-    settings = None
-    def get_settings():
-        global settings
-        if settings is None:
-            settings = None
-            if settings is None:
-                if settings is None:
-                    from ..config.settings import settings
-
-        return settings
-    service_names = get_settings().service_config.get('logging', {}).get('service_names', {})
+    service_names = Settings.service_config.get('logging', {}).get('service_names', {})
     return configure_logger(service_names.get(name, name))
 
 def configure_logger(name):
     
     logger = base_configure_logger(name)
-    
-    global settings
     # Load log levels and colored logs setting from service_config.yml
-    log_levels = settings.service_config.get('logging', {}).get('log_levels', {})
-    enable_colored_logs = settings.service_config.get('logging', {}).get('enable_colored_logs', False)
+    log_levels = Settings.service_config.get('logging', {}).get('log_levels', {})
+    enable_colored_logs = Settings.service_config.get('logging', {}).get('enable_colored_logs', False)
 
     # Set log level based on the service name
     logger.setLevel(log_levels.get(name, log_levels.get('default', logging.INFO)))
