@@ -28,7 +28,7 @@ class UserContextManager(IService):
             'events': DBContextManager('events', service_registry, config['events']),
             'videos': DBContextManager('videos', service_registry, config['videos']),
         }
-        self.logger = self.get_logger_with_instance_id(name)  # Initialize logger with instance_id
+        self.logger = self.get_logger_with_instance_id(name)
         #Load an instance of the DBContextManager for each context manager in the config
         for name, manager in self.context_managers.items():
             service_registry.register(name, DBContextManager, config=manager.config)
