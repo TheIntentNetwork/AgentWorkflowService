@@ -50,7 +50,11 @@ class Settings(BaseModel):
         logger.debug(f"Loaded configuration: {json.dumps(config, indent=2)}")
         
         for service_name, service_data in config['db_context_managers'].items():
-            instance.service_config[service_name] = ServiceConfig(**service_data)
+            if 'db_context_managers' in config:
+                for service_name, service_data in config['db_context_managers'].items():
+                    instance.service_config[service_name] = ServiceConfig(**service_data)
+            else:
+                raise ValueError("Missing 'db_context_managers' in service_config.yml")
         
         cls._instance = instance
         return cls._instance
@@ -58,7 +62,9 @@ class Settings(BaseModel):
     @classmethod
     def reload(cls):
         cls._instance = None
-        return cls.load_from_yaml('service_config.yml')
+        if cls._instance is None:
+            return cls.load_from_yaml('service_config.yml')
+        return cls._instance
     
     @classmethod
     def get_instance(cls) -> 'Settings':
