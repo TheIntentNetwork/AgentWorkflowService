@@ -124,15 +124,11 @@ def create_app():
             ("dependency_service", DependencyService, {}),
             ("user_context", UserContextManager, {"config": settings.service_config.get('user_context', {})})
         ]
-
+        from app.interfaces.service import IService
+        
         for name, service_class, kwargs in services:
-            service = service_registry.register(name, service_class, **kwargs)
-            await service.initialize()
+            service: IService = service_registry.register(name, service_class, **kwargs)
             logger.info(f"{name.capitalize()} service initialized")
-
-        user_context_manager = service_registry.get("user_context")
-        await user_context_manager.initialize()
-        logger.info("User context manager initialized")
 
     @app.on_event("shutdown")
     async def shutdown_event():
