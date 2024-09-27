@@ -16,8 +16,7 @@ logger = get_logger(f'SessionManager_{uuid.uuid4()}')
 class SessionManager(IService):
 
     def __init__(self, name: str, service_registry: any, **kwargs):
-        self.name = name
-        self.service_registry = service_registry
+        super().__init__(name=name, service_registry=service_registry, **kwargs)
         from app.services.queue.kafka import KafkaService
         from app.services.cache.redis import RedisService
         from app.services import ServiceRegistry
