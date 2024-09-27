@@ -91,7 +91,10 @@ def create_app():
                 profiler = Profiler()
                 profiler.start()
             
-            set_openai_key(Settings.OPENAI_API_KEY)
+            if not Settings.OPENAI_API_KEY:
+                logger.warning("OPENAI_API_KEY is missing. Please set it in the environment or .env file.")
+            else:
+                set_openai_key(Settings.OPENAI_API_KEY)
             
             # Initialize all services
             await initialize_services()
