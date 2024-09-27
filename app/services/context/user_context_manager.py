@@ -15,6 +15,7 @@ class UserContextManager(IService):
     
     def __init__(self, name: str, service_registry: ServiceRegistry, config: ServiceConfig, **kwargs):
         print(f"UserContextManager initialized with config: {config}")
+        super().__init__(name=name, service_registry=service_registry, config=config)  # Call parent constructor to initialize instance_id
         self.context_managers = {
             'user_context': DBContextManager('user_context', service_registry, config['user_context']),
             'user_meta': DBContextManager('user_meta', service_registry, config['user_meta']),
