@@ -46,7 +46,8 @@ class Settings(BaseModel):
         for service_name, service_data in config['db_context_managers'].items():
             instance.service_config[service_name] = ServiceConfig(**service_data)
         
-        return instance
+        cls._instance = instance
+        return cls._instance
 
     @classmethod
     def reload(cls):
