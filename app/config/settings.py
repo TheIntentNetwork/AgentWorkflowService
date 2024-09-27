@@ -4,12 +4,14 @@ from typing import Dict, Any, List
 from dotenv import load_dotenv
 import yaml
 import json
-from app.utilities.logger import get_logger
+
 from .service_config import ServiceConfig
 # Load environment variables
 load_dotenv()
 
 class Settings(BaseModel):
+    service_config = {}
+    
     BOOTSTRAP_SERVERS: str = Field(default=os.getenv("BOOTSTRAP_SERVERS"))
     TOPICS: str = Field(default=os.getenv("TOPICS"))
     CONSUMER_GROUP: str = Field(default=os.getenv("CONSUMER_GROUP"))
@@ -23,7 +25,6 @@ class Settings(BaseModel):
     SUPABASE_AUTH_SERVICE_ROLE_KEY: str = Field(default=os.getenv("SUPABASE_AUTH_SERVICE_ROLE_KEY"))
     SUPABASE_DB_PASSWORD: str = Field(default=os.getenv("SUPABASE_DB_PASSWORD"))
     PROFILE: bool = Field(default=os.getenv("PROFILE"))
-
     service_config: Dict[str, ServiceConfig] = {}
     
     class Config:
@@ -33,6 +34,8 @@ class Settings(BaseModel):
 
     @classmethod
     def load_from_yaml(cls, yaml_file: str):
+        from app.utilities.logger import get_logger
+        
         instance = cls()
         with open(yaml_file, 'r') as f:
             config = yaml.safe_load(f)
@@ -49,5 +52,7 @@ class Settings(BaseModel):
     def reload(cls):
         cls._instance = None
         return cls.load_from_yaml('service_config.yml')
-
-settings = Settings.load_from_yaml('service_config.yml')
+    
+    @classmethod
+    def get_instance(cls) -> 'Settings':
+        return cls._instance
