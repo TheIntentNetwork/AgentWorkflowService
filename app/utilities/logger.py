@@ -11,6 +11,7 @@ def get_logger(name: str):
     return configure_logger(name)
 
 def configure_logger(name):
+    logger = base_configure_logger(name)  # Initialize logger before using it
     service_names = Settings.reload().service_config.get('logging', {}).get('service_names', {})
     name = service_names.get(name, name)
     logger.info(f"Using service name from config: {name}")
