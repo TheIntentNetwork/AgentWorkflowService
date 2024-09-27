@@ -16,7 +16,7 @@ class Settings(BaseModel):
     TOPICS: str = Field(default=os.getenv("TOPICS"))
     CONSUMER_GROUP: str = Field(default=os.getenv("CONSUMER_GROUP"))
     REDIS_URL: str = Field(default=os.getenv("REDIS_URL"))
-    OPENAI_API_KEY: str = Field(default=os.getenv("OPENAI_API_KEY"))
+    OPENAI_API_KEY: str = Field(default=os.getenv("OPENAI_API_KEY", None))  # Provide a default value of None
     BROWSERLESS_API_KEY: str = Field(default=os.getenv("BROWSERLESS_API_KEY"))
     DEBUG: bool = Field(default=os.getenv("DEBUG"))
     SUPABASE_URL: str = Field(default=os.getenv("SUPABASE_URL"))
