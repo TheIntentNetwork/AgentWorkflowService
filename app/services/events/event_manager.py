@@ -35,7 +35,7 @@ class EventManager(IService):
         super().__init__(name=name, service_registry=service_registry, config=config)
         self.name = name
         self.service_registry = service_registry
-        self.logger = get_logger(name)
+        self.logger = self.get_logger_with_instance_id(name)
         self.logger.info("EventManager __init__ method called")
         self.logger.info(f"EventManager initialized with name: {name}")
         self.eventListeners = {}

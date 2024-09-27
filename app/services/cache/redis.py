@@ -69,7 +69,7 @@ class RedisService(IService):
     
     def run_listener(self):
         from app.utilities.logger import get_logger
-        self.logger = get_logger('RedisService')
+        self.logger = self.get_logger_with_instance_id('RedisService')
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
