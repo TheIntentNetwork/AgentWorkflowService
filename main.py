@@ -75,26 +75,27 @@ def create_app():
     async def startup_event():
         
         global profiler
-        from app.services import ServiceRegistry
         
-        global service_registry
-        service_registry = ServiceRegistry.instance()
-        from app.utilities.logger import get_logger
-        global logger
-        logger = get_logger(f'AgentWorkflowService_{uuid.uuid4()}')
-        from app.utilities.logger import get_logger
-        logger = get_logger("AgentWorkflowService_"+str(uuid.uuid4()))
         
         try:
-            if not hasattr(Settings, 'PROFILE'):
-                Settings.PROFILE = False  # Default value if PROFILE is missing
-            if Settings.PROFILE:
-                logger.info("Starting application with profiling enabled")
-                profiler = Profiler()
-                profiler.start()
+            #if not hasattr(Settings, 'PROFILE'):
+            #    Settings.PROFILE = False  # Default value if PROFILE is missing
+            #if Settings.PROFILE:
+            #    logger.info("Starting application with profiling enabled")
+            #    profiler = Profiler()
+            #    profiler.start()
+                
+            from app.services import ServiceRegistry
+        
+            global service_registry
+            service_registry = ServiceRegistry.instance()
+            
+            global logger
+            from app.utilities.logger import get_logger
+            logger = get_logger("AgentWorkflowService_"+str(uuid.uuid4()))
             
             try:
-                if not Settings.OPENAI_API_KEY:
+                if not Settings.settings.OPENAI_API_KEY:
                     logger.warning("OPENAI_API_KEY is missing. Please set it in the environment or .env file.")
                 else:
                     set_openai_key(Settings.OPENAI_API_KEY)
