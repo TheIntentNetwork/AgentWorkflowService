@@ -5,16 +5,21 @@ import uuid
 from app.logging_config import configure_logger as base_configure_logger
 from app.config.settings import Settings
 
-def get_logger(name):
-    if not Settings.service_config:
-        Settings.service_config = Settings.load_from_yaml('service_config.yml').service_config
-    service_names = Settings.service_config.get('logging', {}).get('service_names', {})
-    return configure_logger(service_names.get(name, name))
+def get_logger(name: str):
+    if 'Settings' in name:
+        return logging.getLogger(name)  # Avoid recursive call
+    return configure_logger(name)
 
 def configure_logger(name):
+    service_names = Settings.reload().service_config.get('logging', {}).get('service_names', {})
+    name = service_names.get(name, name)
+    if not Settings.reload().service_config:
+        Settings.service_config = Settings.load_from_yaml('service_config.yml').service_config
+    
     
     logger = base_configure_logger(name)
     # Load log levels and colored logs setting from service_config.yml
+    
     log_levels = Settings.service_config.get('logging', {}).get('log_levels', {})
     enable_colored_logs = Settings.service_config.get('logging', {}).get('enable_colored_logs', False)
 
