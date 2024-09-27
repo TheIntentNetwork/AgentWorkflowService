@@ -81,7 +81,7 @@ def create_app():
         service_registry = ServiceRegistry.instance()
         global logger
         from app.utilities.logger import get_logger
-        
+        logger = get_logger("AgentWorkflowService_"+str(uuid.uuid4()))
         
         try:
             if not hasattr(Settings, 'PROFILE'):
@@ -91,13 +91,25 @@ def create_app():
                 profiler = Profiler()
                 profiler.start()
             
-            if not Settings.OPENAI_API_KEY:
-                logger.warning("OPENAI_API_KEY is missing. Please set it in the environment or .env file.")
+            try:
+                if not Settings.OPENAI_API_KEY:
+                    logger.warning("OPENAI_API_KEY is missing. Please set it in the environment or .env file.")
+                else:
+                    set_openai_key(Settings.OPENAI_API_KEY)
+            except AttributeError:
+                logger.error("Failed to load OPENAI_API_KEY from Settings. Please check your environment or .env file.")
+                await shutdown_event()
+                return
             else:
                 set_openai_key(Settings.OPENAI_API_KEY)
             
             # Initialize all services
-            await initialize_services()
+            try:
+                await initialize_services()
+            except Exception as e:
+                logger.error(f"Failed to initialize services: {str(e)}")
+                await shutdown_event()
+                return
             
             
         except Exception as e:
