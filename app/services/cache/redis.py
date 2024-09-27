@@ -160,14 +160,14 @@ class RedisService(IService):
         if process_config.get('remove_punctuation', True):
             text = re.sub('[%s]' % re.escape(string.punctuation), ' ', text)
         if process_config.get('remove_extra_whitespace', True):
-            text = re.sub('\s{2,}', " ", text)
+            text = re.sub(r'\s{2,}', " ", text)
         if process_config.get('remove_newlines', True):
             text = text.replace("\n", " ")
         if process_config.get('split_camel_case', True):
             text = " ".join(re.split('(?=[A-Z])', text))
         
         if process_config.get('remove_digits', True):
-            text = re.sub('\d+', '', text)
+            text = re.sub(r'\d+', '', text)
         if process_config.get('lowercase', True):
             text = text.lower()
         if func:
