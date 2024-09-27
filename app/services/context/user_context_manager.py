@@ -14,20 +14,7 @@ class UserContextManager(IService):
     _instance = None
     
     def __init__(self, name: str, service_registry: ServiceRegistry, config: ServiceConfig, **kwargs):
-        self.logger = get_logger(name)
-        self.service_registry = service_registry
-        self.config = config
-        self.logger.debug(f"UserContextManager config: {config}")
-        
-    
-    async def _initialize_service(self):
-        if hasattr(self, '_initialized') and self._initialized:
-            self.logger.info("UserContextManager is already initialized.")
-            return
-
-        self.logger.info(f"Initializing UserContextManager")
-        service_registry = self.service_registry
-        config = self.config
+        print(f"UserContextManager initialized with config: {config}")
         self.context_managers = {
             'user_context': DBContextManager('user_context', service_registry, config['user_context']),
             'user_meta': DBContextManager('user_meta', service_registry, config['user_meta']),
@@ -42,48 +29,41 @@ class UserContextManager(IService):
         #Load an instance of the DBContextManager for each context manager in the config
         for name, manager in self.context_managers.items():
             service_registry.register(name, DBContextManager, config=manager.config)
-            self.logger.debug(f"Registered {name} in ServiceRegistry")
+            self.logger.info(f"Registered {name} in ServiceRegistry")
         
-        self._initialized = True
-        self.logger.info(f"UserContextManager initialized successfully")
-        self.logger.debug(f"UserContextManager context_managers: {self.context_managers}")
-        
+        print(f"UserContextManager initialized with context_managers: {self.context_managers}")
 
-    async def load_user_context(self, user_id: str):
+    async def load_user_context(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         from app.services.cache.redis import RedisService
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
-        self.logger.info(f"Loading user context")
+        user_id = task_data['context']['user_context']['user_id']
         context = {}
-        context['user_meta'] = await self.context_managers['user_meta'].fetch_data('get_user_meta', {})
-        context['forms'] = await self.context_managers['forms'].fetch_data('get_user_forms', {})
-        
-        self.logger.debug(f"Fetched user_meta: {len(context['user_meta'])} records")
-        self.logger.debug(f"Fetched forms: {len(context['forms'])} records")
+        context['user_meta'] = await self.context_managers['user_meta'].fetch_data('get_user_meta', {'p_user_id': user_id})
+        context['forms'] = await self.context_managers['forms'].fetch_data('get_user_forms', {'p_user_id': user_id})
         
         if len(context['user_meta']) > 0:
             if not await redis_service.index_exists(f'user_data:{user_id}'):
-                self.logger.debug(f"Creating index user_data:{user_id}")
                 await redis_service.create_index(f"user_data:{user_id}")
             user_meta = []
-            for i, record in enumerate(context['user_meta']):
+            i = 0
+            for record in context['user_meta']:
                 user_meta.append({'id': i, 'name': record['meta_key'], 'type': 'user_meta', 'data': {'meta_key': record['meta_key'], 'meta_value': record['meta_value']}})
-            
-            self.logger.debug(f"Loading {len(user_meta)} user_meta records into Redis")
+                i += 1
+                
             await redis_service.load_records(user_meta, f"user_data:{user_id}", {'data': False}, False)
         
         if len(context['forms']) > 0:
             if not await redis_service.index_exists(f"user_forms:{user_id}"):
-                self.logger.debug(f"Creating index user_forms:{user_id}")
                 await redis_service.create_index(f"user_forms:{user_id}")
             
             forms = []
-            for i, record in enumerate(context['forms']):
+            i = 0
+            for record in context['forms']:
                 forms.append({'id': i, 'name': record['title'], 'type': 'forms', 'data': {'title': record['title'], 'decrypted_form': record['decrypted_form']}})
+                i += 1
             
-            self.logger.debug(f"Loading {len(forms)} form records into Redis")
             await redis_service.load_records(forms, f"user_data:{user_id}", {'data': False}, False)
     
-        self.logger.info(f"User context loaded successfully for user_id: {user_id}")
         return context
 
     async def get_user_context(self, user_id: str, session_id: str = None) -> Dict[str, Any]:
