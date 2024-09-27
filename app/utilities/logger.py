@@ -1,5 +1,6 @@
 import os
 import logging
+import uuid
 from app.logging_config import configure_logger as base_configure_logger
 
 def get_logger(name):
