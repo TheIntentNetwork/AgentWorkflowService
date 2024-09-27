@@ -423,6 +423,14 @@ db_context_managers:
         function: get_nodes
         params:
           - p_id
+      get_nodes_by_name:
+        function: get_nodes_by_name
+        params:
+          - p_name
+      get_child_nodes_by_parent_name:
+        function: get_child_nodes_by_parent_name
+        params:
+          - p_name
       upsert_nodes:
         function: upsert_nodes
         params:
