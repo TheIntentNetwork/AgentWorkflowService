@@ -30,7 +30,6 @@ def configure_logger(name):
             )
             cloudwatch_handler.setFormatter(logger.handlers[0].formatter)  # Use the same formatter as the existing handler
             logger.addHandler(cloudwatch_handler)
-            logger.info(f"CloudWatch logging enabled for ContextManagerFactory_{uuid.uuid4()}.")
             logger.debug(f"Logger {name} initialized with {len(logger.handlers)} handlers.")
         except Exception as e:
             logger.error(f"Failed to initialize CloudWatch handler: {str(e)}")
