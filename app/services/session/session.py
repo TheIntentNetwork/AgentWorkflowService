@@ -11,7 +11,7 @@ from app.models.Session import Session
 from app.services.context.user_context_manager import UserContextManager
 from app.utilities import get_logger
 
-logger = get_logger('SessionManager')
+logger = get_logger(f'SessionManager_{uuid.uuid4()}')
 
 class SessionManager(IService):
 
