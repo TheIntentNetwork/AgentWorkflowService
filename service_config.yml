@@ -397,51 +397,17 @@ db_context_managers:
           - p_user_id
           - p_id
 
-  node_context:
-    name: node_context
-    table_name: node_templates
-    allowed_operations:
-      - fetch_all
-      - fetch_one
-      - execute
-      - insert
-    permissions:
-      read: true
-      write: true
-      delete: false
-    context_prefix: "node_context:"
-    fields:
-      - id
-      - name
-      - type
-      - description
-      - context_info
-      - process_item_level
-      - created_at
-    queries:
-      get_nodes:
-        function: get_nodes
-        params:
-          - p_id
-      get_nodes_by_name:
-        function: get_nodes_by_name
-        params:
-          - p_name
-      get_child_nodes_by_parent_name:
-        function: get_child_nodes_by_parent_name
-        params:
-          - p_name
-      upsert_nodes:
-        function: upsert_nodes
-        params:
-          - p_id
-          - p_name
-          - p_type
-          - p_description
-          - p_context_info
-          - p_process_item_level
-          - p_created_at
-      delete_nodes:
-        function: delete_nodes
-        params:
-          - p_id
+logging:
+  log_levels:
+    default: INFO
+    tools: DEBUG
+    nodes: DEBUG
+  enable_colored_logs: true
+  service_names:
+    DBContextManager: "DBContextManager"
+    NodeContextManager: "NodeContextManager"
+    KafkaService: "KafkaService"
+    RedisService: "RedisService"
+    EventManager: "EventManager"
+    Worker: "Worker"
+    SessionManager: "SessionManager"
