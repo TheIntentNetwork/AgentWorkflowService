@@ -55,6 +55,12 @@ class Node(BaseModel, IRunnableContext):
         self._dependency_service: IDependencyService = service_registry.get('dependency_service')
         self.id = data.get('id', str(uuid.uuid4()))
         self.logger = configure_logger(f'Node_{self.id}')
+
+    def dict(self, *args, **kwargs):
+        """
+        Override the dict method to exclude non-serializable fields like logger.
+        """
+        return super().dict(*args, exclude={"logger"}, **kwargs)
     
     @classmethod
     async def create(cls, **node_data):
