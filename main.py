@@ -102,8 +102,6 @@ def create_app():
                 logger.error("Failed to load OPENAI_API_KEY from Settings. Please check your environment or .env file.")
                 await shutdown_event()
                 return
-            else:
-                set_openai_key(Settings.OPENAI_API_KEY)
             
             # Initialize all services
             try:
