@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 from typing import TYPE_CHECKING
 import uuid
 from app.logging_config import configure_logger as base_configure_logger
@@ -12,18 +13,11 @@ def get_logger(name: str):
 
 def configure_logger(name):
     logger = base_configure_logger(name)  # Initialize logger before using it
-    service_names = Settings.reload().service_config.get('logging', {}).get('service_names', {})
-    name = service_names.get(name, name)
     logger.info(f"Using service name from config: {name}")
-    if not Settings.reload().service_config:
-        Settings.service_config = Settings.load_from_yaml('service_config.yml').service_config
-    
-    
-    logger = base_configure_logger(name)
-    # Load log levels and colored logs setting from service_config.yml
-    
-    if not hasattr(Settings, 'service_config') or not Settings.service_config:
-        Settings.service_config = Settings.load_from_yaml('service_config.yml').service_config
+    while Settings['service_config'] is None:
+        logger.warning("Service config not yet loaded. Waiting for service config...")
+        time.sleep(1)
+        
     log_levels = Settings.service_config.get('logging', {}).get('log_levels', {})
     enable_colored_logs = Settings.service_config.get('logging', {}).get('enable_colored_logs', False)
 
