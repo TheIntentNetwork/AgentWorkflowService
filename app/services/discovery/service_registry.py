@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional
+import uuid
 from app.interfaces import IService
 import logging
 
@@ -47,7 +48,8 @@ class ServiceRegistry:
                 self.register(name, ContextManager)
             elif name == 'worker':
                 from app.services.worker.worker import Worker
-                self.register(name, Worker)
+                worker_uuid = str(uuid.uuid4())  # Generate a unique worker_uuid
+                self.register(name, Worker, worker_uuid=worker_uuid)
             elif name == 'lifecycle_manager':
                 from app.services.lifecycle.lifecycle_manager import LifecycleManager
                 self.register(name, LifecycleManager)
