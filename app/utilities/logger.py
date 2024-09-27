@@ -8,7 +8,8 @@ def get_logger(name):
     
     # Use the service name from the configuration if available
     global settings
-    if settings is None:
+    global settings
+    if 'settings' not in globals():
         from app.config.settings import settings
     service_names = settings.service_config.get('logging', {}).get('service_names', {})
     return configure_logger(service_names.get(name, name))
