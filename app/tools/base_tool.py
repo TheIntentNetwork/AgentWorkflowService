@@ -26,7 +26,7 @@ class SharedState:
 
 
 class BaseTool(OpenAISchema, ABC):
-    from app.utilities.logger import get_logger
+from app.utilities.logger import get_logger
     
     shared_state: ClassVar[SharedState] = None
     caller_agent: Any = None
