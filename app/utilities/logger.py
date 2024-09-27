@@ -5,8 +5,12 @@ from app.logging_config import configure_logger as base_configure_logger
 
 def get_logger(name):
     # Delay importing settings to avoid circular import issues
-    settings = None
+    
     # Use the service name from the configuration if available
+    global settings
+    settings = None
+    if settings is None:
+        from app.config.settings import settings
     service_names = settings.service_config.get('logging', {}).get('service_names', {})
     return configure_logger(service_names.get(name, name))
 
