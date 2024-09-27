@@ -11,13 +11,8 @@ def get_logger(name):
         global settings
         if settings is None:
             settings = None
-            def get_settings():
-                global settings
-                if settings is None:
-                    from ..config.settings import settings
-                return settings
-        if settings is None:
-            raise RuntimeError("Settings could not be loaded. Ensure 'service_config.yml' is properly configured.")
+            from ..config.settings import settings
+
         return settings
     service_names = get_settings().service_config.get('logging', {}).get('service_names', {})
     return configure_logger(service_names.get(name, name))
