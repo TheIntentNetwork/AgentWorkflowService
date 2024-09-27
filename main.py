@@ -115,6 +115,8 @@ def create_app():
             
         except Exception as e:
             
+            # Ensure service_config is loaded before initializing the logger
+            Settings.reload()
             logger = get_logger(f'AgentWorkflowService_{uuid.uuid4()}')
             logger.error("Failed to start the application: %s\n%s", str(e), traceback.format_exc())
             await shutdown_event()
