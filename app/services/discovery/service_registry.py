@@ -24,6 +24,11 @@ class ServiceRegistry:
 
     def register(self, name: str, service: any, config: Optional[Dict[str, Any]] = None, **kwargs):
         logger.info(f"Registering service: {name}")
+        
+        # Check if the service is already registered
+        if name in self.services:
+            logger.info(f"Service {name} is already registered. Returning existing instance.")
+            return self.services[name]
         if issubclass(service, IService):
             instance = service.instance(name=name, service_registry=self, config=config, **kwargs)
 

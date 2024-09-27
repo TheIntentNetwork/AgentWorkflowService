@@ -17,6 +17,7 @@ class IService(ABC):
         from app.utilities.logger import get_logger
         logger = get_logger(cls.__name__)
         logger.info(f"Getting instance of {cls.__name__} with name: {name}")
+        # Ensure thread safety with a lock
         try:
             logger.info(f"Attempting to acquire lock for {cls.__name__}")
             cls._lock.acquire()
@@ -25,12 +26,15 @@ class IService(ABC):
             logger.error(f"Error acquiring lock: {e}")
 
         try:
-            if cls._instance is None:
-                logger.info(f"Creating new instance of {cls.__name__}")
-                cls._instance = cls(name=name, service_registry=service_registry, config=config, **kwargs)
-                logger.info(f"Instance of {cls.__name__} created with instance_id: {cls._instance.instance_id}")
-            else:
+            # Return the existing instance if it already exists
+            if cls._instance is not None:
                 logger.info(f"Returning existing instance of {cls.__name__} with instance_id: {cls._instance.instance_id}")
+                return cls._instance
+            
+            # Create a new instance if it doesn't exist
+            logger.info(f"Creating new instance of {cls.__name__}")
+            cls._instance = cls(name=name, service_registry=service_registry, config=config, **kwargs)
+            logger.info(f"Instance of {cls.__name__} created with instance_id: {cls._instance.instance_id}")
         finally:
             cls._lock.release()
         return cls._instance
