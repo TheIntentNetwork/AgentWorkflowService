@@ -6,6 +6,8 @@ from app.logging_config import configure_logger as base_configure_logger
 from app.config.settings import Settings
 
 def get_logger(name):
+    if not Settings.service_config:
+        Settings.service_config = Settings.load_from_yaml('service_config.yml').service_config
     service_names = Settings.service_config.get('logging', {}).get('service_names', {})
     return configure_logger(service_names.get(name, name))
 
