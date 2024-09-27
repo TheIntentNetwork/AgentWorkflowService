@@ -12,10 +12,10 @@ load_dotenv()
 class Settings(BaseModel):
     service_config: dict = Field(default_factory=dict)  # Ensure service_config is always a dict
     
-    BOOTSTRAP_SERVERS: str = Field(default=os.getenv("BOOTSTRAP_SERVERS"))
-    TOPICS: str = Field(default=os.getenv("TOPICS"))
-    CONSUMER_GROUP: str = Field(default=os.getenv("CONSUMER_GROUP"))
-    REDIS_URL: str = Field(default=os.getenv("REDIS_URL"))
+    BOOTSTRAP_SERVERS: str = Field(default=os.getenv("BOOTSTRAP_SERVERS", "localhost:9092"))
+    TOPICS: str = Field(default=os.getenv("TOPICS", "default_topic"))
+    CONSUMER_GROUP: str = Field(default=os.getenv("CONSUMER_GROUP", "default_group"))
+    REDIS_URL: str = Field(default=os.getenv("REDIS_URL", "redis://localhost:6379"))
     OPENAI_API_KEY: str = Field(default=os.getenv("OPENAI_API_KEY", None))  # Provide a default value of None
     BROWSERLESS_API_KEY: str = Field(default=os.getenv("BROWSERLESS_API_KEY"))
     DEBUG: bool = Field(default=os.getenv("DEBUG"))
