@@ -13,6 +13,7 @@ def get_logger(name: str):
 def configure_logger(name):
     service_names = Settings.reload().service_config.get('logging', {}).get('service_names', {})
     name = service_names.get(name, name)
+    logger.info(f"Using service name from config: {name}")
     if not Settings.reload().service_config:
         Settings.service_config = Settings.load_from_yaml('service_config.yml').service_config
     
