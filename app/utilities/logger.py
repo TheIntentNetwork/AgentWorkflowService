@@ -11,7 +11,8 @@ def get_logger(name):
         global settings
         if settings is None:
             settings = None
-            from ..config.settings import settings
+            if settings is None:
+                from ..config.settings import settings
 
         return settings
     service_names = get_settings().service_config.get('logging', {}).get('service_names', {})
