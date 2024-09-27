@@ -8,17 +8,15 @@ from app.utilities.logger import get_logger
 
 class ContextManagerFactory:
     @staticmethod
-    async def create_context_managers(service_registry: ServiceRegistry) -> Dict[str, ContextManager]:
+    def create_context_managers(service_registry: ServiceRegistry) -> Dict[str, ContextManager]:
         context_managers = {}
-        db_context_managers = settings.service_config.get('context_managers', {})
+        db_context_managers = settings.service_config
         logger = get_logger('ContextManagerFactory')
         
-        logger.debug(f"Creating UserContextManager and NodeContextManager with config: {db_context_managers}")
+        logger.debug(f"Creating UserContextManager with name: user_context and config: {db_context_managers}")
         try:
             service_registry.register('user_context', UserContextManager, config=db_context_managers)
-            user_context_manager = service_registry.get('user_context')
-            await user_context_manager.load_user_context({"context": {"user_context": {"user_id": "default_user"}}})
-            logger.debug(f"UserContextManager created and user context loaded: user_context")
+            logger.debug(f"UserContextManager created: user_context")
         except Exception as e:
             logger.error(f"Failed to create UserContextManager: {e}")
             raise
@@ -28,9 +26,7 @@ class ContextManagerFactory:
                 logger.debug(f"Creating NodeContextManager with name: {manager_config.name} and config: {manager_config}")
                 try:
                     service_registry.register('node_context', NodeContextManager, config=db_context_managers['node_context'])
-                    node_context_manager = service_registry.get('node_context')
-                    await node_context_manager.load_node_context({"id": "default_node", "name": "default_node_name", "type": "default_type"})
-                    logger.debug(f"NodeContextManager created and node context loaded: {manager_config.name}")
+                    logger.debug(f"NodeContextManager created: {manager_config.name}")
                 except Exception as e:
                     logger.error(f"Failed to create NodeContextManager: {e}")
                     raise

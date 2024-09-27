@@ -26,7 +26,7 @@ class SessionManager(IService):
         self.kafka: KafkaService = ServiceRegistry.instance().get("kafka")
         self.sessions: Dict[str, SessionContext] = {}
 
-    async def initialize(self):
+    async def _initialize_service(self):
         logger.info("Initializing SessionManager")
         # Add any initialization logic here if needed
         logger.info("SessionManager initialized successfully")
