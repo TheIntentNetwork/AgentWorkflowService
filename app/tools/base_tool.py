@@ -32,7 +32,12 @@ class BaseTool(OpenAISchema, ABC):
     caller_agent: Any = None
     event_handler: Any = None
     one_call_at_a_time: bool = False
-    _logger: get_logger = get_logger(__name__)
+    _logger: Optional[logging.Logger] = None
+
+    def __init__(self, *args, **kwargs):
+        if self._logger is None:
+            self._logger = get_logger(__name__)
+        super().__init__(*args, **kwargs)
 
     @classmethod
     @property
