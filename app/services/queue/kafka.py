@@ -29,6 +29,7 @@ class KafkaService(IService):
     name = "kafka"
 
     def __init__(self, **kwargs):
+        super().__init__(name=self.name)
         self.bootstrap_servers = kwargs.get("bootstrap_servers", "localhost:9092")
         self.topics = set() if kwargs.get("topics") is None else set(kwargs.get("topics"))
         self.consumer_group = kwargs.get("consumer_group", "default")

@@ -32,6 +32,7 @@ class EventManager(IService):
             service_registry (ServiceRegistry): The service registry instance.
             **kwargs: Arbitrary keyword arguments.
         """
+        super().__init__(name=name, service_registry=service_registry, config=config)
         self.name = name
         self.service_registry = service_registry
         self.logger = get_logger(name)

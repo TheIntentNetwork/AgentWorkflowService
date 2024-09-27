@@ -11,6 +11,7 @@ import json
 
 class DependencyService(IDependencyService, IService):
     def __init__(self, name: str, service_registry: 'ServiceRegistry', **kwargs):
+        super().__init__(name=name, service_registry=service_registry, config=kwargs)
         self.name = name
         self.service_registry = service_registry
         self.context_manager = service_registry.get('context_manager')
