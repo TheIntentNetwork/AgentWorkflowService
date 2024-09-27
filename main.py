@@ -79,7 +79,9 @@ def create_app():
         
         global service_registry
         service_registry = ServiceRegistry.instance()
+        from app.utilities.logger import get_logger
         global logger
+        logger = get_logger(f'AgentWorkflowService_{uuid.uuid4()}')
         from app.utilities.logger import get_logger
         logger = get_logger("AgentWorkflowService_"+str(uuid.uuid4()))
         
