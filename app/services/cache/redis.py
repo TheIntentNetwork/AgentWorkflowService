@@ -19,7 +19,6 @@ import string
 import os
 import numpy as np
 from app.interfaces.service import IService
-from app.utilities.logger import get_logger
 
 
 
@@ -28,54 +27,31 @@ class RedisService(IService):
     
     def __init__(self, **kwargs):
         self.redis_url = kwargs.get("redis_url")
-        self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-        self.client = None
-        self.pubsub = None
-        self.service_registry = __class__.service_registry
-        self.subscriptions = {}
-        self.initialized = False
-        self.event_loop = asyncio.get_event_loop()
-        self.listener_thread = None
-        self.model = None
-
-    async def _initialize_service(self):
-        if hasattr(self, '_initialized') and self._initialized:
-            self.logger.info("RedisService is already initialized.")
-            return
-
-        self.logger = get_logger("RedisService")
-        self.logger.debug("Initializing RedisService")
+        self.redis_url = "redis://localhost:6379"
         self.client = AsyncRedis.from_url(self.redis_url)
         self.pubsub = self.client.pubsub()
+        self.service_registry = __class__.service_registry
+        self.subscriptions = {}
+        self.initialized = True
+        self.event_loop = asyncio.get_event_loop()
         self.listener_thread = threading.Thread(target=self.run_listener, daemon=True)
         self.listener_thread.start()
         self.model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
-        self._initialized = True
-        self.logger.debug("RedisService initialized successfully")
 
     async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
-        if not isinstance(channel, str):
-            raise ValueError("Channel must be a string")
-        
-        if queue is None:
-            queue = asyncio.Queue()
-        
-        async with self.client.pipeline(transaction=True) as pipe:
-            try:
-                if channel not in self.subscriptions:
-                    self.subscriptions[channel] = []
-                    await pipe.subscribe(channel)
-                
-                self.subscriptions[channel].append((queue, callback, filter_func))
-                await pipe.execute()
-                
-                self.logger.debug(f"Subscribed to channel: {channel}")
-                self.logger.debug(f"Added subscription for channel {channel}")
-                return queue
-            except Exception as e:
-                self.logger.error(f"Error subscribing to channel {channel}: {str(e)}")
-                self.logger.error(f"Error subscribing to channel {channel}: {str(e)}")
-                raise
+        try:
+            if queue is None:
+                queue = asyncio.Queue()
+            if channel not in self.subscriptions:
+                self.subscriptions[channel] = []
+                await self.pubsub.subscribe(channel)
+                self.logger.info(f"Subscribed to channel: {channel}")
+            self.subscriptions[channel].append((queue, callback, filter_func))
+            self.logger.debug(f"Added subscription for channel {channel}")
+            return queue
+        except Exception as e:
+            self.logger.error(f"Error subscribing to channel {channel}: {str(e)}")
+            raise
 
     async def unsubscribe(self, channel, queue):
         try:
@@ -85,7 +61,7 @@ class RedisService(IService):
                 if not self.subscriptions[channel]:
                     del self.subscriptions[channel]
                     await self.pubsub.unsubscribe(channel)
-                    self.logger.debug(f"Unsubscribed from channel: {channel}")
+                    self.logger.info(f"Unsubscribed from channel: {channel}")
         except Exception as e:
             self.logger.error(f"Error unsubscribing from channel {channel}: {str(e)}")
             raise
@@ -97,7 +73,6 @@ class RedisService(IService):
         asyncio.set_event_loop(loop)
 
         async def listen():
-            self.logger.debug("Starting Redis listener")
             await self.pubsub.subscribe(*self.subscriptions.keys())
             async for message in self.pubsub.listen():
                 if message['type'] == 'message':
@@ -184,14 +159,14 @@ class RedisService(IService):
         if process_config.get('remove_punctuation', True):
             text = re.sub('[%s]' % re.escape(string.punctuation), ' ', text)
         if process_config.get('remove_extra_whitespace', True):
-            text = re.sub(r'\s{2,}', " ", text)
+            text = re.sub('\s{2,}', " ", text)
         if process_config.get('remove_newlines', True):
             text = text.replace("\n", " ")
         if process_config.get('split_camel_case', True):
             text = " ".join(re.split('(?=[A-Z])', text))
         
         if process_config.get('remove_digits', True):
-            text = re.sub(r'\d+', '', text)
+            text = re.sub('\d+', '', text)
         if process_config.get('lowercase', True):
             text = text.lower()
         if func:
@@ -233,10 +208,8 @@ class RedisService(IService):
 
     async def async_search_index(self, query_data: str, vector_field: str, index: str, top_k: int, return_fields: Optional[List[str]] = None, filter_expression: Optional[FilterExpression] = None):
         index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", index + ".yaml")
-        self.logger.debug(f"Loading index schema from file: {index_schema_file}")
         index = AsyncSearchIndex.from_yaml(index_schema_file)
         index.connect(self.redis_url)
-        self.logger.debug(f"Connected to Redis URL: {self.redis_url} for index: {index}")
         query_embedding = self.model.embed(self.preprocess_text(query_data))
         #get_logger('RedisService').info(f"Query: {query_embedding}")
         
@@ -283,18 +256,13 @@ class RedisService(IService):
         await self.publish(key, context)
     
     async def create_index(self, index_name: str, schema_file: Optional[str] = None) -> AsyncSearchIndex:
-        # Define the index schema
-        index_schema = (
-            TextField("data"),
-            VectorField("metadata_vector", "HNSW", {"TYPE": "FLOAT32", "DIM": 384, "DISTANCE_METRIC": "COSINE"})
-        )
+        index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", schema_file)
+        index_schema = IndexSchema.from_yaml(index_schema_file)
 
         # Create the index definition
         index_definition = IndexDefinition(prefix=[f"{index_name}:"], index_type=IndexType.HASH)
-        self.logger.debug(f"Creating index definition for {index_name} with prefix: {index_definition.prefix}")
 
         if not await self.index_exists(index_name):
-            self.logger.debug(f"Index {index_name} does not exist. Proceeding to create it.")
             try:
                 # Create the index
                 await self.client.ft(index_name).create_index(index_schema, definition=index_definition)
@@ -303,11 +271,10 @@ class RedisService(IService):
                 self.logger.error(f'Error creating index {index_name}: {str(e)}')
                 raise
         else:
-            self.logger.debug(f"Index {index_name} already exists. Skipping creation.")
             self.logger.info(f'Index {index_name} already exists')
 
         # Return an AsyncSearchIndex object (you might need to adjust this part)
-        return AsyncSearchIndex(name=index_name, schema=index_schema, client=self.client)
+        return AsyncSearchIndex(schema=index_schema, client=self.client)
 
 
     async def load_records(self, objects_list, index_name_or_schema: str, fields_vectorization, overwrite=False):
@@ -346,20 +313,39 @@ class RedisService(IService):
             
             records.append(record)
             
-        def create_schema():
-            return IndexSchema(
-                fields=[
-                    TextField(name="meta_key"),
-                    TextField(name="meta_value"),
-                    VectorField(name="metadata_vector", algorithm="HNSW", attributes={"TYPE": "FLOAT32", "DIM": 384, "DISTANCE_METRIC": "COSINE"})
+        def create_schema(index_name_or_schema: str):
+            return IndexSchema.from_dict({
+                "index": {
+                    "name": index_name_or_schema,
+                    "prefix": "docs",
+                    "storage_type": "hash",
+                },
+                "fields": [
+                    {
+                        "name": "meta_key",
+                        "type": "text"
+                    },
+                    {
+                        "name": "meta_value",
+                        "type": "text"
+                    },
+                    {
+                        "name": "metadata_vector",
+                        "type": "vector",
+                        "attrs": {
+                            "algorithm": "HNSW",
+                            "dims": 384,
+                            "distance_metric": "COSINE"
+                        }
+                    }
                 ]
-            )
+            })
 
         if not await self.index_exists(index_name_or_schema):
             if index_name_or_schema.endswith('.yaml'):
                 index = AsyncSearchIndex.from_yaml(index_name_or_schema)
             else:
-                schema = create_schema()
+                schema = create_schema(index_name_or_schema)
                 index = AsyncSearchIndex(
                     schema=schema,
                     redis_client=self.client,

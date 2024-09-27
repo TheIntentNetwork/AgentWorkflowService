@@ -21,6 +21,7 @@ from app.utilities import get_logger
 from kafka.consumer.fetcher import ConsumerRecord
 
 class EventManager(IService):
+    _instance = None
 
     def __init__(self, name: str, service_registry: ServiceRegistry, **kwargs):
         """
@@ -33,33 +34,21 @@ class EventManager(IService):
         """
         self.name = name
         self.service_registry = service_registry
-        self.logger = get_logger(self.name)
+        self.logger = get_logger(name)
+        self.logger.info("EventManager __init__ method called")
+        self.logger.info(f"EventManager initialized with name: {name}")
         self.eventListeners = {}
         self.taskIDs = {}
+        self.service_registry = service_registry
         self.redis: RedisService = self.service_registry.get("redis")
         self.kafka: KafkaService = self.service_registry.get("kafka")
         self.queue = asyncio.Queue()
         self.event_loop = asyncio.get_event_loop()
         self.tasks = []
         self.running = False
-
-    async def _initialize_service(self):
-        """
-        Initializes the EventManager.
-        """
-        if hasattr(self, '_initialized') and self._initialized:
-            self.logger.info("EventManager is already initialized.")
-            return
-
-        self.logger.info("Initializing EventManager")
-        self.logger.debug(f"EventManager name: {self.name}, Kafka: {self.kafka}, Redis: {self.redis}")
-        # Add any initialization logic here
-        self.logger.info(f"EventManager initialized with name: {self.name}")
-        self.logger.info("EventManager initialized successfully")
+        self.logger.info("EventManager initialization completed")
         self.notified = set()
         self.start_consumer_thread()
-        self.logger.info("EventManager initialization completed")
-        self._initialized = True
 
     def start_consumer_thread(self):
         """
@@ -85,7 +74,6 @@ class EventManager(IService):
         while True:
             event = await self.queue.get()
             self.logger.info(f"Event received: {event}")
-            self.logger.debug(f"Event details: {event}")
             callback, data = event
             if callback:
                 await callback(data)
@@ -97,12 +85,8 @@ class EventManager(IService):
         Initializes the EventManager and subscribes to event topics.
         """
         self.logger.info("Subscribing to event topics")
-        self.logger.debug(f"Topics to subscribe: ['agency_action']")
         await self.subscribe_to_event_topics(["agency_action"])
         self.logger.info("EventManager started")
-        self.logger.debug("Subscribing to commands for EventManager")
-        await self.subscribe_to_commands("event_manager_commands", self.__event_listener)
-        self.logger.debug("Subscribed to commands for EventManager")
 
     async def subscribe_to_channels(self, channels, callback, filter_func=None):
         """
@@ -127,7 +111,6 @@ class EventManager(IService):
         for topic in topics:
             await self.kafka.subscribe(topic, self.queue, self.__event_listener)
             self.logger.info(f"Subscribed to topic: {topic}")
-            self.logger.debug(f"Subscription details: queue={self.queue}, callback={self.__event_listener}")
 
     async def unsubscribe(self, key: str, callback: callable, property_path: str = None):
         """
@@ -218,7 +201,6 @@ class EventManager(IService):
         context = event.value.get('context')
         
         self.logger.info(f"Handling event: {event}")
-        self.logger.debug(f"Event action: {event.get('action')}, key: {event.get('key')}, context: {event.get('context')}")
         self.logger.debug(f"Action: {action}, Key: {key}, Context: {context}")
         
         if action == 'context_update':
@@ -370,7 +352,6 @@ class EventManager(IService):
     async def subscribe_to_commands(self, topic: str, callback: Callable = None):
         kafka: KafkaService = self.service_registry.get('kafka')
         queue = await kafka.subscribe(topic, callback)
-        self.logger.debug(f"Subscribed to commands on topic: {topic}, queue: {queue}")
         return queue
 
     async def _process_update_queue(self, queue: asyncio.Queue, callback: Callable):

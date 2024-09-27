@@ -32,23 +32,6 @@ class KafkaService(IService):
         self.bootstrap_servers = kwargs.get("bootstrap_servers", "localhost:9092")
         self.topics = set() if kwargs.get("topics") is None else set(kwargs.get("topics"))
         self.consumer_group = kwargs.get("consumer_group", "default")
-        self.consumer = None
-        self.producer = None
-        self.subscribed_topics = set()
-        self.subscriptions = {}
-
-        self.event_loop = asyncio.get_event_loop()
-        self.consumer_thread = None
-        self.logger = get_logger("KafkaService")
-        self.logger.info("KafkaService initialized")
-        self.logger.debug(f"KafkaService bootstrap_servers: {self.bootstrap_servers}, consumer_group: {self.consumer_group}")
-
-    async def _initialize_service(self):
-        if hasattr(self, '_initialized') and self._initialized:
-            self.logger.info("KafkaService is already initialized.")
-            return
-
-        self.logger.info("Initializing KafkaService")
         self.consumer = KafkaConsumer(
             bootstrap_servers=self.bootstrap_servers,
             group_id=self.consumer_group,
@@ -59,8 +42,13 @@ class KafkaService(IService):
             bootstrap_servers=self.bootstrap_servers,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
-        self._initialized = True
-        self.logger.info("KafkaService initialized successfully")
+        self.subscribed_topics = set()
+        self.subscriptions = {}
+
+        self.event_loop = asyncio.get_event_loop()
+        self.consumer_thread = None
+        self.logger = get_logger("KafkaService")
+        self.logger.info("KafkaService initialized")
 
     async def _subscribe_to_topic(self, topic):
         if not isinstance(topic, str) or not topic.strip():
@@ -71,8 +59,6 @@ class KafkaService(IService):
             valid_topics = list(self.subscribed_topics)
             self.consumer.subscribe(valid_topics)
             self.logger.info(f"Subscribed to Kafka topics: {valid_topics}")
-            self.logger.debug(f"Kafka consumer details: {self.consumer}")
-            self.logger.debug(f"Kafka consumer group: {self.consumer_group}, bootstrap servers: {self.bootstrap_servers}")
             
             if self.consumer_thread is None or not self.consumer_thread.is_alive():
                 self.consumer_thread = threading.Thread(target=self.run_consumer, daemon=True)
@@ -138,17 +124,14 @@ class KafkaService(IService):
         """
         Run the Kafka consumer in a separate thread.
         """
-        self.logger.info("Starting Kafka consumer thread")
-        self.logger.debug(f"Consumer thread running: {self.consumer_thread_running}")
-        self.logger.debug(f"Kafka consumer initialized: {self.consumer is not None}")
+        self.logger.debug("Starting Kafka consumer thread")
         self.consumer_thread_running = True
         while self.consumer_thread_running:
             if self.consumer is not None:
-                self.logger.debug("Kafka consumer is initialized, starting polling loop")
                 try:
-                    self.logger.info("Polling for messages from Kafka")
+                    #self.logger.debug("Polling for messages")
                     messages = self.consumer.poll(timeout_ms=1000)
-                    self.logger.info(f"Polled messages: {messages}")
+                    #self.logger.debug(f"Messages: {messages}")
                     if messages:
                         self.logger.info(f"Received {len(messages)} message(s)")
                         for topic_partition, records in messages.items():
@@ -158,8 +141,6 @@ class KafkaService(IService):
                                 topic = record.topic
                                 value = record.value
                                 self.logger.info(f"Processing message from topic: {topic}")
-                                self.logger.debug(f"Message details: {record.value}")
-                                self.logger.debug(f"Message value: {value}")
                                 self.logger.debug(f"Message value: {value}")
                                 if topic in self.subscriptions:
                                     self.logger.debug(f"Subscriptions for topic {topic}: {self.subscriptions[topic]}")
@@ -167,19 +148,18 @@ class KafkaService(IService):
                                         try:
                                             if callback:
                                                 self.logger.debug(f"Callback for topic {topic}: {callback}")
-                                                if asyncio.iscoroutinefunction(callback):
+                                                result = callback(value)
+                                                if asyncio.iscoroutine(result):
                                                     self.logger.debug("Scheduling coroutine task")
-                                                    future = asyncio.run_coroutine_threadsafe(callback(value), self.event_loop)
-                                                    future.result()  # Wait for the result if needed
-                                                else:
-                                                    result = callback(value)
+                                                    self.event_loop.call_soon_threadsafe(
+                                                        self.event_loop.create_task, result
+                                                    )
                                             self.logger.debug("Putting message in queue")
                                             self.event_loop.call_soon_threadsafe(queue.put_nowait, record)
                                         except Exception as e:
                                             self.logger.error(f"Error processing message: {e}")
-                                            self.logger.debug(f"Message causing the error: {record.value if 'record' in locals() else 'Unknown'}")
                     else:
-                        self.logger.debug("No messages received, continuing polling")
+                        self.logger.debug("No messages received")
                 except Exception as e:
                     if self.consumer_thread_running:
                         self.logger.error(f"Error in Kafka consumer thread: {e}")

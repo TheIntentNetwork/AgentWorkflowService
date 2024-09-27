@@ -13,7 +13,7 @@ class Worker(IService):
     _instance = None
 
     def __init__(self, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: ServiceConfig):
-        super().__init__()
+        super().__init__(name=name, service_registry=service_registry, config=config)
         self.name = name
         self.worker_uuid = worker_uuid
         self.service_registry = service_registry
