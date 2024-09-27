@@ -26,6 +26,7 @@ class RedisService(IService):
     name = "redis"
     
     def __init__(self, **kwargs):
+        super().__init__(name=name, service_registry=service_registry, config=kwargs)
         self.redis_url = kwargs.get("redis_url")
         self.redis_url = "redis://localhost:6379"
         self.client = AsyncRedis.from_url(self.redis_url)
