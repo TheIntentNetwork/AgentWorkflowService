@@ -18,15 +18,15 @@ class UserContextManager(IService):
         super().__init__(name=name, service_registry=service_registry, config=config)  # Call parent constructor to initialize instance_id
         super().__init__(name=name, service_registry=service_registry, config=config)
         self.context_managers = {
-            'user_context': DBContextManager('user_context', service_registry, config['user_context']),
-            'user_meta': DBContextManager('user_meta', service_registry, config['user_meta']),
-            'forms': DBContextManager('forms', service_registry, config['forms']),
-            'courses': DBContextManager('courses', service_registry, config['courses']),
-            'purchases': DBContextManager('purchases', service_registry, config['purchases']),
-            'subscriptions': DBContextManager('subscriptions', service_registry, config['subscriptions']),
-            'notes': DBContextManager('notes', service_registry, config['notes']),
-            'events': DBContextManager('events', service_registry, config['events']),
-            'videos': DBContextManager('videos', service_registry, config['videos']),
+            'user_context': DBContextManager.instance('user_context', service_registry, config['user_context']),
+            'user_meta': DBContextManager.instance('user_meta', service_registry, config['user_meta']),
+            'forms': DBContextManager.instance('forms', service_registry, config['forms']),
+            'courses': DBContextManager.instance('courses', service_registry, config['courses']),
+            'purchases': DBContextManager.instance('purchases', service_registry, config['purchases']),
+            'subscriptions': DBContextManager.instance('subscriptions', service_registry, config['subscriptions']),
+            'notes': DBContextManager.instance('notes', service_registry, config['notes']),
+            'events': DBContextManager.instance('events', service_registry, config['events']),
+            'videos': DBContextManager.instance('videos', service_registry, config['videos']),
         }
         self.logger = self.get_logger_with_instance_id(name)
         #Load an instance of the DBContextManager for each context manager in the config
