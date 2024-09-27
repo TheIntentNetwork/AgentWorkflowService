@@ -84,6 +84,8 @@ def create_app():
         
         
         try:
+            if not hasattr(Settings, 'PROFILE'):
+                Settings.PROFILE = False  # Default value if PROFILE is missing
             if Settings.PROFILE:
                 logger.info("Starting application with profiling enabled")
                 profiler = Profiler()

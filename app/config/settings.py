@@ -10,7 +10,7 @@ from .service_config import ServiceConfig
 load_dotenv()
 
 class Settings(BaseModel):
-    service_config: dict = {}
+    service_config: dict = Field(default_factory=dict)  # Ensure service_config is always a dict
     
     BOOTSTRAP_SERVERS: str = Field(default=os.getenv("BOOTSTRAP_SERVERS"))
     TOPICS: str = Field(default=os.getenv("TOPICS"))
