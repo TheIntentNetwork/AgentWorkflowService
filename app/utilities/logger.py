@@ -1,14 +1,42 @@
 import os
 import logging
 import uuid
+import yaml
 from app.logging_config import configure_logger as base_configure_logger
+from app.config.settings import settings
 
 def get_logger(name):
-    return configure_logger(name)
+    # Use the service name from the configuration if available
+    service_names = settings.service_config.get('logging', {}).get('service_names', {})
+    return configure_logger(service_names.get(name, name))
 
 def configure_logger(name):
     logger = base_configure_logger(name)
-    logger.setLevel(logging.INFO)
+    # Load log levels and colored logs setting from service_config.yml
+    log_levels = settings.service_config.get('logging', {}).get('log_levels', {})
+    enable_colored_logs = settings.service_config.get('logging', {}).get('enable_colored_logs', False)
+
+    # Set log level based on the service name
+    logger.setLevel(log_levels.get(name, log_levels.get('default', logging.INFO)))
+
+    # Enable colored logs if configured
+    if enable_colored_logs:
+        try:
+            from colorlog import ColoredFormatter
+            formatter = ColoredFormatter(
+                "%(log_color)s%(levelname)s%(reset)s - %(blue)s%(message)s",
+                log_colors={
+                    'DEBUG': 'cyan',
+                    'INFO': 'green',
+                    'WARNING': 'yellow',
+                    'ERROR': 'red',
+                    'CRITICAL': 'bold_red',
+                }
+            )
+            for handler in logger.handlers:
+                handler.setFormatter(formatter)
+        except ImportError:
+            logger.warning("colorlog is not installed. Colored logs are disabled.")
 
     # Create a CloudWatch handler if AWS credentials and region are available
     if all(key in os.environ for key in ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION']):
