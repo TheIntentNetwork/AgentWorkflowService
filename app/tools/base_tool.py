@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Dict, Optional, Any, ClassVar, Type, get_type_
 
 from instructor import OpenAISchema
 
-from app.utilities.logger import get_logger
+
 
 # Use type hint string to avoid circular import
 
@@ -24,7 +24,10 @@ class SharedState:
         return self.data.get(key, default)
 
 
+
 class BaseTool(OpenAISchema, ABC):
+    from app.utilities.logger import get_logger
+    
     shared_state: ClassVar[SharedState] = None
     caller_agent: Any = None
     event_handler: Any = None

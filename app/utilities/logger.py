@@ -1,17 +1,19 @@
 import os
 import logging
 import uuid
-import yaml
 from app.logging_config import configure_logger as base_configure_logger
-from app.config.settings import settings
 
 def get_logger(name):
+    from app.config.settings import settings
     # Use the service name from the configuration if available
     service_names = settings.service_config.get('logging', {}).get('service_names', {})
     return configure_logger(service_names.get(name, name))
 
 def configure_logger(name):
+    
     logger = base_configure_logger(name)
+    
+    from app.config.settings import settings
     # Load log levels and colored logs setting from service_config.yml
     log_levels = settings.service_config.get('logging', {}).get('log_levels', {})
     enable_colored_logs = settings.service_config.get('logging', {}).get('enable_colored_logs', False)
