@@ -23,6 +23,8 @@ from app.interfaces.service import IService
 
 
 class RedisService(IService):
+    def __init__(self, **kwargs):
+        super().__init__(name="redis", config=kwargs)
         self.name = kwargs.get("name", "redis")  # Ensure consistent naming
     
     def __init__(self, **kwargs):
