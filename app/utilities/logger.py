@@ -20,6 +20,8 @@ def configure_logger(name):
     logger = base_configure_logger(name)
     # Load log levels and colored logs setting from service_config.yml
     
+    if not Settings.service_config:
+        Settings.service_config = Settings.load_from_yaml('service_config.yml').service_config
     log_levels = Settings.service_config.get('logging', {}).get('log_levels', {})
     enable_colored_logs = Settings.service_config.get('logging', {}).get('enable_colored_logs', False)
 
