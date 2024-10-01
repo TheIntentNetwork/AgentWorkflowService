@@ -12,32 +12,24 @@ from app.services.cache.redis import RedisService
 from app.tools.base_tool import BaseTool
 
 from app.services.queue.kafka import KafkaService
-from asyncio import sleep
-
-
 from uuid import UUID, uuid4
-
-from enum import Enum, auto
-
-from app.utilities.logger import get_logger
 
 from app.models.ContextInfo import ContextInfo
 
 class NodePrototype(BaseModel, extra='allow'):
     name: str
     description: str
-    type: Literal['step', 'lifecycle']
+    type: Literal['model', 'step']
+    collection: List[Dict[str, 'NodePrototype']] = []
     context_info: 'ContextInfo'
 
 class CreateNodes(BaseTool):
     """
-    Rule: You must RetrieveContext, first.
-    Create a node based on the node examples you were providedand initialize the node with the following steps:
-    1. RetrieveContext first to research examples of nodes based on the description and high level actions.
-    2. Define the goal of the new nodes.
-    3. Identify the intent behind the goal.
-    4. Break down the goal into actionable steps.
-    5. Create a node object for each of the actionable steps needed.
+    Create a node based on the node examples you were provided and initialize the node with the following steps:
+    1. Define the goal of the new nodes.
+    2. Identify the intent behind the goal.
+    3. Break down the goal into actionable steps.
+    4. Create a node object for each of the actionable steps needed.
     
     """
     
@@ -59,13 +51,9 @@ class CreateNodes(BaseTool):
             node.status = "pending"
             node.session_id = self.caller_agent.session_id
             node.context_info.context['session_id'] = self.caller_agent.session_id
-            # Check if context_info and context attributes exist
-            if hasattr(self.caller_agent, 'context_info') and hasattr(self.caller_agent.context_info, 'context'):
-                # Use .get() method with a default value to avoid KeyError
-                user_context = self.caller_agent.context_info.context.get('user_context')
-                if user_context is not None:
-                    node.context_info.context['user_context'] = user_context
-            
+            if self.caller_agent.context_info.context.get('user_context', None):
+                node.context_info.context['user_context'] = self.caller_agent.context_info.context['user_context']
+        
         payload = {
             "session_id": self.caller_agent.session_id,
             "nodes": [node.model_dump() for node in self.nodes]
@@ -73,6 +61,11 @@ class CreateNodes(BaseTool):
         
         for node in self.nodes:
             await redis_service.save_context(f"node:{node.id}", node.model_dump())
-            kafka_service.send_message_sync("agency_action", {"key": f"node:{node.id}", "action": "initialize", "node": node.model_dump(), "context": self.caller_agent.context_info.context})
+            kafka_service.send_message_sync("agency_action", {
+                "key": f"node:{node.id}",
+                "action": "initialize",
+                "object": node.model_dump(),
+                "context": self.caller_agent.context_info.context
+            })
 
-        return json.dumps(payload)
+        return payload

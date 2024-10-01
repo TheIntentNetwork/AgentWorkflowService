@@ -1,4 +1,5 @@
 import asyncio
+from enum import Enum
 import json
 import logging
 from attr import dataclass
@@ -8,12 +9,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Unio
 import uuid
 from app.factories.agent_factory import AgentFactory
 from aiostream import stream
-from app.models.agency import Agency
+
 from app.services.cache.redis import RedisService
 from app.interfaces.irunnablecontext import IRunnableContext
 from app.models.Dependency import Dependency
-from app.services.context.context_manager import ContextManager
-from app.utilities.logger import get_logger, configure_logger
 from app.models.ContextInfo import ContextInfo
 from app.models.NodeStatus import NodeStatus
 from app.services.discovery.service_registry import ServiceRegistry
@@ -31,13 +30,12 @@ class Node(BaseModel, IRunnableContext):
     dependencies: List[Dependency] = Field(default_factory=list, description="The dependencies of the node.")
     collection: List['Node'] = Field(None, description="The collection of nodes.")
     status: NodeStatus = Field(default=NodeStatus.created, description="The status of the node.", exclude=True)
-
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True,
-        extra=Extra.allow,
-        exclude_none=True,
-        from_attributes=True  # Corrected from orm_mode to from_attributes
-    )
+    
+    class Config:
+        arbitrary_types_allowed = True
+        extra = Extra.allow
+        exclude = ['_service_registry', '_context_manager', '_event_manager', '_dependency_service']
+        from_attributes = True
 
     # Initialization and setup
     def __init__(self, **data):
@@ -48,13 +46,16 @@ class Node(BaseModel, IRunnableContext):
         subscription to relevant Redis patterns.
         """
         super().__init__(**data)
+        self._initialize()
+
+    def _initialize(self):
+        from app.services.discovery.service_registry import ServiceRegistry
         service_registry = ServiceRegistry.instance()
-        from app.interfaces.idependencyservice import IDependencyService
-        self._context_manager: ContextManager = service_registry.get('context_manager')
+        self._context_manager = service_registry.get('context_manager')
         self._event_manager = service_registry.get('event_manager')
-        self._dependency_service: IDependencyService = service_registry.get('dependency_service')
-        self.id = data.get('id', str(uuid.uuid4()))
-        self.logger = configure_logger(f'Node_{self.id}')
+        self._dependency_service = service_registry.get('dependency_service')
+        from app.logging_config import configure_logger
+        self._logger = configure_logger(self.__class__.__name__)
 
     def dict(self, *args, **kwargs):
         """
@@ -69,120 +70,141 @@ class Node(BaseModel, IRunnableContext):
         service_registry = ServiceRegistry.instance()
         context_manager: ContextManager = service_registry.get('context_manager')
         session_id = node_data.get('session_id')
-        
-        # Merge contexts
-        merged_context = await context_manager.get_merged_context(session_id)
-        
-        # Ensure context_info is a ContextInfo object
-        if 'context_info' not in node_data or not isinstance(node_data['context_info'], ContextInfo):
-            node_data['context_info'] = ContextInfo()
 
-        # Ensure context is a dictionary
-        if not hasattr(node_data['context_info'], 'context') or not isinstance(node_data['context_info'].context, dict):
-            node_data['context_info'].context = {}
+        # Merge contexts
+        merged_context = await context_manager.get_merged_context(node_data.get('context_info', {}).get('context', {}))
         
-        # Update the context
+        # Ensure context_info is a ContextInfo object with a valid context dictionary
+        if not isinstance(node_data.get('context_info'), ContextInfo):
+            node_data['context_info'] = ContextInfo(context={})
+        
         node_data['context_info'].context.update(merged_context)
-        
-        if node_data.get('type') == 'lifecycle':
-            from app.models.LifecycleNode import LifecycleNode
-            node = LifecycleNode(**node_data)
+        node_data['context_info'].context['session_id'] = session_id
+
+        if node_data.get('type') == 'model':
+            from app.models.Model import Model
+            node = Model(**node_data)
         else:
             node = cls(**node_data)
         
-        node.context_info.context.update(merged_context)
-        node.context_info.context['session_id'] = node.session_id
-        await context_manager.save_context(f'node:{node.id}', node)
+        await context_manager.save_context(f'node:{node.id}', node.model_dump())
         
-        if not node._context_manager:
-            raise Exception("Failed to get ContextManager")
-        if not node._event_manager:
-            raise Exception("Failed to get EventManager")
-        
-        await node.initialize()
-        
+        # We don't call initialize here anymore
         return node
     
     @classmethod
-    async def handle(cls, key, action, context):
+    async def handle(cls, key, action, object_data, context):
         from app.services.discovery.service_registry import ServiceRegistry
         from app.services.context.context_manager import ContextManager
         service_registry = ServiceRegistry.instance()
         context_manager: ContextManager = service_registry.get('context_manager')
         
         if action == 'initialize':
-            node_data = context
-            if node_data.get('type') == 'lifecycle':
-                from app.models.LifecycleNode import LifecycleNode
-                node = LifecycleNode(**node_data)
-            else:
-                node = cls(**node_data)
+            node = await cls.create(**object_data)
         else:
             node = await context_manager.get_context(key)
+            node.context_info.context.update(await context_manager.get_merged_context(context))
         
-        # Merge contexts
-        merged_context = await context_manager.get_merged_context(context['session_id'])
+        await node.process_action(action)
         
-        # Ensure context_info is a ContextInfo object
-        if 'context_info' not in node_data:
-            node_data['context_info'] = ContextInfo()
-        else:
-            node_data['context_info'] = ContextInfo(**node_data['context_info'])
-
-        # Ensure context is a dictionary
-        if not hasattr(node_data['context_info'], 'context') or not isinstance(node_data['context_info'].context, dict):
-            node_data['context_info'].context = {}
-        
-        # Update the context
-        node_data['context_info'].context.update(merged_context)
-        
-        node.context_info.context.update(merged_context)
-        node.context_info.context['session_id'] = node.session_id
-        await context_manager.save_context(f'node:{node.id}', node.dict())
-        
-        if not node._context_manager:
-            raise Exception("Failed to get ContextManager")
-        if not node._event_manager:
-            raise Exception("Failed to get EventManager")
-        
-        await node.initialize()
         if node.collection and len(node.collection) > 0:
             for child in node.collection:
-                await child.initialize()
-                
-        await context_manager.save_context(f'node:{node.id}', node.dict())
+                child_node = await cls.create(**child, session_id=node.session_id)
+                await child_node.process_action('execute')
         
-        await node.execute()
-        
+        await context_manager.save_context(f'node:{node.id}', node.model_dump())
     
     async def initialize(self) -> None:
+        await self._set_context()
         await self._context_manager.update_property(self, "status", NodeStatus.created)
+        await self._register_outputs()
         await self._dependency_service.discover_and_register_dependencies(self)
+        await self._context_manager.update_property(self, "status", NodeStatus.initialized)
+        
+    
+    async def _register_outputs(self) -> None:
+        """
+        Register the node's outputs with the context manager.
+        
+        This method registers the node's outputs with the context manager by updating
+        the context information with the output properties.
+        """
+        # Register the node's outputs with the context manager
+        await self._context_manager.update_property(self, "output", self.context_info.output)
+        
+    async def _set_context(self) -> None:
+        """
+        Set the context for the node using the UniverseAgent.
+        
+        This method sets the context for the node by using the UniverseAgent to retrieve
+        and set the context based on similar past tasks and user context.
+        """
+        from app.factories.agent_factory import AgentFactory
+        from app.models.agents.Agent import Agent
+        from app.services.context.context_manager import ContextManager
+        
+        # Retrieve context using the UniverseAgent
+        instructions = """
+        Use the RetrieveContext tool to find examples of models and steps that indicate how we have processed similar tasks in the past.
+        
+        Use the SetContext tool to set the context of the node based on the output of similar nodes.
+        """
+        
+        context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
+        
+        # Update and merge context
+        updated_context = await context_manager.update_context(self.session_id, self.context_info.context)
+        
+        from app.services.context.node_context_manager import NodeContextManager
+        # Merge with node context based on node name
+        
+        node_context_manager: NodeContextManager = ServiceRegistry.instance().get('node_context')
+        node_context = await node_context_manager.load_node_context(self, 'parent')
+        self.context_info.context = self._deep_merge(updated_context, node_context.context_info.context)
+        
+        self._logger.debug(f"Task context after update: {self.context_info}")
+        
+        # Create the UniverseAgent
+        universe_agent: Agent = await AgentFactory.from_name(
+            name="UniverseAgent",
+            session_id=self.session_id,
+            tools=["RetrieveContext", "SetContext"],
+            context_info=self.context_info,
+            instructions=instructions,
+        )
+        
+        agency_chart = [universe_agent]
+        await self.perform_agency_completion(agency_chart, instructions, self.session_id)
+        
+        # Update the node's context with the retrieved and set context
+        self.context_info.context.update(universe_agent.context_info.context)
     
     async def execute(self):
-        """Execute the node's main functionality."""
-        self.logger.info(f"Executing node: {self.id}")
+        self._logger.info(f"Executing node: {self.id}")
         
         await self.PreExecute()
         await self.Executing()
         
         # Execute child nodes
-        await self.execute_child_nodes()
+        if self.collection:
+            for child in self.collection:
+                child_node = await Node.create(**child, session_id=self.session_id)
+                await child_node.execute()
         
         await self.Executed()
     
     async def PreExecute(self):
         await self._context_manager.update_property(self, "status", NodeStatus.pre_execute)
-        self.logger.info(f"Node {self.id} PreExecute")
+        self._logger.info(f"Node {self.id} PreExecute")
     
     async def Executing(self):
-        self.logger.info(f"Node {self.id} executing")
+        self._logger.info(f"Node {self.id} executing")
         await self._context_manager.update_property(self, "status", NodeStatus.executing)
         await self._assign_and_get_completion()
         
     async def Executed(self):
         await self._context_manager.update_property(self, "status", NodeStatus.completed)
-        self.logger.info(f"Node {self.id} Executed: status 'completed'")
+        self._logger.info(f"Node {self.id} Executed: status 'completed'")
         redis: RedisService = ServiceRegistry.instance().get("redis")
         # Look up subscribers to this node
         subscribers = await redis.client.lrange(f"node:{self.id}:subscribers", 0, -1)
@@ -192,18 +214,15 @@ class Node(BaseModel, IRunnableContext):
 
     async def execute_child_nodes(self):
         if self.collection:
-            self.logger.info(f"Executing child nodes for node: {self.id}")
+            self._logger.info(f"Executing child nodes for node: {self.id}")
             for child_node in self.collection:
                 await child_node.execute()
-            self.logger.info(f"Finished executing child nodes for node: {self.id}")
+            self._logger.info(f"Finished executing child nodes for node: {self.id}")
         else:
-            self.logger.debug(f"No child nodes to execute for node: {self.id}")
+            self._logger.debug(f"No child nodes to execute for node: {self.id}")
 
     async def clear_dependencies(self) -> None:
         await self._dependency_service.clear_dependencies(self)
-
-    async def get_dependencies(self) -> None:
-        await self._dependency_service.discover_and_register_dependencies(self)
 
     async def on_dependency_update(self, data: dict):
         """Handle updates to the node's dependencies."""
@@ -238,7 +257,7 @@ class Node(BaseModel, IRunnableContext):
         Returns:
             dict: Response from the agency completion.
         """
-        
+        from app.models.agency import Agency
         agency = Agency(agency_chart=agency_chart, shared_instructions=description, session_id=session_id)
         response = await agency.get_completion(instructions)
         return response
@@ -254,41 +273,51 @@ class Node(BaseModel, IRunnableContext):
             Exception: Any exceptions raised during the execution process.
         """
         try:
-            self.logger.info(f"Starting _assign_and_get_completion for node: {self.id}")
+            self._logger.info(f"Starting _assign_and_get_completion for node: {self.id}")
             await self._context_manager.update_property(self, "status", NodeStatus.executing)
-            self.logger.info(f"Building agency chart for node: {self.id}")
+            self._logger.info(f"Building agency chart for node: {self.id}")
             agency_chart = await self._build_agency_chart()
-            self.logger.info(f"Agency chart built for node: {self.id}")
-            self.logger.info(f"Performing agency completion for node: {self.id}")
+            self._logger.info(f"Agency chart built for node: {self.id}")
+            self._logger.info(f"Performing agency completion for node: {self.id}")
             response = await self.perform_agency_completion(agency_chart, self.description, self.context_info.context.get('session_id'))
-            self.logger.info(f"Agency completion performed for node: {self.id}")
+            self._logger.info(f"Agency completion performed for node: {self.id}")
             await self._context_manager.update_property(self, "status", NodeStatus.completed)
-            self.logger.info(f"Node {self.id} execution completed successfully")
+            self._logger.info(f"Node {self.id} execution completed successfully")
         except Exception as e:
-            self.logger.error(f"Error during execution of node {self.id}: {str(e)}")
+            self._logger.error(f"Error during execution of node {self.id}: {str(e)}")
             await self._context_manager.update_property(self, "status", NodeStatus.failed)
-            self.logger.info(f"Node {self.id} status updated to failed")
+            self._logger.info(f"Node {self.id} status updated to failed")
             raise
         finally:
-            self.logger.info(f"_assign_and_get_completion finished for node: {self.id}")
+            self._logger.info(f"_assign_and_get_completion finished for node: {self.id}")
 
     async def _build_agency_chart(self) -> List:
-        self.logger.info(f"Building agency chart for task: {self.description}")
+        self._logger.info(f"Building agency chart for task: {self.description}")
+        from app.models.agency import Agency
         
-        universe_agent = await self._create_universe_agent()
+        instructions = self._create_universe_agent_instructions()
+         
+        universe_agent = await AgentFactory.from_name(
+            name='UniverseAgent',
+            session_id=self.context_info.context['session_id'],
+            context_info=self.context_info,
+            instructions=instructions,
+            tools=['RetrieveContext', 'AssignAgents'],
+            self_assign=False
+        )
         
         assign_agents_chart = [universe_agent]
         assign_agents_agency = Agency(agency_chart=assign_agents_chart, shared_instructions="", session_id=self.context_info.context['session_id'])
         
-        self.logger.info("Starting completion generation")
+        self._logger.info("Starting completion generation")
         completion_gen = assign_agents_agency.get_completion_stream(message="AssignAgent most appropriate for the task.")
         
         try:
-            self.logger.info("Awaiting stream.list")
+            self._logger.info("Awaiting stream.list")
             result = await stream.list(completion_gen)
-            self.logger.info(f"Assign agents result: {result}")
+            self._logger.info(f"Assign agents result: {result}")
         except Exception as e:
-            self.logger.error(f"Error during stream.list: {str(e)}")
+            self._logger.error(f"Error during stream.list: {str(e)}")
             raise
         
         return await self._construct_agency_chart(universe_agent)
@@ -300,15 +329,7 @@ class Node(BaseModel, IRunnableContext):
         Returns:
             Agent: The configured Universe Agent.
         """
-        instructions = self._create_universe_agent_instructions()
-        return await AgentFactory.from_name(
-            name='UniverseAgent',
-            session_id=self.context_info.context['session_id'],
-            context_info=self.context_info,
-            instructions=instructions,
-            tools=['RetrieveContext', 'AssignAgents'],
-            self_assign=False
-        )
+        
 
     def _create_universe_agent_instructions(self) -> str:
         """
@@ -368,6 +389,39 @@ class Node(BaseModel, IRunnableContext):
             for agent in agent_group:
                 agency_chart.append([agency_chart[0], agent])
         
-        self.logger.info(f"Agency Chart Built: {agency_chart}")
+        self._logger.info(f"Agency Chart Built: {agency_chart}")
         return agency_chart
+    
+    def _deep_merge(self, target: Dict[str, Any], source: Dict[str, Any]) -> Dict[str, Any]:
+        for key, value in source.items():
+            if isinstance(value, dict):
+                target[key] = self._deep_merge(target.get(key, {}), value)
+            else:
+                target[key] = value
+        return target
 
+    @classmethod
+    def model_construct(cls, **data):
+        instance = super().model_construct(**data)
+        instance._initialize()
+        return instance
+
+    def to_json(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "type": self.type,
+            "description": self.description,
+            "context_info": self.context_info.dict() if self.context_info else None,
+            "session_id": self.session_id,
+            "dependencies": [dep.dict() for dep in self.dependencies] if self.dependencies else [],
+            "collection": [node.to_json() if hasattr(node, 'to_json') else node.dict() for node in (self.collection or [])],
+            "status": self.status.value if isinstance(self.status, Enum) else self.status
+        }
+
+    async def process_action(self, action):
+        if action == 'execute':
+            await self.execute()
+        elif action == 'initialize':
+            await self.initialize()
+        # Add other action handlers as needed

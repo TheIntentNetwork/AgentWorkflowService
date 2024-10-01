@@ -62,7 +62,7 @@ class LifecycleManager:
         return cls._instance
 
     def __init__(self):
-        self.logger = get_logger('LifecycleManager')
+        self.logger = configure_logger('LifecycleManager')
         self.lifecycle_nodes = {}
         self.redis_client = ServiceRegistry.instance().get("redis")
         self.agency = Agency(agency_chart=[], shared_instructions="Manage lifecycle nodes", session_id="lifecycle_manager_session")

@@ -20,11 +20,13 @@ from pyinstrument import Profiler
 import objgraph
 import tracemalloc
 from memory_profiler import memory_usage
-from app.config.settings import Settings
+from app.logging_config import configure_logger, setup_logging
 from app.utilities.llm_client import set_openai_key
 
 sys.dont_write_bytecode = True
 load_dotenv()
+
+setup_logging()
 
 # Global dictionary to store completion events for each session
 completion_events = {}
@@ -67,58 +69,34 @@ def create_app():
     global agency_instances
     agency_instances = {}
     global logger
-    
+    logger = configure_logger(__name__)
     global service_registry
     
 
     @app.on_event("startup")
     async def startup_event():
         
-        global profiler
-        
+        global profiler, service_registry
         
         try:
-            #if not hasattr(Settings, 'PROFILE'):
-            #    Settings.PROFILE = False  # Default value if PROFILE is missing
-            #if Settings.PROFILE:
-            #    logger.info("Starting application with profiling enabled")
-            #    profiler = Profiler()
-            #    profiler.start()
-                
             from app.services import ServiceRegistry
-        
-            global service_registry
             service_registry = ServiceRegistry.instance()
-            
-            global logger
-            from app.utilities.logger import get_logger
-            logger = get_logger("AgentWorkflowService_"+str(uuid.uuid4()))
+            from app.config.settings import settings as _settings
             
             try:
-                if not Settings.settings.OPENAI_API_KEY:
+                if not _settings.OPENAI_API_KEY:
                     logger.warning("OPENAI_API_KEY is missing. Please set it in the environment or .env file.")
                 else:
-                    set_openai_key(Settings.OPENAI_API_KEY)
+                    set_openai_key(_settings.OPENAI_API_KEY)
             except AttributeError:
                 logger.error("Failed to load OPENAI_API_KEY from Settings. Please check your environment or .env file.")
-                await shutdown_event()
                 return
             
             # Initialize all services
-            try:
-                await initialize_services()
-            except Exception as e:
-                logger.error(f"Failed to initialize services: {str(e)}")
-                await shutdown_event()
-                return
-            
+            await initialize_services()
             
         except Exception as e:
-            
-            # Ensure service_config is loaded before initializing the logger
-            Settings.reload()
-            logger = get_logger(f'AgentWorkflowService_{uuid.uuid4()}')
-            logger.error("Failed to start the application: %s\n%s", str(e), traceback.format_exc())
+            logger.error(f"Failed to start the application: {str(e)}\n{traceback.format_exc()}")
             await shutdown_event()
 
     async def initialize_services():
@@ -162,6 +140,8 @@ def create_app():
     @app.on_event("shutdown")
     async def shutdown_event():
         from app.services.worker.worker import Worker
+        from app.services.discovery.service_registry import ServiceRegistry
+        service_registry: ServiceRegistry = ServiceRegistry.instance();
         worker_service: Worker = service_registry.get("worker")
         await worker_service.shutdown()
         logger.debug("Shutting down the application")

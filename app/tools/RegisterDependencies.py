@@ -6,7 +6,7 @@ import traceback
 from pydantic import BaseModel, Field
 from typing import List
 from app.tools.base_tool import BaseTool
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 
 class Dependency(BaseModel):
     context_key: str = Field(..., description="The context_key of the dependency. e.g. node:9d5bb7db-131a-4473-ab74-5012673bccab")
@@ -22,7 +22,7 @@ class RegisterDependencies(BaseTool):
     async def run(self) -> str:
         from app.services.discovery.service_registry import ServiceRegistry
         from app.services.cache.redis import RedisService
-        get_logger(self.__class__.__name__).info(f"Registering dependencies {self.dependencies} for node {self.caller_agent.context_info.key}")
+        configure_logger(self.__class__.__name__).info(f"Registering dependencies {self.dependencies} for node {self.caller_agent.context_info.key}")
         
         if not self.caller_agent.context_info.context.get('dependencies'):
             self.caller_agent.context_info.context["dependencies"] = []

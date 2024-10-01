@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 class LLMInterface(ABC):
     def __init__(self, api_key: str, **kwargs):
-        from app.utilities.logger import get_logger
+        from app.logging_config import configure_logger
         self.logger = None
         self.llm_client = None
         self.api_key = None
@@ -15,7 +15,7 @@ class LLMInterface(ABC):
         self.function_output = []
         self.initialize(api_key, **kwargs)
 
-        self.logger = get_logger(__name__)
+        self.logger = configure_logger(__name__)
 
     def save_context(self, session_id: str):
         from app.services.discovery.service_registry import ServiceRegistry

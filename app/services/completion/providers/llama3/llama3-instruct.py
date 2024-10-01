@@ -3,14 +3,14 @@ import json
 from typing import Any, Dict, Generator, Union
 from app.interfaces.llm import LLMInterface
 import openai
-from app.models.agents.New_Agent import BaseAgent
-from app.utilities.logger import get_logger
+from app.models.agents.Agent import Agent
+from app.logging_config import configure_logger
 
 
 class OpenAIInterface(LLMInterface):
     
     def setup_logging(self):
-        self.logger = get_logger(__name__)
+        self.logger = configure_logger(__name__)
 
     def initialize(self, api_key: str, **kwargs):
         from app.services.cache import RedisService
@@ -26,7 +26,7 @@ class OpenAIInterface(LLMInterface):
         self.session_manager = kwargs.get("session_manager", None)
         self.redis: RedisService = ServiceRegistry.instance().get('redis')
 
-    async def get_function_call(self, function_name: str, arguments: Dict[str, Any], agent: BaseAgent):
+    async def get_function_call(self, function_name: str, arguments: Dict[str, Any], agent: Agent):
 
         tool_output = self.execute_tool({"name": function_name, "arguments": arguments}, agent)
         complete_output = []
@@ -34,7 +34,7 @@ class OpenAIInterface(LLMInterface):
             complete_output.append(output)
         return complete_output
 
-    async def get_completion(self, message: str, caller_agent: BaseAgent, **kwargs):
+    async def get_completion(self, message: str, caller_agent: Agent, **kwargs):
         try:
             set_function_call = kwargs.get("set_function_call", "auto")
             session_id = kwargs.get("session_id", None)

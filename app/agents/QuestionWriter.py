@@ -2,13 +2,13 @@
 from sys import exit
 from app.tools.GenerateQuestionnaire import GenerateQuestionnaire
 from app.models.agents import Agent
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 
 class QuestionnaireWriter(Agent):
     """Agent for writing questionnaires."""
 
     def __init__(self, **kwargs):
-        logger = get_logger(self.__class__.__name__)
+        logger = configure_logger(self.__class__.__name__)
         logger.debug("Initializing QuestionnaireWriter with kwargs: %s", kwargs)
         if not kwargs:
             exit("QuestionnaireWriter requires at least 1 keyword argument.")

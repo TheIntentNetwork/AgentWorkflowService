@@ -10,6 +10,10 @@ fields:
   type: tag
   attrs:
     weight: 1.0
+- name: session_id
+  type: tag
+  attrs:
+    weight: 1.0
 - name: name
   type: tag
   attrs:

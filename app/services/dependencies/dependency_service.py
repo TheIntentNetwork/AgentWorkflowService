@@ -1,13 +1,12 @@
 from typing import List, Any, Dict
 from app.interfaces.service import IService
 from app.models.Dependency import Dependency
+from app.models.Node import Node
 from app.models.NodeStatus import NodeStatus
 from app.services.discovery.service_registry import ServiceRegistry
-from app.utilities.logger import get_logger
 from app.factories.agent_factory import AgentFactory
 from app.models.agency import Agency
 from app.interfaces.idependencyservice import IDependencyService
-import json
 
 class DependencyService(IDependencyService, IService):
     def __init__(self, name: str, service_registry: 'ServiceRegistry', **kwargs):
@@ -16,7 +15,7 @@ class DependencyService(IDependencyService, IService):
         self.service_registry = service_registry
         self.context_manager = service_registry.get('context_manager')
         self.event_manager = service_registry.get('event_manager')
-        self.logger = get_logger('DependencyService')
+        self.logger = self.get_logger_with_instance_id('DependencyService')
 
     @classmethod
     def instance(cls, name: str, service_registry: 'ServiceRegistry', **kwargs):
@@ -34,28 +33,13 @@ class DependencyService(IDependencyService, IService):
         # Build the agency chart
         agency_chart = await self._build_agency_chart(node)
         
-        # Prepare the instructions
-        instructions = self._prepare_dependency_discovery_instructions(node)
-        
         # Perform agency completion
-        response = await self._perform_agency_completion(node, agency_chart, instructions)
+        response = await self._perform_agency_completion(node, agency_chart, "Discover and register dependencies for the node.")
 
-    async def _build_agency_chart(self, node):
+    async def _build_agency_chart(self, node: Node):
         """Build the agency chart for dependency discovery."""
-        universe_agent = await AgentFactory.from_name(
-            name="UniverseAgent",
-            session_id=node.context_info.context.get('session_id'),
-            tools=['RetrieveContext', 'RegisterDependencies'],
-            instructions="Discover and register dependencies for the given node.",
-            context_info=node.context_info,
-            self_assign=False
-        )
-        return [universe_agent]
-
-    def _prepare_dependency_discovery_instructions(self, node):
-        """Prepare instructions for dependency discovery."""
-        return f"""
-        Analyze the input description and context of the node to identify required dependencies.
+        
+        instructions = f"""Analyze the input description and context of the node to identify required dependencies.
         Use the RetrieveContext tool to find relevant outputs from other nodes that can satisfy these dependencies.
         Register the discovered dependencies using the RegisterDependencies tool.
 
@@ -68,12 +52,21 @@ class DependencyService(IDependencyService, IService):
         2. Do not register dependencies for outputs of the current node.
         3. Focus solely on identifying and registering dependencies.
         4. Use the RetrieveContext tool to find relevant outputs from other nodes.
-        5. Use the RegisterDependencies tool to register each discovered dependency.
-        """
+        5. Use the RegisterDependencies tool to register each discovered dependency."""
+        
+        universe_agent = await AgentFactory.from_name(
+            name="UniverseAgent",
+            session_id=node.context_info.context.get('session_id'),
+            tools=['RetrieveContext', 'RegisterDependencies'],
+            instructions=instructions,
+            context_info=node.context_info,
+            self_assign=False
+        )
+        return [universe_agent]
 
     async def _perform_agency_completion(self, node, agency_chart, instructions):
         """Perform agency completion for dependency discovery."""
-        agency = Agency(agency_chart=agency_chart, shared_instructions="", session_id=node.context_info.context.get('session_id'))
+        agency = Agency(agency_chart=agency_chart, session_id=node.context_info.context.get('session_id'))
         response = await agency.get_completion(instructions)
         
         return response

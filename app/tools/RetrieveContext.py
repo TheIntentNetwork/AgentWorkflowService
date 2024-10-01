@@ -5,15 +5,17 @@ import threading
 import traceback
 from pydantic import BaseModel, Field
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
+from app.services.context.node_context_manager import NodeContextManager
+from app.services.context.user_context_manager import UserContextManager
 from app.tools.base_tool import BaseTool
 from asyncio import sleep
 from uuid import UUID, uuid4
 
-from redisvl.query.filter import Tag
+from redisvl.query.filter import Tag, FilterExpression
 from enum import Enum, auto
 
 from app.services.discovery.service_registry import ServiceRegistry
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
     
 
 class Agent(BaseModel):
@@ -56,30 +58,54 @@ class Workflow(BaseModel):
 
 class RetrieveContext(BaseTool):
     """
-    This class represents the RetrieveContext tool which returns seeded data and historical examples that can be used to create new agents, models, workflows, and steps. Models are saved copies of successfully tested node structures that can be used to create a new set of steps.
-    
-    RetrieveContext('model', 'description of the high-level actions and overall purpose of the model')
-    Result: {Should return example context that can be used to create a new model based on this historical example.}
-    
+    This class represents the RetrieveContext tool which returns seeded data and historical examples that can be used to create new agents, models, steps. Models are saved copies of successfully tested node structures that can be used to create a new set of steps.
     """
-    type: Literal["agent", "workflow", "step", "model", "lifecycle", "log"] = Field(..., description="The type of the context to retrieve e.g. 'agent', 'workflow', 'step', 'model', 'lifecycle'.")
-    key: Optional[str] = Field(None, description="The key of the context to retrieve.")
+    type: Literal["user_meta", "form", "step", "model"] = Field(..., description="The type of the context to retrieve.")
+    key: str = Field(..., description="The key of the context to retrieve.")
     query: str = Field(..., description="The query of the context to retrieval.")
-    
+    session_id: Optional[str] = Field(None, description="The session ID for the context.")
+
     async def run(self) -> str:
-        from app.services.cache.redis import RedisService        
+        from app.services.cache.redis import RedisService
+        from redisvl.query.filter import FilterExpression, Tag
+        
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
+        context_manager = ServiceRegistry.instance().get('context_manager')
+        logger = configure_logger(self.__class__.__name__)
+        user_id = None
+        
         try:
-            filter = Tag("type") == self.type
-            if self.key:
-                filter = filter & Tag("key") == self.key
-            results = await redis_service.async_search_index(self.query, f"metadata_vector", "context", 2, ["item"],filter)
+            # Retrieve user ID from the context
+            user_context = self.caller_agent.context_info.context.get('user_context', {})
+            if user_context:
+                user_id = user_context.get('user_id')
+            
+            if not user_id:
+                logger.error("RetrieveContext: User ID not found in context")
+                return []
+
+            filter_expression = Tag("type") == self.type
+
+            # Determine which index to search based on the type
+            index_name = {
+                "user_meta": "user_context",
+                "form": "user_context",
+                "step": "context",
+                "model": "context",
+                "agent": "context"
+            }.get(self.type)
+
+            if not index_name:
+                logger.error(f"RetrieveContext: Invalid type {self.type}")
+                return []
+
+            # Retrieve context
+            results = await redis_service.async_search_index(self.query, "metadata_vector", index_name, 3, ["item"], filter_expression)
             context = sorted(results, key=lambda x: x['vector_distance'])[:3]
             context = [json.loads(item['item']) for item in context]
-            get_logger(self.__class__.__name__).debug(f"RetrieveContext: Retrieved context: {context}")
+            logger.debug(f"RetrieveContext: Retrieved context: {context}")
         except Exception as e:
-            get_logger(self.__class__.__name__).error(f"RetrieveContext: Failed to retrieve context: {e}")
-
+            logger.error(f"RetrieveContext: Failed to retrieve context: {e}")
             raise e
         
         return context

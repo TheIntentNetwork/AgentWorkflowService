@@ -1,7 +1,7 @@
 """Module for StepAgent."""
 import json
 from app.models.agents.Agent import Agent
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 from app.utilities.vector_db import VectorDatabase  # Assuming existence of a VectorDatabase utility
 
 
@@ -9,7 +9,7 @@ class StepAgent(Agent):
     """Agent for handling workflow steps."""
 
     def __init__(self, **kwargs):
-        logger = get_logger(self.__class__.__name__)
+        logger = configure_logger(self.__class__.__name__)
         logger.debug("Initializing StepAgent with kwargs: %s", kwargs)
 
         # Assuming 'context' is a Task object and has attributes 'workflow_id' and 'step_id'

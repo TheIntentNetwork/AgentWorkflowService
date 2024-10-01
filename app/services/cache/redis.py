@@ -19,21 +19,21 @@ import string
 import os
 import numpy as np
 from app.interfaces.service import IService
+from app.logging_config import configure_logger
 
 
 
 class RedisService(IService):
-    def __init__(self, **kwargs):
-        super().__init__(name="redis", config=kwargs)
-        self.name = "redis"  # Ensure consistent naming
+    _instance = None
     
-    def __init__(self, **kwargs):
-        super().__init__(name="redis", config=kwargs)
+    def __init__(self, service_registry=None, config=None, **kwargs):
+        self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        super().__init__(name="redis", config=config)
+        self.name = "redis"  # Ensure consistent naming
         self.redis_url = kwargs.get("redis_url")
         self.redis_url = "redis://localhost:6379"
         self.client = AsyncRedis.from_url(self.redis_url)
         self.pubsub = self.client.pubsub()
-        self.service_registry = __class__.service_registry
         self.subscriptions = {}
         self.initialized = True
         self.event_loop = asyncio.get_event_loop()
@@ -70,12 +70,12 @@ class RedisService(IService):
             raise
     
     def run_listener(self):
-        from app.utilities.logger import get_logger
+        from app.logging_config import configure_logger
         self.logger = self.get_logger_with_instance_id('RedisService')
         self.logger.info(f"RedisService initialized with instance_id: {self.instance_id}")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
+        
         async def listen():
             await self.pubsub.subscribe(*self.subscriptions.keys())
             async for message in self.pubsub.listen():
@@ -137,14 +137,14 @@ class RedisService(IService):
             from presidio_anonymizer import AnonymizerEngine
             anonymizer = AnonymizerEngine()
         
-            # Redact Config Example:
-            # redact_config = {
-            #      "config": {
-            #          "entities": ["PERSON", "PHONE_NUMBER", "EMAIL_ADDRESS"]
-            #      },
-            #      "analyze": True,
-            #      "model": "en"
-            #  }
+            #Redact Config Example:
+            redact_config = {
+                 "config": {
+                     "entities": ["PERSON", "PHONE_NUMBER", "EMAIL_ADDRESS"]
+                 },
+                 "analyze": True,
+                 "model": "en"
+             }
         
             config = redact_config.get('config', {})
             config['analyze'] = redact_config.get('analyze', True)
@@ -154,6 +154,9 @@ class RedisService(IService):
             for result in config['analyzer_results']:
                 if result['entity_type'] in config['entities']:
                     text = anonymizer.anonymize(text, result)
+        
+        if isinstance(text, dict):
+            text = json.dumps(text)
         
         if not text:
             return ""
@@ -210,15 +213,23 @@ class RedisService(IService):
         vector_data = await self.client.hget(record_key, 'vector')
         return vector_data if vector_data else None
 
-    async def async_search_index(self, query_data: str, vector_field: str, index: str, top_k: int, return_fields: Optional[List[str]] = None, filter_expression: Optional[FilterExpression] = None):
-        index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", index + ".yaml")
-        index = AsyncSearchIndex.from_yaml(index_schema_file)
-        index.connect(self.redis_url)
+    async def async_search_index(self, query_data: str, vector_field: str, index_name: str, top_k: int, return_fields: Optional[List[str]] = None, filter_expression: Optional[FilterExpression] = None):
+        
+        index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", index_name + ".yaml")
+        if not os.path.exists(index_schema_file):
+            raise FileNotFoundError(f"Index schema file {index_schema_file} not found.")
+        
+        index = None
+        if not await self.index_exists(index_name):
+            index = await self.create_index(index_name)
+            index.connect(self.redis_url)
+        else:
+            index = await self.get_index(index_name)
+            index.connect(self.redis_url)
+        
         query_embedding = self.model.embed(self.preprocess_text(query_data))
-        #get_logger('RedisService').info(f"Query: {query_embedding}")
         
         query = VectorQuery(
-
             vector=query_embedding,
             vector_field_name=vector_field,
             num_results=top_k,
@@ -259,34 +270,26 @@ class RedisService(IService):
         await self.client.hset(key, mapping=context)
         await self.publish(key, context)
     
-    async def create_index(self, index_name: str, schema_file: Optional[str] = None) -> AsyncSearchIndex:
-        index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", schema_file)
-        index_schema = IndexSchema.from_yaml(index_schema_file)
-
-        # Create the index definition
-        index_definition = IndexDefinition(prefix=[f"{index_name}:"], index_type=IndexType.HASH)
-
+    async def create_index(self, index_name: str) -> AsyncSearchIndex:
+        
+        index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", index_name + ".yaml")
+        if not os.path.exists(index_schema_file):
+            raise FileNotFoundError(f"Index schema file {index_schema_file} not found.")
+        
+        index = None
         if not await self.index_exists(index_name):
-            try:
-                # Create the index
-                await self.client.ft(index_name).create_index(index_schema, definition=index_definition)
-                self.logger.info(f'Index {index_name} created successfully')
-            except Exception as e:
-                self.logger.error(f'Error creating index {index_name}: {str(e)}')
-                raise
-        else:
-            self.logger.info(f'Index {index_name} already exists')
+            #self.client.ft(index_name).create_index(index_schema, definition=IndexDefinition(prefix=[f"{prefix}:"], index_type=IndexType.HASH))
+            index = AsyncSearchIndex.from_yaml(index_schema_file)
+            index.connect(self.redis_url)
+            await index.create(False, False)
+        return index
 
-        # Return an AsyncSearchIndex object (you might need to adjust this part)
-        return AsyncSearchIndex(schema=index_schema, client=self.client)
-
-
-    async def load_records(self, objects_list, index_name_or_schema: str, fields_vectorization, overwrite=False):
+    async def load_records(self, objects_list, index_name: str, fields_vectorization, overwrite=False, prefix: str = "context", id_column: str = 'id') -> List[str]:
         records = []
         keys = []
         for obj in objects_list:
             record = {}
-            all_text = []  # To accumulate all text for metadata_vector
+            all_text = []
 
             # Ensure obj is in dict format
             obj_dict = obj.to_dict() if not isinstance(obj, dict) else obj
@@ -315,90 +318,48 @@ class RedisService(IService):
             preprocessed_metadata = self.preprocess_text(" ".join(all_text))
             record["metadata_vector"] = self.model.embed(preprocessed_metadata, as_buffer=True)
             
+            record['item'] = json.dumps(obj_dict)
             records.append(record)
-            
-        def create_schema(index_name_or_schema: str):
-            return IndexSchema.from_dict({
-                "index": {
-                    "name": index_name_or_schema,
-                    "prefix": "docs",
-                    "storage_type": "hash",
-                },
-                "fields": [
-                    {
-                        "name": "meta_key",
-                        "type": "text"
-                    },
-                    {
-                        "name": "meta_value",
-                        "type": "text"
-                    },
-                    {
-                        "name": "metadata_vector",
-                        "type": "vector",
-                        "attrs": {
-                            "algorithm": "HNSW",
-                            "dims": 384,
-                            "distance_metric": "COSINE"
-                        }
-                    }
-                ]
-            })
-
-        if not await self.index_exists(index_name_or_schema):
-            if index_name_or_schema.endswith('.yaml'):
-                index = AsyncSearchIndex.from_yaml(index_name_or_schema)
-            else:
-                schema = create_schema(index_name_or_schema)
-                index = AsyncSearchIndex(
-                    schema=schema,
-                    redis_client=self.client,
-                    redis_url=self.redis_url
-                )
-            
-            if overwrite and await self.index_exists(index_name_or_schema):
-                await self.delete_index(index_name_or_schema)
-                # Recreate the index after deletion if needed
-        else:
-            if index_name_or_schema.endswith('.yaml'):
-                index = AsyncSearchIndex.from_yaml(index_name_or_schema)
-                keys = await index.load(records)
-            else:
-                schema = (
-                    TagField("id"),
-                    TextField("data"),
-                    VectorField("metadata_vector", "HNSW", {"TYPE": "FLOAT32", "DIM": 384, "DISTANCE_METRIC": "COSINE"})
-                )
         
-        if index_name_or_schema.endswith('.yaml'):
-            keys = await index.load(records)
-        else:
-            i = 0
-            for items in records:
-                await self.client.hset(f'{index_name_or_schema}:{i}', mapping=items)
-                i += 1
-                keys.append(f'{index_name_or_schema}:{i}')
-            
+        if not await self.index_exists(index_name):
+            await self.create_index(index_name)
+    
+        for i, record in enumerate(records):
+            if id_column is None:
+                key = f"{prefix}:{i}"
+            else:
+                if id_column not in record:
+                    key = f"{prefix}:{i}"
+                else:
+                    key = f"{prefix}:{record[id_column]}"
+            keys.append(key)
+            if overwrite:
+                await self.client.hset(key, mapping=record)
+            else:
+                await self.client.hsetnx(key, mapping=record)
+        
         self.logger.info('Records loaded successfully')
             
         return keys
+    
+    async def get_index(self, index_name: str) -> AsyncSearchIndex:
+        index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", index_name + ".yaml")
+        if not os.path.exists(index_schema_file):
+            raise FileNotFoundError(f"Index schema file {index_schema_file} not found.")
+        
+        index_schema = IndexSchema.from_yaml(index_schema_file)
+        index = AsyncSearchIndex(schema=index_schema, client=self.client)
+        index.connect(self.redis_url)
+        return index
         
     async def index_exists(self, index_name_or_schema_file: str) -> bool:
         
-        if index_name_or_schema_file.endswith('.yaml'):
-            index = AsyncSearchIndex.from_yaml(index_name_or_schema_file)
-            try:
-                index.connect(self.redis_url)
-            except Exception as e:
-                self.logger.error(f"Error connecting to index: {str(e)}")
-                return False
-        else:
-            index_name = index_name_or_schema_file
-            try:
-                await self.client.ft(index_name).info()
-                return True
-            except Exception as e:
-                return False
+        index_name = index_name_or_schema_file
+        try:
+            await self.client.ft(index_name).info()
+            return True
+        except Exception as e:
+            return False
             
     async def close(self):
         if hasattr(self, 'client') and self.client:

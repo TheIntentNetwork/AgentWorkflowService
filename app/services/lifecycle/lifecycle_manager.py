@@ -1,12 +1,12 @@
+import uuid
 from app.models.Node import Node
-from app.utilities.logger import get_logger
 from app.interfaces.service import IService
 from app.models.LifecycleNode import LifecycleNode
 from app.models.ContextInfo import ContextInfo
 from typing import Dict, List
 import json
 from redisvl.query.filter import Tag
-
+from app.logging_config import configure_logger
 from seed_lifecycle_data import get_lifecycle_seed_data
 
 class LifecycleManager(IService):
@@ -14,9 +14,10 @@ class LifecycleManager(IService):
     _instance = None
 
     def __init__(self, name: str, service_registry: any, **kwargs):
+        self.instance_id = str(uuid.uuid4())
         self.name = name
         self.service_registry = service_registry
-        self.logger = get_logger(name)
+        self.logger = configure_logger(name)
         self.lifecycle_nodes: Dict[str, LifecycleNode] = {}
 
     async def initialize(self):

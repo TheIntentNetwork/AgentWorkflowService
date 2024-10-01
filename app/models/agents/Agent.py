@@ -21,7 +21,7 @@ from redisvl.query.filter import Tag, FilterExpression
 from app.tools.oai.FileSearch import FileSearchConfig
 # Remove the import of FileSearch to break the circular dependency
 from app.utilities.llm_client import get_openai_client
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 from app.utilities.openapi import validate_openapi_spec
 from colorama import init, Fore, Back, Style
 
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 #init(autoreset=True)
 
-logger = get_logger('Agent')
+logger = configure_logger('Agent')
 
 
 class ExampleMessage(TypedDict):
@@ -67,10 +67,8 @@ class Agent:
         try:
             return [tool for tool in self.tools]
         except Exception as e:
-            logger = get_logger('Agent')
-            logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
-            logger.debug(f"Functions called from {traceback.format_stack()}: {self.tools}")
-            logger.error(f"Failed to get functions: {e} with traceback: {traceback.format_exc()}")
+            print(f"Functions called from {traceback.format_stack()}: {self.tools}")
+            print(f"Failed to get functions: {e} with traceback: {traceback.format_exc()}")
             return []
 
     def response_validator(self, message: str) -> str:
@@ -150,7 +148,7 @@ class Agent:
         """
         # public attributes
         init(autoreset=True)
-        self.logger = get_logger(self.__class__.__name__)
+        self.logger = configure_logger(self.__class__.__name__)
         
         self.key = key
         self.id = id
@@ -168,9 +166,7 @@ class Agent:
         self.schemas_folder = schemas_folder if schemas_folder else []
         self.api_headers = api_headers if api_headers else {}
         self.api_params = api_params if api_params else {}
-        
-        logger = get_logger('Agent')
-        logger = logging.LoggerAdapter(logger, {'classname': self.__class__.__name__})
+
         logger.info(f"Agent initialized with {metadata}")
         self.metadata = metadata if metadata else {}
         self.model = model
@@ -204,9 +200,7 @@ class Agent:
     
     @classmethod
     async def create(cls, **agent_data):
-        instance = cls(**agent_data)
-        logger = get_logger('Agent')
-        logger = logging.LoggerAdapter(logger, {'classname': cls.__name__})
+        instance = cls(**agent_data)            
         logger.info(f"Creating agent instance: {instance.to_dict()}")
         await instance.async_init()
         instance.post_init()
@@ -223,6 +217,7 @@ class Agent:
                     await self.save_message_to_redis(message)
                 except asyncio.TimeoutError:
                     # No message received within timeout, continue loop
+                    print("No message received within timeout, continue loop")
                     continue
         except asyncio.CancelledError:
             # Task was cancelled, exit gracefully
@@ -256,13 +251,13 @@ class Agent:
         #In this role, the description of the task at hand is the following:
         #{self.description}."""
         
-        system_context = ["session_id", "workflow_id", "user_context", "agent_context"]
+        system_context = ["session_id", "workflow_id", "user_context", "objects_context", "agent_context"]
         if not self.context_info:
             logger.info(f"Existing context_info not found, creating context info for agent: {self.name}")
             self.context_info = ContextInfo()
             self.context_info.context = {}
 
-        context_dict = self.context_info.dict()
+        context_dict: Dict = self.context_info.dict() or self.context_info.model_dump() or self.context_info
         for key, value in context_dict.items():
             if key == 'context':
                 for sub_key, sub_value in value.items():
@@ -277,10 +272,11 @@ class Agent:
             context_format = f"""{str(key).replace('_', ' ').title()}: {value}"""
             additional_instructions.append(context_format)
         
-        self.additional_instructions = " ".join(additional_instructions)
         
-        if self.self_assign == True:
-            await self.assign()
+        self.instructions = f"{self.instructions}\n\n{' '.join(additional_instructions)}"
+        
+        #if self.self_assign == True:
+            #await self.assign()
         
         # Start the listen_to_queue task and store it
         self.queue_listener_task = asyncio.create_task(self.listen_to_queue())
@@ -681,8 +677,8 @@ class Agent:
                         except Exception as e:
                             print("Error parsing OpenAPI schema: " + os.path.basename(f_path))
                             raise e
-                        for tool in tools:
-                            self.add_tool(tool)
+                    for tool in tools:
+                        self.add_tool(tool)
                 else:
                     print("Schemas folder path is not a directory. Skipping... ", f_path)
             else:

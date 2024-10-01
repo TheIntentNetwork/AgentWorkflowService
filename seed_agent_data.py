@@ -1,6 +1,6 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 from pydantic import BaseModel, Field
-from app.models.ContextInfo import ContextInfo
+
 
 class Agent(BaseModel):
     """
@@ -11,9 +11,10 @@ class Agent(BaseModel):
     instructions: str = Field(..., description="The instructions for the agent including step by step instructions.")
     description: str = Field(..., description="The full description of the agent including their skills and knowledge.")
     tools: List[str] = Field(default_factory=list, description="The tools used by the agent.")
-    context_info: ContextInfo = Field(..., description="The context information for the agent.")
+    context_info: Any = Field(..., description="The context information for the agent.")
 
 def get_agent_seed_data():
+    from app.models.ContextInfo import ContextInfo
     return [
         Agent(
             name="SupplementalReviewAgent",

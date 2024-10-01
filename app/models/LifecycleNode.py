@@ -4,7 +4,7 @@ from pydantic import Field
 from typing import TYPE_CHECKING
 from app.models.Node import Node
 from app.models.NodeStatus import NodeStatus
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 
 class LifecycleNode(Node):
     status_filter: NodeStatus = Field(default=None, description="The status to filter for.", init=False, init_var=True)
@@ -68,13 +68,13 @@ class LifecycleNode(Node):
             if isinstance(node_data, str):
                 node_data = json.loads(node_data)
             
-            get_logger('LifecycleNode').info(f"Received status update for node {node_id}: {status}")
+            configure_logger('LifecycleNode').info(f"Received status update for node {node_id}: {status}")
             self.context_info.context['target_node'] = node_data
             
             await self.execute()
             self.context_info.context['updated_status'] = self.status_result
         except Exception as e:
-            get_logger('LifecycleNode').error(f"Error in on_status_update: {str(e)}")
+            configure_logger('LifecycleNode').error(f"Error in on_status_update: {str(e)}")
             self.context_info.context['updated_status'] = self.failed_status_result
             raise e
 

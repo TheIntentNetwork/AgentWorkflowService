@@ -13,7 +13,7 @@ from redisvl.query.filter import Tag
 from enum import Enum, auto
 
 from app.services.discovery.service_registry import ServiceRegistry
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
     
 
 class Agent(BaseModel):
@@ -68,15 +68,19 @@ class RetrieveOutputs(BaseTool):
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
         try:
             filter = Tag("session_id") == self.caller_agent.session_id
-            #results = await redis_service.async_search_index(self.query, f"metadata_vector", "outputs", 3, ["session_id", "context_key", "output_name", "output_description", "output"], filter)
-            results = await redis_service.async_search_index(self.query, f"output_vector", "node", 3, ["item"], filter)
-            nodes = sorted(results, key=lambda x: x['vector_distance'])[:3]
+            results_output_vector = await redis_service.async_search_index(self.query, f"output_vector", "context", 3, ["item"], filter)
+            results_outcome_description_vector = await redis_service.async_search_index(self.query, f"outcome_description_vector", "context", 3, ["item"], filter)
             
-            results = await redis_service.async_search_index(self.query, f"outcome_description_vector", "node", 3, ["item"], filter)
-            nodes = sorted(results, key=lambda x: x['vector_distance'])[:3]
-            get_logger(self.__class__.__name__).debug(f"RetrieveOutputs: Retrieved nodes: {nodes}")
+            # Combine results and deduplicate
+            combined_results = {result['item']: result for result in results_output_vector + results_outcome_description_vector}.values()
+            
+            # Sort by vector distance
+            nodes = sorted(combined_results, key=lambda x: x['vector_distance'])
+            
+            
+            configure_logger(self.__class__.__name__).debug(f"RetrieveOutputs: Retrieved nodes: {nodes}")
         except Exception as e:
-            get_logger(self.__class__.__name__).error(f"RetrieveOutputs: Failed to retrieve nodes: {e}")
+            configure_logger(self.__class__.__name__).error(f"RetrieveOutputs: Failed to retrieve nodes: {e}")
 
             raise e
         

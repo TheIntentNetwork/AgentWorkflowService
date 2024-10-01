@@ -3,8 +3,6 @@ from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from app.db.database import Database
 from app.services.discovery.service_registry import ServiceRegistry, IService
 from app.config.service_config import ServiceConfig
-import json
-from app.utilities.logger import get_logger
     
     
 class DBContextManager(IService):
@@ -13,17 +11,15 @@ class DBContextManager(IService):
     
     def __init__(self, name: str, service_registry: 'ServiceRegistry', config: 'ServiceConfig'):
         super().__init__(name=name, service_registry=service_registry, config=config)  # Call the parent class constructor
-        super().__init__(name=name, service_registry=service_registry, config=config)
         self.config = config
-        self.table_name = config.table_name
-        self.allowed_operations = config.allowed_operations
-        self.permissions = config.permissions
-        self.context_prefix = config.context_prefix
-        self.fields = config.fields
-        self.queries = config.queries
+        self.table_name = config['table_name']
+        self.allowed_operations = config['allowed_operations']
+        self.permissions = config['permissions']
+        self.context_prefix = config['context_prefix']
+        self.fields = config['fields']
+        self.queries = config['queries']
         self.db = Database.get_instance()
         self.service_name = name  # Add this line to store the service name
-        self.logger = get_logger(name)
         
         # Debug logging
         self.logger.debug(f"DBContextManager initialized for service: {name}")
@@ -31,11 +27,13 @@ class DBContextManager(IService):
         for query_name, query_details in self.queries.items():
             self.logger.debug(f"  {query_name}: {query_details}")
 
-    async def get_context(self, key: str) -> Dict[str, Any]:
+    async def get_context(self, key: str, query_name: str) -> Dict[str, Any]:
         try:
-            return await self.db.fetch_one(self.queries['get_by_id'], {'id': key}, self.service_name)
+            template_id = key.split(':')[1]
+            self.db.fetch_key(key, self.service_name)
+            return await self.db.fetch_all(self.queries[query_name], {'p_id': template_id}, self.service_name)
         except Exception as e:
-            self.logger.error(f"Error fetching context for key {key}: {str(e)}")
+            self.logger.error(f"Error fetching context for key {template_id}: {str(e)}")
             raise
 
     async def save_context(self, key: str, context: Dict[str, Any]) -> None:

@@ -21,7 +21,7 @@ Example implementation:
 ```python
 class EventManager(IService):
     def __init__(self, **kwargs):
-        self.logger = get_logger('EventManager')
+        self.logger = configure_logger('EventManager')
         self.__redis: RedisService = self.service_registry.get("redis")
         self.__kafka: KafkaService = self.service_registry.get("kafka")
         self.queue = asyncio.Queue()

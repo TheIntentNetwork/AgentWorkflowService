@@ -5,20 +5,21 @@ from app.config.service_config import ServiceConfig
 from app.services.cache.redis import RedisService
 from app.interfaces.service import IService
 from app.services import ServiceRegistry
+from app.logging_config import configure_logger
 
 
 class Worker(IService):
     name = "worker"
     _instance = None
 
-    def __init__(self, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: ServiceConfig):
-        super().__init__(name=name, service_registry=service_registry, config=config)
-        super().__init__(name=name, service_registry=service_registry, config=config)
+    def __init__(self, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: ServiceConfig, **kwargs):
+        super().__init__(name=name, service_registry=service_registry, config=config, **kwargs)
         self.name = name
         self.worker_uuid = worker_uuid
         self.service_registry = service_registry
         self.redis: RedisService = self.service_registry.get("redis")
-        self.logger = self.get_logger_with_instance_id(name)
+        self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self.logger.info(f"Worker initialized with instance_id: {self.worker_uuid}")
         self.is_active = False
         self.task_queue = asyncio.Queue()
 

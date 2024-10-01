@@ -61,17 +61,13 @@ class CustomJSONEncoder(json.JSONEncoder):
         return result
 
 
-from app.utilities.logger import get_logger
-from app.models.ContextInfo import ContextInfo
-from app.services.cache.redis import RedisService
-from app.services.queue.kafka import KafkaService
-from app.models.Node import Node
-from app.models.LifecycleNode import LifecycleNode
-from app.models.agents.Agent import Agent
+from app.logging_config import configure_logger
+
+
     
 
 # Configure logging
-logger = get_logger(__name__)
+logger = configure_logger(__name__)
 
 # Debug flag
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
@@ -79,6 +75,9 @@ DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 def debug_print(*args, **kwargs):
     if DEBUG:
         logger.debug(*args, **kwargs)
+
+from app.services.cache.redis import RedisService
+from app.services.queue.kafka import KafkaService
 
 redis_url = os.getenv("REDIS_URL")
 service_registry = ServiceRegistry.instance()
@@ -99,7 +98,7 @@ class Step(BaseModel):
     description: str = Field(..., description="The description of the step.")
     mode: Literal["sequential", "parallel"]
     run: Optional[Literal["repeat"]] = Field(None, description="The run of the step.")
-    context_info: ContextInfo = Field(None, description="The context information for the step.", json_schema_extra={"example": {"key": "value"}})
+    context_info: Any = Field(None, description="The context information for the step.", json_schema_extra={"example": {"key": "value"}})
 
     class Config:
         from_attributes = True
@@ -110,7 +109,7 @@ class Workflow(BaseModel):
     goals: List[str]
     steps: List[Step]
     feedback: List[str]
-    context_info: ContextInfo = Field(..., description="The context information for the workflow.")
+    context_info: Any = Field(..., description="The context information for the workflow.")
 
     class Config:
         from_attributes = True
@@ -118,7 +117,7 @@ class Workflow(BaseModel):
 class Task(BaseModel):
     name: str = Field(..., description="The name of the task.")
     description: str
-    context_info: ContextInfo = Field(..., description="The context information for the task.")
+    context_info: Any = Field(..., description="The context information for the task.")
 
     class Config:
         from_attributes = True
@@ -126,25 +125,23 @@ class Task(BaseModel):
 class Tool(BaseModel):
     name: str = Field(..., description="The name of the tool.")
     description: str
-    context_info: ContextInfo = Field(..., description="The context information for the tool.")
+    context_info: Any = Field(..., description="The context information for the tool.")
 
     class Config:
         from_attributes = True
 
-from seed_lifecycle_data import get_lifecycle_seed_data
-from seed_agent_data import get_agent_seed_data, Agent
-from seed_universe_agent_data import get_universe_agent_seed_data
-from seed_node_data import get_node_seed_data
-from seed_goals_data import get_goal_seed_data
+
 
 def create_test_data():
-    lifecycle_data = get_lifecycle_seed_data()
+    from seed_agent_data import get_agent_seed_data, Agent
+    from seed_universe_agent_data import get_universe_agent_seed_data
+    from seed_node_data import get_node_seed_data
+    
     agent_data = get_agent_seed_data()
     universe_agent_data = get_universe_agent_seed_data()
     node_data = get_node_seed_data()
-    goals_data = get_goal_seed_data()
     
-    combined_data = lifecycle_data + agent_data + universe_agent_data + node_data + goals_data
+    combined_data = agent_data + universe_agent_data + node_data
     
     # Initialize Agents with proper data
     for i, agent in enumerate(agent_data):
@@ -248,7 +245,7 @@ async def create_index(index_data: List[any], index_name: str):
         Exception: If there's an error during the indexing process.
     """
     logger.info(f"Starting to create index: {index_name}")
-
+    from seed_agent_data import Agent
     async def embed_and_store(data, prefix, parent_id=None):
         """
         Embed and store a single data item and its nested collections.
@@ -261,6 +258,8 @@ async def create_index(index_data: List[any], index_name: str):
         Raises:
             Exception: If there's an error during the embedding or storing process.
         """
+        from app.models.ContextInfo import ContextInfo
+        
         try:
             logger.debug(f"Processing item: {prefix}")
             logger.debug(f"Data type: {type(data)}")

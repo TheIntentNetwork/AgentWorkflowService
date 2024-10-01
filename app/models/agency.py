@@ -18,7 +18,7 @@ from rich.console import Console
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from typing_extensions import override
 
-from app.utilities.logger import get_logger
+
 
 from app.models.agents.Agent import Agent
 from .message_output import MessageOutput
@@ -70,7 +70,7 @@ class Agency(BaseModel):
     session_id: Optional[str] = None
     ceo: Optional[Agent] = None
     user: User = Field(default_factory=User)
-    logger: Logger = Field(default_factory=lambda: get_logger("Agency"))
+    logger: Logger = Field(default=None)
     agents: List[Agent] = Field(default_factory=list)
     agents_and_threads: Dict[Agent, Thread] = Field(default_factory=dict)
     main_recipients: List[Agent] = Field(default_factory=list)
@@ -113,7 +113,10 @@ class Agency(BaseModel):
 
         This constructor initializes various components of the Agency, including CEO, agents, threads, and user interactions. It parses the agency chart to set up the organizational structure and initializes the messaging tools, agents, and threads necessary for the operation of the agency. Additionally, it prepares a main thread for user interactions.
         """
+        from app.logging_config import configure_logger
+        
         super().__init__(
+            
             async_mode=async_mode,
             settings_path=settings_path,
             settings_callbacks=settings_callbacks,
@@ -124,7 +127,7 @@ class Agency(BaseModel):
             max_completion_tokens=max_completion_tokens,
             truncation_strategy=truncation_strategy,
             session_id=session_id,
-            logger=get_logger("Agency")
+            logger=configure_logger("Agency")
         )
         if self.async_mode == "threading":
             from app.models.thread_async import ThreadAsync

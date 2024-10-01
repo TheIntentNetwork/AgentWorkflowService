@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.consumer.fetcher import ConsumerRecord
 from app.interfaces.service import IService
+from app.logging_config import configure_logger
 
 load_dotenv()
 
@@ -48,7 +49,8 @@ class KafkaService(IService):
 
         self.event_loop = asyncio.get_event_loop()
         self.consumer_thread = None
-        self.logger = self.get_logger_with_instance_id("KafkaService")
+        self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self.logger.info(f"KafkaService initialized with instance_id: {self.instance_id}")
         self.logger.info("KafkaService initialized")
 
     async def _subscribe_to_topic(self, topic):

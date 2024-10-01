@@ -7,7 +7,7 @@ from supabase import create_client
 from app.services.supabase.supabase import Supabase
 from presidio_analyzer import AnalyzerEngine
 from app.tools.base_tool import BaseTool
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 
 
 class SaveUserMeta(BaseTool):
@@ -22,11 +22,11 @@ class SaveUserMeta(BaseTool):
     meta: Dict[str, Any] = Field(..., description="The metadata for the user.")
     
     def run(self, **kwargs):
-        get_logger("SaveUserMeta").info(f"Running SaveUserMeta tool for user_id: {self.user_id} with meta: {self.meta}")
+        configure_logger("SaveUserMeta").info(f"Running SaveUserMeta tool for user_id: {self.user_id} with meta: {self.meta}")
         results = ""
         try:
             responses = []
-            get_logger("SaveUserMeta").info(f"Saving user meta for user_id: {self.user_id} with meta: {self.meta.keys()}")
+            configure_logger("SaveUserMeta").info(f"Saving user meta for user_id: {self.user_id} with meta: {self.meta.keys()}")
             for key in self.meta.keys():
                 value = self.meta[key]
                 if isinstance(value, list):
@@ -47,11 +47,11 @@ class SaveUserMeta(BaseTool):
                     
                         responses.append(response)
                 except Exception as e:
-                    get_logger("SaveUserMeta").error(f"Error saving user meta for user_id: {self.user_id} with meta {self.meta}: {str(e)}")
+                    configure_logger("SaveUserMeta").error(f"Error saving user meta for user_id: {self.user_id} with meta {self.meta}: {str(e)}")
                     raise e    
             results = "\n".join([str(response.data) for response in responses])
         except Exception as e:
-            get_logger("SaveUserMeta").error(f"Error running {self.__class__.__name__} tool: {str(e)} with traceback: {e.__traceback__}")
+            configure_logger("SaveUserMeta").error(f"Error running {self.__class__.__name__} tool: {str(e)} with traceback: {e.__traceback__}")
             raise e
         return "Results: \n" + results
 

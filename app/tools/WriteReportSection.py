@@ -5,7 +5,7 @@ from app.services.supabase.supabase import Supabase, Client
 from app.services.discovery.service_registry import ServiceRegistry
 
 from app.tools.base_tool import BaseTool
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 
 class NexusResearch(BaseModel):
     url: Optional[str] = None
@@ -51,14 +51,14 @@ class GetReport(BaseTool):
         :param report_id: The optional report ID to identify the report.
         :return: The fetched report.
         """
-        get_logger(self.__class__.__name__).info(f"Fetching report for user {user_id}")
+        configure_logger(self.__class__.__name__).info(f"Fetching report for user {user_id}")
         client: Client = Supabase.supabase
         result = client.from_("reports").select("*").eq("user_id", user_id).single()
         if result is None:
             return Report(user_id=user_id)
         report = Report(**result)
         
-        get_logger(self.__class__.__name__).info(f"Fetched report for user {user_id}")
+        configure_logger(self.__class__.__name__).info(f"Fetched report for user {user_id}")
         return report
 
 class WriteConditionReportSection(BaseTool):
@@ -70,7 +70,7 @@ class WriteConditionReportSection(BaseTool):
     delta: Union[Report, ConditionSection] = Field(..., description="Updates, changes, or new sections to add to the report as a whole or for a particular ConditionSection with a specific condition.")
     
     async def run(self) -> str:
-        get_logger(self.__class__.__name__).info(f"Writing report section for user {self.user_id}")      
+        configure_logger(self.__class__.__name__).info(f"Writing report section for user {self.user_id}")      
         return await self.upsert_report(self.user_id, self.delta)
         
     # Line 54-73 Add method to handle upsert logic

@@ -3,13 +3,13 @@ import json
 from typing import Any, Dict, Generator, Union
 from app.interfaces.llm import LLMInterface
 import openai
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 from app.models.agents.Agent import Agent
 
 class OpenAIInterface(LLMInterface):
     
     def setup_logging(self):
-        self.logger = get_logger(__name__)
+        self.logger = configure_logger(__name__)
 
     def initialize(self, api_key: str, **kwargs):
         from app.services.cache import RedisService

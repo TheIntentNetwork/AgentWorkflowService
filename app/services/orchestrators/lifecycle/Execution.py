@@ -12,14 +12,12 @@ from app.models.agency import Agency
 from app.models.agents.Agent import Agent
 from app.models.ContextInfo import ContextInfo
 from app.services.discovery.service_registry import ServiceRegistry
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 from redisvl.query.filter import Tag
 from app.interfaces.service import IService
 from app.services.context.context_manager import ContextManager
 from app.services.events.event_manager import EventManager
 from app.models.Node import NodeStatus
-
-logger = logging.getLogger(__name__)
 
 class ExecutionService(IService):
     """
@@ -30,7 +28,7 @@ class ExecutionService(IService):
     def __init__(self, **kwargs):
         self.service_registry = ServiceRegistry.instance()
         self.initialized = True
-        self.logger = get_logger('ExecutionService')
+        self.logger = configure_logger('ExecutionService')
         self.context_manager: ContextManager = self.service_registry.get('context_manager')
         self.event_manager: EventManager = self.service_registry.get('event_manager')
 
@@ -63,7 +61,7 @@ class ExecutionService(IService):
         """
         Start the ExecutionService.
         """
-        get_logger('ExecutionService').debug(f"ExecutionService started for node: {node.id}")
+        configure_logger('ExecutionService').debug(f"ExecutionService started for node: {node.id}")
 
     @staticmethod
     async def perform_agency_completion(agency_chart: list, instructions: str, session_id: str, description: str = "") -> dict:
@@ -152,7 +150,7 @@ class ExecutionService(IService):
         """
         from app.services.discovery.service_registry import ServiceRegistry
         from app.services.cache.redis import RedisService
-        logger = get_logger('ExecutionService')
+        logger = configure_logger('ExecutionService')
         logger.info(f"Assigning agents to the task: {node.description}")
         
         # Create a detailed prompt for the Universe Agent
@@ -216,7 +214,7 @@ class ExecutionService(IService):
             for agent in agent_group:
                 agency_chart.append([agency_chart[0], agent])
         
-        get_logger('ExecutionService').info(f"Agency Chart Built: {agency_chart}")
+        configure_logger('ExecutionService').info(f"Agency Chart Built: {agency_chart}")
             
         return agency_chart
     

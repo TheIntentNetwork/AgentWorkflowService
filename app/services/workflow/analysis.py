@@ -17,7 +17,7 @@ class Analysis:
         self.intent_agent = None
 
     async def perform_similarity_search(self, workflow, workflows):
-        index = await self.redis_service.create_index("workflow.yaml")
+        index = await self.redis_service.create_index("workflow")
 
         fields_vectorization = {
             "event": True,

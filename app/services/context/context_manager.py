@@ -1,15 +1,20 @@
 # app/managers/context_manager.py
 from asyncio import Queue
 import asyncio
+from enum import Enum
 import json
 import zlib
 import numpy as np
 from typing import Dict, Any, List, Union, Optional, TYPE_CHECKING
 from app.interfaces.service import IService
+from pydantic import BaseModel
 
 from deepdiff import DeepDiff
-from app.config.settings import settings
+
 from redisvl.query.filter import Tag
+
+from datetime import date, datetime, timedelta
+from collections import defaultdict
 
 if TYPE_CHECKING:
     from app.models.Node import Node
@@ -30,17 +35,17 @@ class ContextManager(IService):
     _instance = None
 
     def __init__(self, name: str, service_registry: any = None, **kwargs):
+        super().__init__(name=name, service_registry=service_registry, config=kwargs)
         self.name = name
         self.service_registry = service_registry or ServiceRegistry.instance()
         from app.services.cache.redis import RedisService
         self.redis: RedisService = self.service_registry.get('redis')
-        from app.utilities.logger import get_logger
-        self.logger = get_logger('ContextManager')
-        self.in_memory_store: Dict[str, Dict[str, Any]] = {}  # Restructured to store by session
-        self.session_contexts = {}
-        self.global_context = {}
+        self.in_memory_store: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(lambda: defaultdict(dict))
+        self.session_contexts: Dict[str, Dict[str, Any]] = {}
+        self.global_context: Dict[str, Any] = {}
         self.config = kwargs.get('config', {})
         self.service_name = name
+        self.default_expiration = timedelta(hours=1)  # Default expiration time
 
     async def set_session_context(self, session_id, context_type, context_data):
         if session_id not in self.session_contexts:
@@ -56,117 +61,56 @@ class ContextManager(IService):
     async def get_global_context(self, context_type):
         return self.global_context.get(context_type, {})
 
-    async def get_merged_context(self, session_id):
-        
-        merged = self.global_context.copy()
-        merged.update(self.session_contexts.get(session_id, {}))
-        return merged
+    async def get_merged_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        # This method can now simply call update_context
+        return await self.update_context(context.get('session_id'), context)
 
-    async def get_context(self, context_key: Union[str, 'Node'], session_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Retrieves context data from the in-memory store or Redis.
-
-        Args:
-            context_key (Union[str, Node]): The key for the context data or a Node object.
-
-        Returns:
-            Dict[str, Any]: The context data.
-
-        Example:
-            context_manager = ContextManager()
-            context = await context_manager.get_context("user:123")
-            print(context)
-            # Output: {'name': 'John Doe', 'age': 30, 'preferences': {'theme': 'dark'}}
-        """
-        from app.models.Node import Node
-        
-        if isinstance(context_key, Node):
-            context_key = f"node:{context_key.id}"
-
-        self.logger.debug(f"Retrieving context for key: {context_key} in session: {session_id}")
-        
-        try:
-            if session_id and session_id in self.in_memory_store and context_key in self.in_memory_store[session_id]:
-                return self.in_memory_store[session_id][context_key]
-            
-            # Construct filter
-            filter_expression = Tag("key") == context_key
-            if session_id:
-                filter_expression = filter_expression & Tag("session_id") == session_id
-
-            # Search in Redis
-            results = await self.redis.async_search_index(
-                context_key,
-                "metadata_vector",
-                "context",
-                1,
-                ["item"],
-                filter_expression
-            )
-
-            if results:
-                parsed_data = json.loads(results[0]['item'])
-                if session_id:
-                    if session_id not in self.in_memory_store:
-                        self.in_memory_store[session_id] = {}
-                    self.in_memory_store[session_id][context_key] = parsed_data
-                return parsed_data
+    def _deep_merge(self, target: Dict[str, Any], source: Dict[str, Any]) -> Dict[str, Any]:
+        for key, value in source.items():
+            if isinstance(value, dict):
+                target[key] = self._deep_merge(target.get(key, {}), value)
             else:
-                self.logger.warning(f"No context found for key: {context_key} in session: {session_id}")
-                return None
-        except Exception as e:
-            self.logger.error(f"Error retrieving context for key {context_key} in session {session_id}: {str(e)}")
-            return None
+                target[key] = value
+        return target
 
-    async def save_context(self, context_key: str, value: Dict[str, Any], embeddings: Dict[str, Any] = None, ttl: int = None, compress: bool = False):
-        """
-        Saves context data to both Redis and the in-memory store.
-
-        Args:
-            context_key (str): The key for the context data.
-            value (Dict[str, Any]): The context value.
-            embeddings (Dict[str, Any], optional): The embeddings data.
-
-        Example:
-            context_manager = ContextManager()
-            await context_manager.save_context(
-                "user:123",
-                {"name": "John Doe", "age": 30, "preferences": {"theme": "dark"}},
-                {"user_embedding": [0.1, 0.2, 0.3]}
-            )
-        """
-        self.logger.info(f"Saving context for key: {context_key}")
-        
-        if not value:
-            return
-        
-        data_to_save = {
-            "item": json.dumps(value),
-            "key": context_key
-        }
-
-        if embeddings:
-            data_to_save.update(embeddings)
-        
-        # Generate embeddings if not provided
-        if not embeddings:
-            embeddings = self.redis.generate_embeddings(value, ["item"])
-            data_to_save.update(embeddings)
-
-        await self.redis.save_context(context_key, data_to_save)
-
-        # Add version information
-        current_version = await self.get_context_version(context_key)
-        data_to_save["version"] = current_version + 1
-
-        if compress:
-            data_to_save["item"] = zlib.compress(json.dumps(value).encode())
-            data_to_save["compressed"] = True
+    async def save_context(self, key: str, value: Any):
+        if hasattr(value, 'to_json'):
+            serialized_value = value.to_json()
+        elif isinstance(value, BaseModel):
+            serialized_value = value.dict(exclude_none=True, exclude_unset=True)
         else:
-            data_to_save["item"] = json.dumps(value)
+            serialized_value = value
 
-        if ttl:
-            await self.redis.expire(context_key, ttl)
+        try:
+            json_string = json.dumps(serialized_value)
+        except TypeError as e:
+            self.logger.error(f"Error serializing value for key {key}: {str(e)}")
+            # Implement a custom serialization method if needed
+            json_string = self.custom_serialize(serialized_value)
+
+        await self.redis.client.hset(
+            key,
+            key,
+            json_string
+        )
+
+    def custom_serialize(self, obj):
+        """
+        Custom serialization method to handle objects that can't be serialized by default json.dumps
+        """
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        elif isinstance(obj, Enum):
+            return obj.value
+        elif hasattr(obj, '__dict__'):
+            return {key: self.custom_serialize(value) for key, value in obj.__dict__.items()
+                    if not key.startswith('_') and not callable(value)}
+        elif isinstance(obj, (list, tuple)):
+            return [self.custom_serialize(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {key: self.custom_serialize(value) for key, value in obj.items()}
+        else:
+            return str(obj)
 
     async def get_context_version(self, context_key: str) -> int:
         
@@ -176,25 +120,28 @@ class ContextManager(IService):
                     return record["version"] if "version" in record else 0
         return 0
 
-    async def update_context(self, context_key: str, value: Dict[str, Any], embeddings: Dict[str, Any] = None):
-        """
-        Updates context data in both Redis and the in-memory store.
+    async def update_context(self, session_id: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        # Ensure session_id is in the context
+        context['session_id'] = session_id
 
-        Args:
-            context_key (str): The key for the context data.
-            value (Dict[str, Any]): The updated context value.
-            embeddings (Dict[str, Any], optional): The updated embeddings data.
+        # Update session context
+        #await self.set_session_context(session_id, 'task_context', context)
 
-        Example:
-            context_manager = ContextManager()
-            await context_manager.update_context(
-                "user:123",
-                {"name": "John Doe", "age": 31, "preferences": {"theme": "light"}},
-                {"user_embedding": [0.2, 0.3, 0.4]}
-            )
-        """
-        self.logger.info(f"Updating context for key: {context_key}")
-        await self.save_context(context_key, value, embeddings)
+        # Update user context if it exists
+        if 'user_context' in context:
+            user_context = context['user_context']
+            await self.set_session_context(session_id, 'user_context', user_context)
+            
+            # Update user context with latest data
+            from app.services.context.user_context_manager import UserContextManager
+            user_context_manager: UserContextManager = self.service_registry.get('user_context')
+            updated_user_context = await user_context_manager.get_user_context(context, session_id)
+            context['user_context'] = self._deep_merge(user_context, updated_user_context)
+        # Merge with any existing session context
+        session_context = await self.get_session_context(session_id, 'task_context')
+        merged_context = self._deep_merge(context, session_context)
+
+        return merged_context
 
     async def update_property(self, context_key: Union[str, 'Node'], property_path: str, value: Any, withEmbeddings: bool = True):
         """
@@ -215,7 +162,7 @@ class ContextManager(IService):
 
         self.logger.debug(f"Updating property for key: {context_key} at path: {property_path} with value: {str(value)}")
         
-        context = await self.get_context(context_key)
+        context = await self.get_property_value(context_key)
         if isinstance(context, Queue):
             return
         if not context:
@@ -240,16 +187,16 @@ class ContextManager(IService):
             embeddings = redis.generate_embeddings(context['context_info'], ["input_description", "action_summary", "outcome_description", "output", "feedback"])
         
         await self.update_context(context_key, context, embeddings)
-        
+        from app.services.events.event_manager import EventManager
         # Publish the update event
-        event_manager = self.service_registry.get('event_manager')
+        event_manager: EventManager = self.service_registry.get('event_manager')
         update_event = {
             "context_key": context_key,
             "property_path": property_path,
             "old_value": old_value,
             "new_value": value
         }
-        await event_manager.publish_update(f"{context_key}:{property_path}:event->context_update_completed", update_event)
+        await event_manager.publish_update(f"{context_key}:{property_path}", update_event)
         
         self.logger.info(f"Published update event for: {context_key}:{property_path}")
 
@@ -317,7 +264,7 @@ class ContextManager(IService):
         if updates:
             await self.batch_update(context_key, updates, session_id)
 
-    async def get_property_value(self, context_key: str, property_path: str, session_id: str) -> Any:
+    async def get_property_value(self, context_key: str, property_path: str = None, session_id: str = None) -> Any:
         """
         Get the value of a property for a given key and property path.
 
@@ -334,8 +281,12 @@ class ContextManager(IService):
             print(theme)
             # Output: "dark"
         """
-        context = await self.get_context(context_key, session_id)
-        path_parts = property_path.split('.')
+        context = await self.redis.client.hget(context_key, '*')
+        
+        path_parts = []
+        if property_path:
+            path_parts = property_path.split('.')
+        
         value = context
         for part in path_parts:
             if isinstance(value, dict) and part in value:
@@ -367,35 +318,6 @@ class ContextManager(IService):
             if check_path in updated_properties:
                 return True
         return False
-
-    async def get_user_context(self, user_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
-        user_context = {}
-        
-        config = settings.service_config['db_context_managers']['user_context']
-        for source_name, source_config in config['data_sources'].items():
-            cache_key = f"user_context:{user_id}:{source_name}"
-            
-            filter_expression = Tag("key") == cache_key
-            if session_id:
-                filter_expression = filter_expression & Tag("session_id") == session_id
-
-            results = await self.redis.async_search_index(
-                cache_key,
-                "metadata_vector",
-                "context",
-                1,
-                ["item"],
-                filter_expression
-            )
-            
-            if not results:
-                data = await self._fetch_data_from_db(user_id, source_config)
-                await self.save_context(cache_key, data, session_id)
-                user_context[source_name] = data
-            else:
-                user_context[source_name] = json.loads(results[0]['item'])
-        
-        return user_context
 
     async def _fetch_data_from_db(self, user_id: str, source_config: Dict[str, Any]) -> List[Dict[str, Any]]:
         query = source_config['queries']['get_all']
@@ -432,38 +354,77 @@ class ContextManager(IService):
         
         self.logger.info(f"Completed context merge. Final context has {len(context)} keys")
 
-    async def _async_deep_merge(self, target: Dict[str, Any], source: Dict[str, Any], strategy: str = 'overwrite') -> None:
-        # Implement an asynchronous version of _deep_merge
-        # This could involve breaking down the merge operation into smaller chunks
-        # and using asyncio.sleep() periodically to allow other tasks to run
-        
-        if not target or not source:
-            return target
-        
-        for key, value in source.items():
-            if key in target:
-                if isinstance(value, dict) and isinstance(target[key], dict):
-                    await self._async_deep_merge(target[key], value)
-                elif strategy == 'overwrite':
+        async def _async_deep_merge(self, target: Dict[str, Any], source: Dict[str, Any], strategy: str = 'overwrite') -> None:
+            # Implement an asynchronous version of _deep_merge
+            # This could involve breaking down the merge operation into smaller chunks
+            # and using asyncio.sleep() periodically to allow other tasks to run
+            
+            if not target or not source:
+                return target
+            
+            for key, value in source.items():
+                if key in target:
+                    if isinstance(value, dict) and isinstance(target[key], dict):
+                        await self._async_deep_merge(target[key], value)
+                    elif strategy == 'overwrite':
+                        target[key] = value
+                    elif strategy == 'append' and isinstance(target[key], list) and isinstance(value, list):
+                        target[key].extend(value)
+                    elif strategy == 'keep_original':
+                        pass  # Do nothing, keep the original value
+                else:
                     target[key] = value
-                elif strategy == 'append' and isinstance(target[key], list) and isinstance(value, list):
-                    target[key].extend(value)
-                elif strategy == 'keep_original':
-                    pass  # Do nothing, keep the original value
-            else:
-                target[key] = value
-    
-    def _deep_merge(self, target: Dict[str, Any], source: Dict[str, Any], strategy: str = 'overwrite') -> None:
-        for key, value in source.items():
-            if key in target:
-                if isinstance(value, dict) and isinstance(target[key], dict):
-                    target[key] = self._deep_merge(target[key], value, strategy)
-                elif strategy == 'overwrite':
-                    target[key] = value
-                elif strategy == 'append' and isinstance(target[key], list) and isinstance(value, list):
-                    target[key].extend(value)
-                elif strategy == 'keep_original':
-                    pass  # Do nothing, keep the original value
-            else:
-                target[key] = value
-        return target
+
+    async def add_record(self, user_id: str, session_id: str, record_id: str, record_data: Dict[str, Any], expiration: timedelta = None):
+        if expiration is None:
+            expiration = self.default_expiration
+        expiry_time = datetime.now() + expiration
+        self.in_memory_store[user_id][session_id][record_id] = {
+            'data': record_data,
+            'expiry': expiry_time
+        }
+
+    async def get_record(self, user_id: str, session_id: str, record_id: str) -> Optional[Dict[str, Any]]:
+        record = self.in_memory_store.get(user_id, {}).get(session_id, {}).get(record_id)
+        if record and datetime.now() < record['expiry']:
+            return record['data']
+        elif record:
+            del self.in_memory_store[user_id][session_id][record_id]
+        return None
+
+    async def get_all_records(self, user_id: str, session_id: str) -> List[Dict[str, Any]]:
+        records = []
+        if user_id in self.in_memory_store and session_id in self.in_memory_store[user_id]:
+            now = datetime.now()
+            for record_id, record in self.in_memory_store[user_id][session_id].items():
+                if now < record['expiry']:
+                    records.append(record['data'])
+                else:
+                    del self.in_memory_store[user_id][session_id][record_id]
+        return records
+
+    async def remove_record(self, user_id: str, session_id: str, record_id: str):
+        if user_id in self.in_memory_store and session_id in self.in_memory_store[user_id]:
+            self.in_memory_store[user_id][session_id].pop(record_id, None)
+
+    async def clear_session_records(self, user_id: str, session_id: str):
+        if user_id in self.in_memory_store:
+            self.in_memory_store[user_id].pop(session_id, None)
+
+    async def remove_expired_records(self):
+        now = datetime.now()
+        for user_id in list(self.in_memory_store.keys()):
+            for session_id in list(self.in_memory_store[user_id].keys()):
+                expired_records = [record_id for record_id, record in self.in_memory_store[user_id][session_id].items() if now >= record['expiry']]
+                for record_id in expired_records:
+                    del self.in_memory_store[user_id][session_id][record_id]
+                if not self.in_memory_store[user_id][session_id]:
+                    del self.in_memory_store[user_id][session_id]
+            if not self.in_memory_store[user_id]:
+                del self.in_memory_store[user_id]
+
+    async def sync_with_redis(self, user_id: str, session_id: str):
+        # Implement logic to sync in-memory store with Redis
+        # This could involve fetching all records for a user and session from Redis
+        # and updating the in-memory store accordingly
+        pass

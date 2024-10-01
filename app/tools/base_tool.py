@@ -2,7 +2,7 @@
 from abc import ABC, abstractmethod
 import logging
 from typing import TYPE_CHECKING, Dict, Optional, Any, ClassVar, Type, get_type_hints
-
+from pydantic import Field
 from instructor import OpenAISchema
 
 
@@ -25,20 +25,18 @@ class SharedState:
 
 
 
-from app.utilities.logger import get_logger
-
 class BaseTool(OpenAISchema, ABC):
-    
-    shared_state: ClassVar[SharedState] = None
-    caller_agent: Any = None
-    event_handler: Any = None
-    one_call_at_a_time: bool = False
-    _logger: Optional[logging.Logger] = None
+    shared_state: ClassVar[SharedState] = Field(default=None)
+    caller_agent: Any = Field(default=None)
+    event_handler: Any = Field(default=None)
+    one_call_at_a_time: bool = Field(default=False)
+    _logger: Optional[any] = None
 
     def __init__(self, *args, **kwargs):
-        if self._logger is None:
-            self._logger = get_logger(__name__)
         super().__init__(*args, **kwargs)
+        from app.logging_config import configure_logger
+        if self._logger is None:
+            self._logger = configure_logger(self.__class__.__name__)
 
     @classmethod
     @property

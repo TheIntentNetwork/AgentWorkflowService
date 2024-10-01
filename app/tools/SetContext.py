@@ -11,7 +11,7 @@ from asyncio import sleep
 from uuid import UUID, uuid4
 from redisvl.query.filter import Tag
 from enum import Enum, auto
-from app.utilities.logger import get_logger    
+from app.logging_config import configure_logger 
 
 class ContextInfo(BaseModel):
     """
@@ -52,20 +52,22 @@ class SetContext(BaseTool):
     updated_context: ContextInfo = Field(..., description="The updated context information of the agent which can contain arrays, strings, and dictionaries.")
     
     async def run(self) -> str:
-        get_logger(self.__class__.__name__).info(f"Setting context_info {self.updated_context} for agent {self.caller_agent.name}")
+        configure_logger(self.__class__.__name__).info(f"Setting context_info {self.updated_context} for agent {self.caller_agent.name}")
         
-        if not self.caller_agent.context_info.context:
-            self.caller_agent.context_info.context = {}
-
-
-            if not self.caller_agent.context_info.context.get('updated_context'):
-
-                self.caller_agent.context_info.context['updated_context'] = {}
-
+        try:
+            if not self.caller_agent.context_info.context:
+                self.caller_agent.context_info.context = {}
+                if not self.caller_agent.context_info.context.get('updated_context'):
+                    self.caller_agent.context_info.context['updated_context'] = {}
+                    
+            self.caller_agent.context_info.context['updated_context'] = self.updated_context.model_dump()
+        except Exception as e:
+            configure_logger(self.__class__.__name__).error(f"Error setting context_info {self.updated_context} for agent {self.caller_agent.name}")
+            configure_logger(self.__class__.__name__).error(f"Error: {e}")
+            traceback.print_exc()
+            return "Error setting context_info."
                 
-        self.caller_agent.context_info.context['updated_context'] = self.updated_context
-                
-        return self.updated_context
+        return self.updated_context.model_dump()
 
         
         

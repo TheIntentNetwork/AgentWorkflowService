@@ -53,6 +53,7 @@ DROP FUNCTION IF EXISTS public.delete_user_report(UUID, UUID);
 
 DROP FUNCTION IF EXISTS public.get_nodes(p_user_id uuid);
 DROP FUNCTION IF EXISTS public.get_nodes_by_name(p_name text);
+DROP FUNCTION IF EXISTS public.get_child_nodes_by_parent_name (p_name TEXT);
 DROP FUNCTION IF EXISTS public.upsert_nodes(p_id uuid, p_name text, p_type text, p_description text, p_context_info jsonb, p_process_item_level text, p_created_at timestamp);
 DROP FUNCTION IF EXISTS public.delete_nodes(p_id uuid);
 
@@ -331,15 +332,18 @@ CREATE OR REPLACE FUNCTION public.get_nodes(p_id UUID)
 RETURNS TABLE (
   id UUID,
   name TEXT,
-  type form_type,
+  type TEXT,
   description TEXT,
-  context_info JSONB,
-  process_item_level TEXT,
-  created_at TIMESTAMP
+  context_info JSON,
+  process_item_level BOOLEAN,
+  created_at TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE,
+  order_sequence INT,
+  parent_id INT
 ) AS $$
 BEGIN
   RETURN QUERY
-  SELECT nt.id, nt.name, nt.type, nt.description, nt.context_info, nt.process_item_level, nt.created_at
+  SELECT nt.id, nt.name, nt.type, nt.description, nt.context_info, nt.process_item_level, nt.created_at, nt.updated_at, nt.order_sequence, nt.parent_id
   FROM public.node_templates nt
   WHERE nt.id = p_id;
 END;
@@ -347,19 +351,47 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION public.get_nodes_by_name(p_name TEXT) 
 RETURNS TABLE (
-  id UUID,
+  id INT,
   name TEXT,
-  type form_type,
+  type TEXT,
   description TEXT,
-  context_info JSONB,
-  process_item_level TEXT,
-  created_at TIMESTAMP
+  context_info JSON,
+  process_item_level BOOLEAN,
+  created_at TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE,
+  order_sequence INT,
+  parent_id INT
 ) AS $$
 BEGIN
   RETURN QUERY
-  SELECT nt.id, nt.name, nt.type, nt.description, nt.context_info, nt.process_item_level, nt.created_at
+  SELECT nt.id, nt.name, nt.type, nt.description, nt.context_info, nt.process_item_level, nt.created_at, nt.updated_at, nt.order_sequence, nt.parent_id
   FROM public.node_templates nt
   WHERE nt.name = p_name;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE
+OR REPLACE FUNCTION public.get_child_nodes_by_parent_name (p_name TEXT) RETURNS TABLE (
+  child_node_id INT,
+  child_node_name TEXT,
+  child_node_type TEXT,
+  child_node_description TEXT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        nct.id AS child_node_id,
+        nct.name AS child_node_name,
+        nct.type AS child_node_type,
+        nct.description AS child_node_description
+    FROM 
+        public.node_templates nt
+    JOIN 
+        public.node_relationships nr ON nr.parent_node_id = nt.id
+    JOIN 
+        public.node_templates nct ON nct.id = nr.child_node_id  -- Join to get child node details
+    WHERE 
+        nt.name = p_name;  -- Filter by the parent node name
 END;
 $$ LANGUAGE plpgsql;
 

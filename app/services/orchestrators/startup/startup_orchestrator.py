@@ -1,13 +1,13 @@
 import os
 import uuid
 
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 
 class StartupOrchestrator:
     def __init__(self):
         from app.services import ServiceRegistry
         self.service_registry: ServiceRegistry = ServiceRegistry.instance()
-        self.logger = get_logger('StartupOrchestrator')
+        self.logger = configure_logger('StartupOrchestrator')
 
     async def run(self):
         try:

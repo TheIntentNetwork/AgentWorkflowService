@@ -1,48 +1,32 @@
 from abc import ABC, abstractmethod
 import threading
-
-import uuid  # Import uuid to generate unique instance IDs
+import uuid
+from typing import Dict, Any, Tuple
 
 class IService(ABC):
-    service_registry = None
-    _instance = None
-    _lock = threading.Lock()
+    _instances: Dict[Tuple[str, str], Any] = {}
+    _lock = threading.RLock()
 
     def __init__(self, name: str, service_registry=None, config=None, **kwargs):
-        self.instance_id = str(uuid.uuid4())  # Generate a unique instance ID for each service
-        self.logger = self.get_logger_with_instance_id(name)  # Use a logger with instance_id
+        self.name = name
+        self.service_registry = service_registry
+        self.instance_id = str(uuid.uuid4())
+        self.logger = self.get_logger_with_instance_id(name)
 
     @classmethod
     def instance(cls, name: str, service_registry=None, config=None, **kwargs):
-        from app.utilities.logger import get_logger
-        logger = get_logger(cls.__name__)
-        logger.info(f"Getting instance of {cls.__name__} with name: {name}")
-        # Ensure thread safety with a lock
-        try:
-            logger.info(f"Attempting to acquire lock for {cls.__name__}")
-            cls._lock.acquire()
-            logger.info(f"Lock acquired for {cls.__name__}")
-        except Exception as e:
-            logger.error(f"Error acquiring lock: {e}")
-
-        try:
-            # Return the existing instance if it already exists
-            if cls._instance is not None:
-                logger.info(f"Returning existing instance of {cls.__name__} with instance_id: {cls._instance.instance_id}")
-                return cls._instance
-            
-            # Create a new instance if it doesn't exist
-            logger.info(f"Creating new instance of {cls.__name__}")
-            cls._instance = cls(name=name, service_registry=service_registry, config=config, **kwargs)
-            logger.info(f"Instance of {cls.__name__} created with instance_id: {cls._instance.instance_id}")
-        finally:
-            cls._lock.release()
-        return cls._instance
+        key = (cls.__name__, name)
+        with cls._lock:
+            if key not in cls._instances:
+                instance = cls(name=name, service_registry=service_registry, config=config, **kwargs)
+                cls._instances[key] = instance
+                instance.logger.info(f"Created new instance of {cls.__name__} with name: {name}, instance_id: {instance.instance_id}")
+            else:
+                instance = cls._instances[key]
+                instance.logger.info(f"Returning existing instance of {cls.__name__} with name: {name}, instance_id: {instance.instance_id}")
+            return instance
 
     def get_logger_with_instance_id(self, name):
-        """
-        Get a logger that includes the instance_id in the log messages.
-        """
-        from app.utilities.logger import configure_logger
-        logger = configure_logger(f"{name}_{self.instance_id}")
+        from app.logging_config import configure_logger
+        logger = configure_logger(f"{self.__class__.__name__}.{name}.{self.instance_id}")
         return logger

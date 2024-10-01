@@ -14,9 +14,10 @@ from app.tools.oai.code_interpreter import CodeInterpreter
 from app.utilities.llm_client import get_openai_client
 from app.utilities.streaming import AgencyEventHandler
 from app.models.message_output import MessageOutput
-from app.utilities.logger import get_logger
+
 from app.models.agents.Agent import Agent
 from app.models.User import User
+from typing import AsyncGenerator, Type, Union
 
 class Thread:
     id: str = None
@@ -51,7 +52,7 @@ class Thread:
 
     async def get_completion_stream(self,
                           message: str,
-                          event_handler: type(AgencyEventHandler),
+                          event_handler: Type[AgencyEventHandler],
                           message_files: List[str] = None,
                           attachments: Optional[List[Attachment]] = None,
                           recipient_agent=None,
@@ -87,10 +88,11 @@ class Thread:
                                attachments: Optional[List[dict]] = None,
                                recipient_agent=None,
                                additional_instructions: str = None,
-                               event_handler: type(AgencyEventHandler) = None,
+                               event_handler: Type[AgencyEventHandler] = None,
                                tool_choice: AssistantToolChoice = None
                                ) -> AsyncGenerator[Union[str, MessageOutput], None]:
-        logger = get_logger('Thread')
+        from app.logging_config import configure_logger
+        logger = configure_logger("Thread", 'DEBUG')
         logger.info(f"Starting _get_completion_internal for message: {message[:50]}...")
 
         if not recipient_agent:
@@ -116,7 +118,7 @@ class Thread:
             event_handler.set_recipient_agent(recipient_agent)
 
         sender_name = "user" if isinstance(self.agent, User) else self.agent.name
-        get_logger('Thread').info(f'THREAD:[ {sender_name} -> {recipient_agent.name} ]: URL {self.thread_url}')
+        logger.info(f'THREAD:[ {sender_name} -> {recipient_agent.name} ]: URL {self.thread_url}')
 
         logger.info("Creating message object")
         message_obj = self.create_message(message=message, role="user", attachments=attachments)
@@ -197,7 +199,7 @@ class Thread:
 
             except Exception as e:
                 error_attempts += 1
-                logger.warning(f"Attempt {error_attempts} failed. Retrying in {retry_delay} seconds. Error: {str(e)}")
+                logger.warning(f"Attempt {error_attempts} failed. Retrying in {retry_delay} seconds. Error: {str(e)} {traceback.format_exc()}")
                 await asyncio.sleep(retry_delay)
                 retry_delay *= 2  # Exponential backoff
 
@@ -238,7 +240,8 @@ class Thread:
             )
 
     async def _run_until_done(self):
-        logger = get_logger('Thread')
+        from app.logging_config import configure_logger
+        logger = configure_logger("Thread", 'DEBUG')
         start_time = time.time()
         while True:
             self.run = self.client.beta.threads.runs.retrieve(
@@ -282,7 +285,8 @@ class Thread:
             raise ValueError(f"Unable to create message: {str(e)}") from e
 
     def _get_last_assistant_message(self):
-        logger = get_logger('Thread')
+        from app.logging_config import configure_logger
+        logger = configure_logger("Thread", 'DEBUG')
         messages = self.client.beta.threads.messages.list(
             thread_id=self.id,
             limit=5  # Increase the limit to get more messages
@@ -302,23 +306,26 @@ class Thread:
         raise Exception("No valid assistant message found in the thread")
 
     async def execute_tool(self, tool_call, recipient_agent=None, event_handler=None, tool_names=[]):
+        from app.logging_config import configure_logger
+        
+        logger = configure_logger("Thread", 'DEBUG')
         if not recipient_agent:
             recipient_agent = self.recipient_agent
 
         funcs = recipient_agent.functions
-        get_logger('Thread').debug(f"functions: {funcs}")
+        logger.debug(f"functions: {funcs}")
         func = next((func for func in funcs if func.__name__ == tool_call.function.name), None)
 
         if not func:
-            get_logger('Thread').error(f"Error: Function {tool_call.function.name} not found. Available functions: {[func.__name__ for func in funcs]}")
+            logger.error(f"Error: Function {tool_call.function.name} not found. Available functions: {[func.__name__ for func in funcs]}")
             return f"Error: Function {tool_call.function.name} not found. Available functions: {[func.__name__ for func in funcs]}"
 
         try:
             args = tool_call.function.arguments
             args = json.loads(args) if args else {}
-            get_logger('Thread').debug(f"args: {args}")
+            logger.debug(f"args: {args}")
             func = func(**args)
-            get_logger('Thread').debug(f"func: {func}")
+            logger.debug(f"func: {func}")
             for tool_name in tool_names:
                 if tool_name == tool_call.function.name and (
                         hasattr(func, "one_call_at_a_time") and func.one_call_at_a_time):
@@ -326,23 +333,24 @@ class Thread:
             func.caller_agent = recipient_agent
             func.event_handler = event_handler
             if inspect.iscoroutinefunction(func.run):
-                get_logger('Thread').debug(f"Running async function: {func.__class__.__name__}")
+                logger.debug(f"Running async function: {func.__class__.__name__}")
                 output = await func.run()
             else:
-                get_logger('Thread').debug(f"Running sync function: {func.__class__.__name__}")
+                logger.debug(f"Running sync function: {func.__class__.__name__}")
                 loop = asyncio.get_event_loop()
                 output = await loop.run_in_executor(None, func.run)
-            get_logger('Thread').debug(f"Function completed with output: {output}")
+            logger.debug(f"Function completed with output: {output}")
             return output
         except Exception as e:
             error_message = f"Error: {e}" + traceback.format_exc()
-            get_logger('Thread').error(error_message)
+            logger.error(error_message)
             if "For further information visit" in error_message:
                 error_message = error_message.split("For further information visit")[0]
             return error_message
     
     def _submit_tool_outputs(self, tool_outputs: List[Dict[str, Any]], event_handler):
-        logger = get_logger('Thread')
+        from app.logging_config import configure_logger
+        logger = configure_logger("Thread", 'DEBUG')
         logger.info(f"Submitting {len(tool_outputs)} tool outputs")
         
         # Ensure all outputs are strings
@@ -372,7 +380,8 @@ class Thread:
             raise
 
     async def _handle_tool_calls(self, tool_calls, recipient_agent, event_handler):
-        logger = get_logger('Thread')
+        from app.logging_config import configure_logger
+        logger = configure_logger("Thread", 'DEBUG')
         tool_outputs = []
         tool_names = []
         for tool_call in tool_calls:

@@ -7,7 +7,7 @@ import json
 from pydantic import BaseModel
 from typing import TYPE_CHECKING, Any, Dict, List, Union
 import uuid
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -24,7 +24,7 @@ class SessionMessage:
         self.message_type = message_type
         self.session_id = session_id or str(uuid.uuid4())
         self.data = data or {}
-        self.logger = get_logger('SessionMessage')
+        self.logger = configure_logger('SessionMessage')
 
 class SessionState(Enum):
     STARTED = "STARTED"
@@ -44,7 +44,7 @@ class Session(BaseModel, from_attributes=True):
         self.history: List[Any] = []
         self.kafka: KafkaService = ServiceRegistry.instance().get('kafka')
         self.redis: RedisService = ServiceRegistry.instance().get('redis')
-        self.logger = get_logger('Session')
+        self.logger = configure_logger('Session')
         
         self.executor = ThreadPoolExecutor()
 

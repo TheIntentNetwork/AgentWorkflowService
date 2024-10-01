@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Dict, List
 from app.models.ContextInfo import ContextInfo
 from app.models.Node import Node
 from app.models.agents.Agent import Agent
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 import asyncio
 from app.models.LifecycleNode import LifecycleNode
 from app.models.NodeStatus import NodeStatus
@@ -16,7 +16,7 @@ class UniverseAgent(Agent):
         from app.services.discovery import ServiceRegistry
         self.context_manager = ServiceRegistry.instance().get(name="context_manager")
         self.lifecycle_manager = ServiceRegistry.instance().get(name="lifecycle_manager")
-        self.logger = get_logger(self.__class__.__name__)
+        self.logger = configure_logger(self.__class__.__name__)
         self.logger.debug("Initializing UniverseAgent with kwargs: %s", kwargs)
         self._contexts: Dict[str, Any] = {}
         self.goals: List[str] = []
@@ -34,8 +34,8 @@ class UniverseAgent(Agent):
     async def start(self):
         self.logger.info("Starting UniverseAgent")
         self.is_running = True
-        await self.load_initial_configuration()
-        asyncio.create_task(self.monitor_system())
+        #await self.load_initial_configuration()
+        #asyncio.create_task(self.monitor_system())
 
     async def stop(self):
         self.logger.info("Stopping UniverseAgent")

@@ -7,7 +7,7 @@ from pydantic import Field
 from typing import Dict, Any
 from app.tools.base_tool import BaseTool
 from app.services.discovery.service_registry import ServiceRegistry
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 
 class SaveOutput(BaseTool):
     """
@@ -31,7 +31,7 @@ class SaveOutput(BaseTool):
     output: Dict[str, Any] = Field(..., description="The output to save in a json formatted dictionary. Field is required. Utilize the existing output structure of the property if there is no final value.")
     
     async def run(self) -> str:
-        get_logger('SaveOutput').info(f"Running SaveOutput tool")
+        configure_logger('SaveOutput').info(f"Running SaveOutput tool")
         
         from app.services.cache.redis import RedisService
         from app.models.agents import Agent
@@ -49,14 +49,14 @@ class SaveOutput(BaseTool):
                 "output": json.dumps(self.output)
             }
             
-            get_logger('RegisterOutput').info(f"Generating embeddings for context: {context}")
+            configure_logger('RegisterOutput').info(f"Generating embeddings for context: {context}")
             
             embeddings = redis.generate_embeddings(context, ["session_id", "context_key", "output_name", "output_description", "output"])
             
             await context_manager.update_property(self, f"output.{self.output_name}", self.output)
             
         except Exception as e:
-            get_logger('RegisterOutput').error(f"Error generating embeddings: {e}")
+            configure_logger('RegisterOutput').error(f"Error generating embeddings: {e}")
         
         try:
             # Ensure all values are not None before saving
@@ -70,9 +70,9 @@ class SaveOutput(BaseTool):
                     "metadata_vector": np.array(embeddings.get("metadata_vector"), dtype=np.float32).tobytes()
                 })
             else:
-                get_logger('RegisterOutput').info(f"One or more required fields are None. {context}")
+                configure_logger('RegisterOutput').info(f"One or more required fields are None. {context}")
                 logging.error("One or more required fields are None.")
         except Exception as e:
-            get_logger('RegisterOutput').info(f"RegisterOutput failed with error: {e}")
+            configure_logger('RegisterOutput').info(f"RegisterOutput failed with error: {e}")
         
         return context

@@ -17,7 +17,7 @@ from enum import Enum, auto
 if TYPE_CHECKING:
     from app.services.cache.redis import RedisService
     from app.services.discovery.service_registry import ServiceRegistry
-    from app.utilities.logger import get_logger
+    from app.logging_config import configure_logger
 
 class SummarizeIncomingContext(BaseTool):
     """
@@ -27,7 +27,7 @@ class SummarizeIncomingContext(BaseTool):
     summary: str = Field(..., description="The summary of the incoming context.")
     
     async def run(self) -> str:
-        get_logger(self.__class__.__name__).info(f"Summarizing incoming context for agent {self.agent_name}")
+        configure_logger(self.__class__.__name__).info(f"Summarizing incoming context for agent {self.agent_name}")
         
         if not self.caller_agent.context.get("output"):
             self.caller_agent.context["output"] = {}

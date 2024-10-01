@@ -1,15 +1,11 @@
 version: '0.1.0'
 
 index:
-  name: user_context
-  prefix: user_context
+  name: models
+  prefix: model
   storage_type: hash
 
 fields:
-- name: user_id
-  type: tag
-  attrs:
-    weight: 1.0
 - name: type
   type: tag
   attrs:
@@ -22,7 +18,7 @@ fields:
   type: vector
   attrs:
     algorithm: HNSW
-    data_type: FLOAT32
+    data_type: float32
     dims: 384
-    distance_metric: COSINE
+    distance_metric: cosine
     ef_construction: 6

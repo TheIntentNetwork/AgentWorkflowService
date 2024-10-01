@@ -6,7 +6,7 @@ from supabase import create_client
 from app.services.supabase.supabase import Supabase
 from presidio_analyzer import AnalyzerEngine
 from app.tools.base_tool import BaseTool
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 
 
 class GetIntake(BaseTool):
@@ -16,7 +16,7 @@ class GetIntake(BaseTool):
     
     def run(self, **kwargs):
         try:
-            get_logger("GetIntake").info("Running GetIntake tool")
+            configure_logger("GetIntake").info("Running GetIntake tool")
             analyzer = AnalyzerEngine()
             analyzer.nlp_engine = "spacy"
             analyzer.language = "en"
@@ -41,7 +41,7 @@ class GetIntake(BaseTool):
                 for analyzer_result in analyzer_results:
                     print(f"Detected PII: {result['decrypted_form'][analyzer_result.start:analyzer_result.end]} - Type: {analyzer_result.entity_type}")
         except Exception as e:
-            get_logger("GetIntake").error(f"Error running {self.__class__.__name__} tool: {str(e)} with traceback: {e.__traceback__}")
+            configure_logger("GetIntake").error(f"Error running {self.__class__.__name__} tool: {str(e)} with traceback: {e.__traceback__}")
             raise e
         return result
 

@@ -1,9 +1,10 @@
 from typing import Any, Dict, Optional
 import uuid
 from app.interfaces import IService
-import logging
 
-logger = logging.getLogger(__name__)
+from app.logging_config import configure_logger
+
+logger = configure_logger(__name__)
 
 class ServiceRegistry:
     _instance = None

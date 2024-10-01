@@ -7,6 +7,7 @@ from typing import Callable, Optional, Union
 from uuid import uuid4
 from kafka.consumer.fetcher import ConsumerRecord
 from app.interfaces import IService
+from app.logging_config import configure_logger
 
 from app.models.Task import Task
 from app.services.cache.redis import RedisService
@@ -30,7 +31,8 @@ class EventManager(IService):
         super().__init__(name=name, service_registry=service_registry, config=config)
         self.name = name
         self.service_registry = service_registry
-        self.logger = self.get_logger_with_instance_id(name)
+        self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self.logger.info(f"EventManager initialized with instance_id: {self.instance_id}")
         self.logger.info("EventManager __init__ method called")
         self.logger.info(f"EventManager initialized with name: {name}")
         self.eventListeners = {}
@@ -206,57 +208,46 @@ class EventManager(IService):
             self.logger.warning(f"Unhandled action: {action}")
 
     async def __event_listener(self, message: any):
-        """
-        Listens for events and maps them to the appropriate handlers.
-
-        Args:
-            message (any): The event message received from Kafka.
-        """
-        self.logger.info(f"Event received: {message}")
         from app.models.Node import Node
+        from app.models.Task import Task
         
         event_mapping = {
             'task': Task,
             'node': Node
         }
-        context = None
-        if message.get('action') == "create_run":
-            uuid = uuid4()
-            action = "execute"
-            if message.get('key') == "task":
-                key = f"task:{uuid}"
-                context = message.get('task')
-            elif message.get('key') == "node":
-                key = f"node:{uuid}"
-                context = message.get('node')
-            else:
-                key = f"task:{uuid}"
-                context = message.get('task')
-        else:
-            action = message.get('action')
-            key = message.get('key')
-            context = message.get('context')
-            
-            if message.get('node'):
-                context = message.get('node')
-            
-            if message.get('task'):
-                context = message.get('task')
-        
-        
-        
-        self.logger.info(f"Received event: {message}")
-        self.logger.info(f"Key: {key}, Action: {action}, Context: {context or 'No context provided'}")
         
         try:
-            type_class: Union[Task, Node] = event_mapping[key.split(':')[0]]
-        except KeyError:
-            self.logger.error(f"Unhandled event type for key: {key}")
-            return
-        
-        self.logger.info(f"Handling event with type: {type_class.__name__}")
-        await type_class.handle(key, action, context)
-        self.logger.info(f"Event handled for key: {key}")
+            if isinstance(message, dict):
+                message_data = message
+            elif hasattr(message, 'value'):
+                message_data = json.loads(message.value.decode('utf-8'))
+            else:
+                raise ValueError("Unexpected message format")
+
+            key = message_data.get('key')
+            action = message_data.get('action')
+            object_data = message_data.get('object', {})
+            context = message_data.get('context', {})
+
+            self.logger.info(f"Received event: {message_data}")
+            self.logger.info(f"Key: {key}, Action: {action}, Object: {object_data}, Context: {context}")
+            
+            try:
+                type_class = event_mapping[key.split(':')[0]]
+            except KeyError:
+                self.logger.error(f"Unhandled event type for key: {key}")
+                return
+            
+            self.logger.info(f"Handling event with type: {type_class.__name__}")
+            await type_class.handle(key, action, object_data, context)
+            self.logger.info(f"Event handled for key: {key}")
+        except json.JSONDecodeError:
+            self.logger.error(f"Failed to decode message: {message}")
+        except ValueError as e:
+            self.logger.error(f"Error processing message: {e}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error in __event_listener: {e}")
+            self.logger.error(traceback.format_exc())
 
     async def cleanup(self):
         """

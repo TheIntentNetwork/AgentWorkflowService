@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Dict, List
 from app.tools.base_tool import BaseTool
-from app.utilities.logger import get_logger
+from app.logging_config import configure_logger
 
 class Agent(BaseModel):
     """
@@ -23,7 +23,7 @@ class AssignAgents(BaseTool):
     agents: List[Agent] = Field(..., description="The agents to assign to the node.")
 
     async def run(self) -> str:
-        get_logger(self.__class__.__name__).info(f"Assigning agents {self.agents} to step {self.node_id}")
+        configure_logger(self.__class__.__name__).info(f"Assigning agents {self.agents} to step {self.node_id}")
         
         if not self.caller_agent.context_info.context.get("assignees"):
             self.caller_agent.context_info.context["assignees"] = []
