@@ -1,51 +1,65 @@
 import json
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from redisvl.query.filter import Tag, FilterExpression
 import yaml
 from typing import Any, Dict, Union
+from app.services.discovery.service_registry import ServiceRegistry
+from app.services.cache.redis import RedisService
+from seed_agent_data import get_agent_seed_data
+from seed_context_index import CustomJSONEncoder, create_test_data
+import numpy as np
 
 class ContextInfo(BaseModel):
     key: Optional[str] = Field(None, description="The key of the context.")
     input_keys: Optional[List[str]] = Field([], description="The input keys of the context object.")
     input_description: Optional[str] = Field(None, description="The input description of the context object.")
-    input_context: Optional[str] = Field(None, description="The input context of the context object.")
+    input_context: Optional[Dict] = Field(None, description="The input context of the context object.", init=False, init_var=False)
     action_summary: Optional[str] = Field(None, description="The action summary of the context object.")
     outcome_description: Optional[str] = Field(None, description="The outcome description of the context object.")
     feedback: Optional[List[str]] = Field(None, description="The feedback of the context object.")
     output: Optional[dict] = Field({}, description="The output structure of the context object.")
     context: Optional[Dict[str, Any]] = Field({}, description="The context of the object.")
     
-    def __init__(self):
-        from app.services.cache.redis import RedisService
-        from app.services.context.context_manager import ContextManager
-        from app.services.discovery.service_registry import ServiceRegistry
+    _service_registry: Any = PrivateAttr()
+    _redis_service: Any = PrivateAttr()
+    _context_manager: Any = PrivateAttr()
+
+    def __init__(self, **data):
+        super().__init__(**data)
         self._service_registry = ServiceRegistry.instance()
-        self._redis_service: RedisService = self._service_registry.get('redis')
-        self._context_manager: ContextManager = self._service_registry.get('context_manager')
+        self._redis_service = self._service_registry.get('redis')
+        self._context_manager = self._service_registry.get('context_manager')
 
     async def query_vector_database(self, query: str, vector_field: str, index_name: str, return_fields: List[str], filter_expression: Optional[FilterExpression] = None, limit: int = 10):
-        from app.logging_config import configure_logger
+        from ..logging_config import configure_logger
         logger = configure_logger('ContextInfo')
         
         logger.info(f"Querying vector database for {vector_field} with query: {query}")
         embeddings = self._redis_service.generate_embeddings({vector_field: query}, [vector_field])
         
-        results = await self._redis_service.async_search_index(
-            embeddings,
-            f"{vector_field}_vector",
-            index_name,
-            limit,
-            return_fields,
-            filter_expression
-        )
+        try:
+            results = await self._redis_service.async_search_index(
+                embeddings,
+                f"{vector_field}_vector",
+                index_name,
+                limit,
+                return_fields,
+                filter_expression
+            )
+        except FileNotFoundError as e:
+            logger.warning(f"Index schema file for {index_name} not found: {str(e)}")
+            results = []
+        except Exception as e:
+            logger.error(f"Error querying vector database for {index_name}: {str(e)}")
+            results = []
         
         logger.info(f"Found {len(results)} results for {vector_field}")
         return sorted(results, key=lambda x: x['vector_distance'])
 
     async def query_nodes(self, query: str, vector_field: str, node_type: Optional[str] = None, limit: int = 10):
         return_fields = ["input_description", "output", "outcome_description", "key", "item", "action_summary", "type"]
-        results = await self.query_vector_database(query, vector_field, "context.yaml", return_fields, node_type, limit)
+        results = await self.query_vector_database(query, vector_field, "node_context.yaml", return_fields, node_type, limit)
         return results
 
     async def query_messages(self, query: str, limit: int = 10):
@@ -83,7 +97,7 @@ class ContextInfo(BaseModel):
     async def query_user_forms(self, user_id: str, query: str, limit: int = 10):
         return_fields = ["id", "user_id", "title", "type", "status", "decrypted_form", "created_by", "created_at", "updated_at"]
         filter_expression = Tag("user_id") == user_id
-        results = await self.query_vector_database(query, "metadata", "user_forms_index", return_fields, filter_expression, limit)
+        results = await self.query_vector_database(query, "metadata", "user_context", return_fields, filter_expression, limit)
         return results
 
     async def query_models(self, query: str, limit: int = 10):
@@ -93,18 +107,13 @@ class ContextInfo(BaseModel):
 
     async def query_agents(self, query: str, vector_field: str, limit: int = 10):
         return_fields = ["name", "instructions", "description", "tools"]
-        results = await self.query_vector_database(query, vector_field, "prompt_settings", return_fields, limit=limit)
+        results = await self.query_vector_database(query, vector_field, "agents", return_fields, limit=limit)
         return results
 
     async def query_outputs(self, session_id: str, query: str, limit: int = 10):
         return_fields = ["session_id", "context_key", "output_name", "output_description", "output"]
         filter_expression = Tag("session_id") == session_id
         results = await self.query_vector_database(query, "metadata", "outputs", return_fields, filter_expression, limit)
-        return results
-
-    async def query_workflow(self, query: str, vector_field: str, limit: int = 10):
-        return_fields = ["purpose", "goals", "steps", "agents", "feedback"]
-        results = await self.query_vector_database(query, vector_field, "workflow", return_fields, limit=limit)
         return results
     
     def format_as_json(self, data: Dict[str, Any]) -> str:
@@ -159,30 +168,133 @@ class ContextInfo(BaseModel):
             return f"Context Information:\n{formatted_context}"
         else:
             raise ValueError(f"Unsupported output type: {output_type}")
+
+    async def cleanup(self):
+        if hasattr(self, '_redis_service') and self._redis_service:
+            await self._redis_service.close()
+
+    async def seed_data(self):
+        redis_service: RedisService = self._redis_service
+        user_context_manager = UserContextManager("user_context_manager", self.service_registry, self.config)
         
-if __name__ == "__main__":
+        # Create index first
+        await redis_service.create_index("context", {
+            "name": {"type": "TEXT", "weight": 5.0},
+            "input_description": {"type": "TEXT", "weight": 1.0},
+            "action_summary": {"type": "TEXT", "weight": 1.0},
+            "outcome_description": {"type": "TEXT", "weight": 1.0},
+            "input_description_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+            "input_context_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+            "action_summary_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+            "outcome_description_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+            "feedback_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+            "output_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"}
+        })
+        
+        async def embed_and_store(data, prefix, parent_id=None):
+            try:
+                context_info = data.context_info if hasattr(data, 'context_info') else {}
+                
+                # Load user context
+                user_id = context_info.get('context', {}).get('user_context', {}).get('user_id')
+                if user_id:
+                    user_context = await user_context_manager.load_user_context(data)
+                    context_info['user_context'] = user_context
+
+                embeddings = redis_service.generate_embeddings(context_info.model_dump() if hasattr(context_info, 'model_dump') else context_info,
+                                                               ["input_description", "input_context", "action_summary", "outcome_description", "feedback", "output"])
+
+                object_name = data.name if hasattr(data, 'name') else data.__class__.__name__
+                serializable_data = data.model_dump() if hasattr(data, 'model_dump') else {k: v for k, v in data.__dict__.items() if not k.startswith('_')}
+
+                mapping = {
+                    "type": serializable_data.get("type", data.__class__.__name__),
+                    "name": object_name,
+                    **{field: json.dumps(getattr(context_info, field, None), cls=CustomJSONEncoder) for field in ["input_description", "action_summary", "outcome_description", "feedback", "output"]},
+                    "item": json.dumps(serializable_data, cls=CustomJSONEncoder),
+                    "context_info": json.dumps(context_info.model_dump() if hasattr(context_info, 'model_dump') else context_info, cls=CustomJSONEncoder),
+                    **{field: np.array(vector, dtype=np.float32).tobytes() for field, vector in embeddings.items()}
+                }
+
+                if parent_id:
+                    mapping["parent_id"] = parent_id
+
+                await redis_service.client.hset(prefix, mapping=mapping)
+                print(f"Data {prefix} stored in Redis")
+
+                if hasattr(data, "collection") and data.collection is not None:
+                    for j, item in enumerate(data.collection):
+                        await embed_and_store(item, f"{prefix}:{j}", prefix)
+
+            except Exception as e:
+                print(f"Error processing item {prefix}: {str(e)}")
+                raise
+
+        data = create_test_data()
+        for i, item in enumerate(data):
+            await embed_and_store(item, f"context:{i}")
+
+        print("All data seeded successfully")
+
+async def test_context_info_methods():
     context_info = ContextInfo()
+    
+    # Test query_user_context
+    user_context = await context_info.query_user_context("0b3141cf-48f4-4414-977e-31025b142839", "condition")
+    print("User Context:", user_context)
+
+    # Test query_user_forms
+    user_forms = await context_info.query_user_forms("0b3141cf-48f4-4414-977e-31025b142839", "Detail Builder")
+    print("User Forms:", user_forms)
+
+    # Test query_models
+    models = await context_info.query_models("CreateConditionReport")
+    print("Models:", models)
+
+    # Test query_agents
+    agents = await context_info.query_agents("UniverseAgent", "name")
+    print("Agents:", agents)
+
+    # Test query_outputs
+    outputs = await context_info.query_outputs("conditions", "test query")
+    print("Outputs:", outputs)
+
+
+    # Test prepare_context_for_output
     context = {
-        "key": "context_key",
-        "input_keys": ["input_key1", "input_key2"],
-        "input_description": "This is the input description",
-        "action_summary": "This is the action summary",
-        "outcome_description": "This is the outcome description",
-        "feedback": ["This is the first feedback", "This is the second feedback"],
-        "output": {
-            "output_key1": "output_value1",
-            "output_key2": "output_value2"
-        },
-        "context": {
-            "context_key1": "context_value1",
-            "context_key2": "context_value2"
-        }
+        "key": "test_key",
+        "input_description": "Test input",
+        "output": {"result": "Test output"}
     }
-    formatted_context = await context_info.prepare_context_for_output(context, "database", "json")
-    print(formatted_context)
-    formatted_context = await context_info.prepare_context_for_output(context, "config_file", "yaml")
-    print(formatted_context)
-    formatted_context = await context_info.prepare_context_for_output(context, "message_payload", "tab_text_list")
-    print(formatted_context)
-    formatted_context = await context_info.prepare_context_for_output(context, "agent_prompt", "json")
-    print(formatted_context)
+    
+    db_output = await context_info.prepare_context_for_output(context, "database", "json")
+    print("Database Output:", db_output)
+
+    config_output = await context_info.prepare_context_for_output(context, "config_file", "yaml")
+    print("Config File Output:", config_output)
+
+    message_output = await context_info.prepare_context_for_output(context, "message_payload", "json")
+    print("Message Payload Output:", message_output)
+
+    prompt_output = await context_info.prepare_context_for_output(context, "agent_prompt", "tab_text_list")
+    print("Agent Prompt Output:", prompt_output)
+
+# Update the main function to call our test function
+async def main():
+    context_info = ContextInfo()
+    try:
+        await context_info.seed_data()
+        await test_context_info_methods()
+    finally:
+        await context_info.cleanup()
+
+if __name__ == "__main__":
+    import asyncio
+    import sys
+    import os
+
+    # Add the project root to the Python path
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    sys.path.insert(0, project_root)
+
+    asyncio.run(main())

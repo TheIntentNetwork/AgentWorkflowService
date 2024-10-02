@@ -269,7 +269,7 @@ async def create_index(index_data: List[any], index_name: str):
             context_info: ContextInfo = data.context_info
             debug_print(f"data: {data}")
 
-            embeddings = generate_embeddings(context_info.model_dump(), ["input_description", "action_summary", "outcome_description", "feedback", "output"])
+            embeddings = generate_embeddings(context_info.model_dump(), ["input_description", "input_context", "action_summary", "outcome_description", "feedback", "output"])
             debug_print(f"Generated embeddings for {prefix}")
 
             object_name = data.name if hasattr(data, "name") else data.__class__.__name__

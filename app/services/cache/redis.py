@@ -396,3 +396,6 @@ class RedisService(IService):
         except Exception as e:
             self.logger.error(f"Error setting expiration for key {key}: {str(e)}")
             raise
+
+    async def async_set(self, key: str, value: str):
+        await self.client.set(key, value)
