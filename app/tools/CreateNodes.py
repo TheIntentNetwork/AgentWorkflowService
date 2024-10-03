@@ -65,7 +65,7 @@ class CreateNodes(BaseTool):
                 "key": f"node:{node.id}",
                 "action": "initialize",
                 "object": node.model_dump(),
-                "context": self.caller_agent.context_info.context
+                "context": {}
             })
 
         return payload

@@ -57,9 +57,10 @@ class SetContext(BaseTool):
         try:
             if not self.caller_agent.context_info.context:
                 self.caller_agent.context_info.context = {}
-                if not self.caller_agent.context_info.context.get('updated_context'):
-                    self.caller_agent.context_info.context['updated_context'] = {}
-                    
+            
+            if not self.caller_agent.context_info.context.get('updated_context'):
+                self.caller_agent.context_info.context['updated_context'] = {}
+                
             self.caller_agent.context_info.context['updated_context'] = self.updated_context.model_dump()
         except Exception as e:
             configure_logger(self.__class__.__name__).error(f"Error setting context_info {self.updated_context} for agent {self.caller_agent.name}")

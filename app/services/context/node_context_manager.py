@@ -63,8 +63,14 @@ class NodeContextManager(DBContextManager):
         await self.context_manager.save_context(key, context)
 
     async def load_node_context(self, node: Union[Node, Any], parent_or_child: str = 'parent') -> Union[Node, Dict[str, Any]]:
-        if node.name:
-            node_name = node.name or node.node_template_name
+        try: 
+            if node.name is not None:
+                node_name = node.name or node.node_template_name
+        except Exception as e:
+            if node.get('name', None) is not None:
+                node_name = node.get('name') or node.get('node_template_name')
+            else:
+                return node
         
         templates = []
         if node_name is not None:
@@ -72,7 +78,7 @@ class NodeContextManager(DBContextManager):
                 templates = await self.load_node_templates(name=node_name, query='get_node_template_with_children')
             elif parent_or_child == 'parent_without_children':
                 templates = await self.load_node_templates(name=node_name,query='get_nodes_by_name')
-            elif parent_or_child == 'child':
+            elif parent_or_child == 'children':
                 templates = await self.load_node_templates(name=node_name, query='get_node_template_with_children')[0]['collection']
                 templates = [json.loads(template) for template in templates]
 
@@ -91,6 +97,9 @@ class NodeContextManager(DBContextManager):
             
                 redis_data.append(template_data)
         else:
+            if len(templates) == 0:
+                return node
+            
             template = templates[0]
             template_data = {}
             template_data['id'] = f"{prefix}:{template['id']}"

@@ -158,24 +158,22 @@ class Task(BaseModel):
             Output: {self.context_info.output}
                         
             Your process is as follows:
-            1.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that will meet the goals of our workflow/task/step. If a model has a collection, be sure to create all nodes within the collection.
+            1.) Call CreateNodes: Use the CreateNodes tool to create a new node that will meet the goals of our workflow/task/step. If a model has a collection, you will only create the parent model node as this model node will be processed individually and the child nodes will be created in the next step. You will not create the child nodes in this step, but they should be present in the model collection.
             
             Your Guidelines:
             - You must create a new node that meets the goals of the model context to complete your task using the CreateNodes tool.
             - If you forget to call the CreateNodes tool, you have failed your task.
             - Only assign tools that are known. Do not make up tool names.
-            - You must follow the structure of models by creating Nodes that match the functionality of the model in question by creating sets of nodes based on the contents of the model or workflow. Create all nodes within the workflow to process the task understanding that these steps within the workflow are required for a successful outcome.
             - Only introduce changes in the node context if there is relevent feedback for the context of this task.
-            - The node that is responsible for generating the output necessary to fulfill the current context output requirements, should be the only node that is created with this specific output. Outputs should fulfill the input requirements of the next node in the workflow.
+            - The model node that is responsible for generating the output necessary to fulfill the current context output requirements, should be the only node that is created with this specific output.
             
             Processing and Feedback Rule:
-            - If a model has multiple workflows, you will create all nodes within the workflow before creating nodes for the next workflow.
             - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.
             
             """,
             "session_id": self.session_id,
             "context_info": self.context_info,
-            "tools": ["RetrieveContext", "CreateNodes"],
+            "tools": ["CreateNodes"],
             "self_assign": False
         }
         

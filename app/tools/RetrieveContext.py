@@ -60,7 +60,7 @@ class RetrieveContext(BaseTool):
     """
     This class represents the RetrieveContext tool which returns seeded data and historical examples that can be used to create new agents, models, steps. Models are saved copies of successfully tested node structures that can be used to create a new set of steps.
     """
-    type: Literal["user_meta", "form", "step", "model"] = Field(..., description="The type of the context to retrieve.")
+    type: Literal["form", "step", "model"] = Field(..., description="The type of the context to retrieve.")
     key: str = Field(..., description="The key of the context to retrieve.")
     query: str = Field(..., description="The query of the context to retrieval.")
     session_id: Optional[str] = Field(None, description="The session ID for the context.")

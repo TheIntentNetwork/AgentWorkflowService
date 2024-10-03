@@ -207,6 +207,30 @@ class UserContextManager(IService):
         context = await self.get_context(user_id)
         context[data_type] = await self.get_user_data(user_id, data_type)
         await self.update_context(user_id, context)
+    
+    async def update_context(self, user_id: str, context_data: Dict[str, Any]) -> None:
+        """
+        Updates the context data for a given key.
+
+        Args:
+            context_key (Union[str, Node]): The key for the context data or a Node object.
+            context_data (Dict[str, Any]): The context data to update.
+
+        Returns:
+            None
+
+        Example:
+            context_manager = ContextManager()
+            await context_manager.update_context("user:123", {"name": "Jane Doe"})
+        """
+        self.logger.debug(f"Updating context for user_id: {user_id}")
+        try:
+            from app.services.cache.redis import RedisService
+            redis: RedisService = self.service_registry.instance().get('redis')
+            await redis.async_set(user_id, "metadata_vector", "user_context", context_data)
+        except Exception as e:
+            self.logger.error(f"Error updating context for key {user_id}: {str(e)} Trace: {traceback.format_exc()}")
+            raise e
 
     async def delete_user_data(self, user_id: str, data_type: str, id: str) -> None:
         query_name = f'delete_user_{data_type}'

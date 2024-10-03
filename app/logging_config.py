@@ -16,7 +16,7 @@ init(autoreset=True)
 class SafeRotatingFileHandler(RotatingFileHandler):
     """A RotatingFileHandler that closes the file after each emit."""
     def emit(self, record):
-        super().emit(record)  # Write the log message
+        super().emit(record)
         self.close()
 
 class ClassNameFilter(logging.Filter):

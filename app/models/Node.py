@@ -86,6 +86,9 @@ class Node(BaseModel, IRunnableContext):
             node = Model(**node_data)
         else:
             node = cls(**node_data)
+        from app.services.context.node_context_manager import NodeContextManager
+        node_context_manager: NodeContextManager = service_registry.get('node_context')
+        node = await node_context_manager.load_node_context(node, 'children')
         
         await context_manager.save_context(f'node:{node.id}', node.model_dump())
         

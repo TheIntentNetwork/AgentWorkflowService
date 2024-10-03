@@ -174,8 +174,9 @@ class ContextInfo(BaseModel):
             await self._redis_service.close()
 
     async def seed_data(self):
+        from app.services.context.user_context_manager import UserContextManager
         redis_service: RedisService = self._redis_service
-        user_context_manager = UserContextManager("user_context_manager", self.service_registry, self.config)
+        user_context_manager = UserContextManager("user_context_manager", self._service_registry, self.config)
         
         # Create index first
         await redis_service.create_index("context", {
@@ -203,7 +204,7 @@ class ContextInfo(BaseModel):
 
                 embeddings = redis_service.generate_embeddings(context_info.model_dump() if hasattr(context_info, 'model_dump') else context_info,
                                                                ["input_description", "input_context", "action_summary", "outcome_description", "feedback", "output"])
-
+                
                 object_name = data.name if hasattr(data, 'name') else data.__class__.__name__
                 serializable_data = data.model_dump() if hasattr(data, 'model_dump') else {k: v for k, v in data.__dict__.items() if not k.startswith('_')}
 
