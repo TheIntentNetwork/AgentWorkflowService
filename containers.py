@@ -24,7 +24,7 @@ class Container(containers.DeclarativeContainer):
     # Worker
     # ------
     worker = providers.Singleton(
-        lambda: __import__('app.worker').worker.Worker(
+        lambda: __import__('app.worker').Worker(
             name="worker",
             worker_uuid="worker_uuid",
             config=settings.service_config
