@@ -4,20 +4,19 @@ import uuid
 from app.config.service_config import ServiceConfig
 from app.services.cache.redis import RedisService
 from app.interfaces.service import IService
-from app.services import ServiceRegistry
 from app.logging_config import configure_logger
+from containers import get_container
 
 
 class Worker(IService):
     name = "worker"
     _instance = None
 
-    def __init__(self, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: ServiceConfig, **kwargs):
-        super().__init__(name=name, service_registry=service_registry, config=config, **kwargs)
+    def __init__(self, name: str, worker_uuid: str, config: ServiceConfig, **kwargs):
+        super().__init__(name=name, config=config, **kwargs)
         self.name = name
         self.worker_uuid = worker_uuid
-        self.service_registry = service_registry
-        self.redis: RedisService = self.service_registry.get("redis")
+        self.redis: RedisService = get_container().redis()
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         self.logger.info(f"Worker initialized with instance_id: {self.worker_uuid}")
         self.is_active = False
@@ -55,9 +54,9 @@ class Worker(IService):
         self.logger.debug("Worker service shut down successfully")
 
     @classmethod
-    def instance(cls, name: str, service_registry: ServiceRegistry, worker_uuid: str, config: Optional[Dict[str, Any]] = None):
+    def instance(cls, name: str, worker_uuid: str, config: Optional[Dict[str, Any]] = None):
         if cls._instance is None:
-            cls._instance = cls(name=name, service_registry=service_registry, worker_uuid=worker_uuid, config=config)
+            cls._instance = cls(name=name, worker_uuid=worker_uuid, config=config)
         return cls._instance
 
     def __str__(self):

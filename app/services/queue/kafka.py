@@ -12,9 +12,9 @@ import time
 import traceback
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 from dotenv import load_dotenv
-from pydantic import BaseModel
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.consumer.fetcher import ConsumerRecord
+from app.config.settings import KafkaSettings
 from app.interfaces.service import IService
 from app.logging_config import configure_logger
 
@@ -29,11 +29,51 @@ def safe_decode(m):
 class KafkaService(IService):
     name = "kafka"
 
-    def __init__(self, **kwargs):
-        super().__init__(name=self.name)
-        self.bootstrap_servers = kwargs.get("bootstrap_servers", "localhost:9092")
-        self.topics = set() if kwargs.get("topics") is None else set(kwargs.get("topics"))
-        self.consumer_group = kwargs.get("consumer_group", "default")
+    def __init__(self, name: str, config: KafkaSettings):
+        """
+        Initialize the KafkaService.
+
+        Args:
+            name (str): Name of the service.
+            config (dict): Configuration dictionary.
+            bootstrap_servers (str): Kafka bootstrap servers.
+            consumer_group (str): Kafka consumer group.
+        """
+        super().__init__(name=name, config=config)
+        self.bootstrap_servers = config['bootstrap_servers'] or "localhost:29092"
+        self.consumer_group = config['consumer_group'] or "AGENCY_WORKFLOWS_CONSUMER"
+        self.consumer = None
+        self.producer = None
+        self.consumer_thread = None
+        self.consumer_thread_running = False
+        self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+
+        # Initialize other necessary attributes
+        self.event_loop = asyncio.get_event_loop()
+        self.subscriptions = {}
+        self.subscribed_topics = set()
+        self.topics = [config['topics'] or "agency_workflows"]
+        self.event_loop = asyncio.get_event_loop()
+        
+        print(f"KafkaService: {self.to_json()}")
+    
+    def to_json(self):
+        return {
+            "name": self.name,
+            "bootstrap_servers": self.bootstrap_servers,
+            "consumer_group": self.consumer_group,
+            "consumer_thread_running": self.consumer_thread_running,
+            "subscribed_topics": list(self.subscribed_topics),
+            "topics": self.topics
+        }
+        
+
+    async def start(self):
+        """
+        Start the KafkaService by initializing the producer and consumer,
+        then starting the consumer thread.
+        """
+        self.logger.info("Starting KafkaService")
         self.consumer = KafkaConsumer(
             bootstrap_servers=self.bootstrap_servers,
             group_id=self.consumer_group,
@@ -44,14 +84,87 @@ class KafkaService(IService):
             bootstrap_servers=self.bootstrap_servers,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
-        self.subscribed_topics = set()
-        self.subscriptions = {}
+        self.start_consumer_thread()
+        self.logger.info("KafkaService started successfully")
 
-        self.event_loop = asyncio.get_event_loop()
-        self.consumer_thread = None
-        self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
-        self.logger.info(f"KafkaService initialized with instance_id: {self.instance_id}")
-        self.logger.info("KafkaService initialized")
+    def start_consumer_thread(self):
+        """
+        Start a separate thread to run the Kafka consumer.
+        """
+        self.logger.debug("Starting Kafka consumer thread")
+        self.consumer_thread_running = True
+        self.consumer_thread = threading.Thread(target=self.run_consumer, daemon=True)
+        self.consumer_thread.start()
+        self.logger.info("Kafka consumer thread started")
+
+    def run_consumer(self):
+        """
+        Run the Kafka consumer in a separate thread to process messages.
+        """
+        self.logger.debug("Running Kafka consumer")
+        while self.consumer_thread_running:
+            if self.consumer is not None:
+                try:
+                    messages = self.consumer.poll(timeout_ms=1000)
+                    if messages:
+                        self.logger.info(f"Received {len(messages)} message(s)")
+                        for topic_partition, records in messages.items():
+                            for record in records:
+                                topic = record.topic
+                                value = record.value
+                                self.logger.debug(f"Processing message from topic: {topic}")
+                                if topic in self.subscriptions:
+                                    self.logger.debug(f"Subscriptions for topic {topic}: {self.subscriptions[topic]}")
+                                    for queue, callback in self.subscriptions[topic]:
+                                        try:
+                                            if callback:
+                                                result = callback(value)
+                                                if asyncio.iscoroutine(result):
+                                                    self.event_loop.call_soon_threadsafe(
+                                                        asyncio.create_task, result
+                                                    )
+                                            self.event_loop.call_soon_threadsafe(queue.put_nowait, record)
+                                        except Exception as e:
+                                            self.logger.error(f"Error processing message: {e}")
+                    else:
+                        self.logger.debug("No messages received")
+                except Exception as e:
+                    if self.consumer_thread_running:
+                        self.logger.error(f"Error in Kafka consumer thread: {e}")
+                        self.logger.error(f"Error details: {traceback.format_exc()}")
+                    else:
+                        self.logger.info("Kafka consumer thread stopped")
+                        break
+            else:
+                self.logger.debug("Consumer is not initialized, sleeping for 1 second")
+                time.sleep(1)  # Wait for consumer to be initialized
+        self.logger.debug("Kafka consumer thread stopped")
+
+    async def shutdown(self):
+        """
+        Shutdown the KafkaService by stopping the consumer thread and closing connections.
+        """
+        self.logger.info("Shutting down KafkaService")
+        await self.close()
+        self.logger.info("KafkaService shut down")
+
+    async def close(self):
+        """
+        Close the Kafka connections and stop the consumer thread.
+        """
+        self.logger.info("Closing KafkaService")
+        try:
+            if self.producer:
+                self.producer.close(timeout=5)
+            if self.consumer:
+                self.consumer_thread_running = False
+                if self.consumer_thread and self.consumer_thread.is_alive():
+                    self.consumer_thread.join(timeout=5)
+                self.consumer.close(autocommit=False)
+        except Exception as e:
+            self.logger.error(f"Error closing Kafka connections: {e}")
+        finally:
+            self.logger.info("KafkaService closed")
 
     async def _subscribe_to_topic(self, topic):
         if not isinstance(topic, str) or not topic.strip():
@@ -123,78 +236,6 @@ class KafkaService(IService):
         self.consumer_thread.join()
         self.event_loop.stop()
     
-    def run_consumer(self):
-        """
-        Run the Kafka consumer in a separate thread.
-        """
-        self.logger.debug("Starting Kafka consumer thread")
-        self.consumer_thread_running = True
-        while self.consumer_thread_running:
-            if self.consumer is not None:
-                try:
-                    #self.logger.debug("Polling for messages")
-                    messages = self.consumer.poll(timeout_ms=1000)
-                    #self.logger.debug(f"Messages: {messages}")
-                    if messages:
-                        self.logger.info(f"Received {len(messages)} message(s)")
-                        for topic_partition, records in messages.items():
-                            self.logger.debug(f"Topic partition: {topic_partition}")
-                            self.logger.debug(f"Records: {records}")
-                            for record in records:
-                                topic = record.topic
-                                value = record.value
-                                self.logger.info(f"Processing message from topic: {topic}")
-                                self.logger.debug(f"Message value: {value}")
-                                if topic in self.subscriptions:
-                                    self.logger.debug(f"Subscriptions for topic {topic}: {self.subscriptions[topic]}")
-                                    for queue, callback in self.subscriptions[topic]:
-                                        try:
-                                            if callback:
-                                                self.logger.debug(f"Callback for topic {topic}: {callback}")
-                                                result = callback(value)
-                                                if asyncio.iscoroutine(result):
-                                                    self.logger.debug("Scheduling coroutine task")
-                                                    self.event_loop.call_soon_threadsafe(
-                                                        self.event_loop.create_task, result
-                                                    )
-                                            self.logger.debug("Putting message in queue")
-                                            self.event_loop.call_soon_threadsafe(queue.put_nowait, record)
-                                        except Exception as e:
-                                            self.logger.error(f"Error processing message: {e}")
-                    else:
-                        self.logger.debug("No messages received")
-                except Exception as e:
-                    if self.consumer_thread_running:
-                        self.logger.error(f"Error in Kafka consumer thread: {e}")
-                        self.logger.error(f"Error details: {traceback.format_exc()}")
-                        self.logger.error(f"Message causing the error: {record.value if 'record' in locals() else 'Unknown'}")
-                    else:
-                        self.logger.info("Kafka consumer thread stopped")
-                        self.logger.debug(f"Consumer state: {self.consumer}")
-                        break
-            else:
-                self.logger.debug("Consumer is not initialized, sleeping for 1 second")
-                time.sleep(1)  # Wait for consumer to be initialized
-        self.logger.debug("Kafka consumer thread stopped")
-
-    async def close(self):
-        self.logger.info("Closing KafkaService")
-        self.consumer_thread_running = False
-        try:
-            if self.consumer:
-                self.logger.info("Closing Kafka consumer")
-                self.consumer.close()
-            if self.consumer_thread and self.consumer_thread.is_alive():
-                self.logger.info("Waiting for consumer thread to stop")
-                self.consumer_thread.join(timeout=30)
-            if self.producer:
-                self.logger.info("Closing Kafka producer")
-                self.producer.flush(timeout=30)
-                self.producer.close(timeout=30)
-        except Exception as e:
-            self.logger.error(f"Error closing Kafka connections: {e}")
-        self.logger.info("KafkaService closed")
-
     async def subscribe(self, topic, queue=None, callback: Optional[Callable[[dict], bool]] = None):
         """
         Subscribe to a Kafka topic and receive messages in a queue and optionally filter them.
@@ -264,31 +305,6 @@ class KafkaService(IService):
         If no settings are provided, the index will be created with the default settings.
         """
         pass
-    
-    async def close(self):
-        self.logger.info("Closing KafkaService")
-        try:
-            self.consumer_thread_running = False
-            if self.consumer:
-                self.logger.info("Closing Kafka consumer")
-                try:
-                    self.consumer.close(autocommit=False)
-                except Exception as e:
-                    self.logger.error(f"Error closing Kafka consumer: {e}")
-                if self.consumer_thread and self.consumer_thread.is_alive():
-                    self.logger.info("Waiting for consumer thread to stop")
-                    self.consumer_thread.join(timeout=30)
-            if self.producer:
-                self.logger.info("Closing Kafka producer")
-                try:
-                    self.producer.flush(timeout=30)
-                    self.producer.close(timeout=30)
-                except Exception as e:
-                    self.logger.error(f"Error closing Kafka producer: {e}")
-        except Exception as e:
-            self.logger.error(f"Error closing Kafka connections: {e}")
-        finally:
-            self.logger.info("KafkaService closed")
 
     def stop_consumer(self):
         self.logger.info("Stopping Kafka consumer")
