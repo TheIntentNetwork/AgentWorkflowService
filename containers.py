@@ -8,6 +8,8 @@ from app.models.ServiceConfig import ServiceConfig
 from app.services.context.user_context_manager import UserContextManager
 from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
+from app.services.lifecycle.lifecycle_manager import LifecycleManager
+from app.factories.agent_factory import AgentFactory
 
 class Container(containers.DeclarativeContainer):
     """
@@ -122,6 +124,30 @@ class Container(containers.DeclarativeContainer):
         kafka=kafka
     )
 
+    # Lifecycle Management
+    # --------------------
+    lifecycle_manager = providers.Singleton(
+        LifecycleManager,
+        name="lifecycle_manager",
+        config=config.lifecycle_manager,
+        redis=redis,
+        kafka=kafka,
+        event_manager=event_manager
+    )
+
+    # Agent Factory
+    # -------------
+    agent_factory = providers.Factory(
+        AgentFactory,
+        name="agent_factory",
+        config=config.agent_factory,
+        context_manager=context_manager,
+        user_context_manager=user_context_manager,
+        node_context_manager=node_context_manager,
+        event_manager=event_manager,
+        lifecycle_manager=lifecycle_manager
+    )
+
 # Lifecycle Functions
 # -------------------
 
@@ -134,6 +160,13 @@ async def init_resources():
     await container.redis().start()
     await container.kafka().start()
     await container.event_manager().start()
+    await container.lifecycle_manager().start()
+    await container.worker().start()
+    await container.session_manager().start()
+    await container.dependency_service().start()
+    await container.context_manager().start()
+    await container.user_context_manager().start()
+    await container.node_context_manager().start()
 
 async def shutdown_resources():
     """
@@ -141,10 +174,16 @@ async def shutdown_resources():
     This function is called during application shutdown to ensure all
     services are properly stopped and resources are released.
     """
+    await container.node_context_manager().shutdown()
+    await container.user_context_manager().shutdown()
+    await container.context_manager().shutdown()
+    await container.dependency_service().shutdown()
+    await container.session_manager().shutdown()
+    await container.worker().shutdown()
+    await container.lifecycle_manager().shutdown()
     await container.event_manager().shutdown()
     await container.kafka().shutdown()
     await container.redis().shutdown()
-    # ... (shutdown other services)
 
 # Create a global container variable
 container = None
