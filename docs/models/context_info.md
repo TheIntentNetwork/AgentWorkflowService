@@ -39,3 +39,60 @@ The ContextInfo model is used throughout the agent workflow system to manage and
 
 ## Note
 The ContextInfo model plays a crucial role in maintaining and accessing context across the agent workflow system. It includes methods for data seeding, querying, and formatting, making it a versatile component for context management.
+# ContextInfo Class
+
+## Overview
+The ContextInfo class is a crucial component in the agent workflow system, responsible for managing and querying various types of context information. It interacts with multiple services, including Redis, UserContextManager, and vector databases, to provide a comprehensive context management solution.
+
+## Key Components
+
+### Attributes
+- `key`: Optional[str] - The key of the context.
+- `input_keys`: Optional[List[str]] - The input keys of the context object.
+- `input_description`: Optional[str] - The input description of the context object.
+- `input_context`: Optional[Dict] - The input context of the context object.
+- `action_summary`: Optional[str] - The action summary of the context object.
+- `outcome_description`: Optional[str] - The outcome description of the context object.
+- `feedback`: Optional[List[str]] - The feedback of the context object.
+- `output`: Optional[dict] - The output structure of the context object.
+- `context`: Optional[Dict[str, Any]] - The context of the object.
+
+### Private Attributes
+- `_service_registry`: ServiceRegistry instance
+- `_redis_service`: RedisService instance
+- `_context_manager`: ContextManager instance
+- `_user_context_manager`: UserContextManager instance
+
+### Methods
+- `__init__(**data)`: Initializes the ContextInfo instance
+- `query_vector_database(...)`: Queries the vector database
+- `query_nodes(...)`: Queries nodes in the vector database
+- `query_messages(...)`: Queries messages in the vector database
+- `query_user_context(...)`: Queries user context in the vector database
+- `query_user_forms(...)`: Queries user forms in the vector database
+- `query_models(...)`: Queries models in the vector database
+- `query_agents(...)`: Queries agents in the vector database
+- `query_outputs(...)`: Queries outputs in the vector database
+- `format_context(...)`: Formats context data in various formats
+- `prepare_context_for_output(...)`: Prepares context for different output types
+- `cleanup()`: Performs cleanup operations
+- `seed_data()`: Seeds initial data into the system
+
+## Usage
+The ContextInfo class is used to manage and query various types of context information within the agent workflow system. It provides methods for interacting with vector databases, formatting context data, and preparing context for different output types.
+
+## Key Features
+1. **Vector Database Querying**: Supports querying various types of data (nodes, messages, user context, forms, models, agents, outputs) using vector similarity search.
+2. **Context Formatting**: Offers multiple formats for context data (JSON, YAML, tab-separated text list).
+3. **Output Preparation**: Prepares context for different output types (database, config file, message payload, agent prompt).
+4. **Data Seeding**: Provides functionality to seed initial data into the system.
+5. **Service Integration**: Integrates with various services (Redis, UserContextManager) for comprehensive context management.
+
+## Interactions
+- Interacts with ServiceRegistry to access various services
+- Uses RedisService for vector database operations
+- Utilizes UserContextManager for user-specific context operations
+- Integrates with vector databases for similarity-based querying
+
+## Note
+The ContextInfo class plays a central role in managing context throughout the agent workflow system. It provides a flexible and powerful interface for querying and manipulating context data, supporting various data types and output formats. This class is essential for maintaining a coherent and accessible context across different components of the system.
