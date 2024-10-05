@@ -36,6 +36,20 @@
 - Manages Agent instances and coordinates task assignments
 - Interacts with Agent and Task objects to manage the workflow
 
+## Task Model (task.md)
+- Represents a unit of work within the agent workflow system
+- Attributes: id, name, description, nodes, dependencies, status, events
+- Methods: add_node, add_dependency, update_status, add_event, get_status, get_dependencies
+- Created and managed by the Agency class
+- Contains Node objects and interacts with Agent objects during execution
+
+## Node Model (node.md)
+- Represents an individual step or action within a task
+- Attributes: id, name, description, status, events, dependencies
+- Methods: update_status, add_event, add_dependency, get_status, get_dependencies
+- Building blocks of tasks within the agent workflow system
+- Allows for fine-grained control and monitoring of task execution
+
 ## Overall Architecture
 - Microservices architecture using FastAPI, Redis, and Kafka
 - Containerized deployment using Docker
