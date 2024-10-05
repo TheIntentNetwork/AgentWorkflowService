@@ -1,7 +1,7 @@
 import os
 import yaml
-from pydantic import BaseModel, Field, root_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict, PydanticBaseSettingsSource
 from dotenv import load_dotenv
 from typing import Dict, Any, List
 from pathlib import Path
@@ -90,7 +90,13 @@ class DebugSettings(BaseConfig):
     profile: bool = Field(default=False)
 
     def __init__(self, **data):
-        print(f"DebugSettings received data: {data}")
+        debug_env = os.getenv('DEBUG', 'false').lower()
+        profile_env = os.getenv('PROFILE', 'false').lower()
+        
+        self.debug = debug_env in ('true', '1', 'yes', 'on')
+        self.profile = profile_env in ('true', '1', 'yes', 'on')
+        
+        print(f"DebugSettings: debug={self.debug}, profile={self.profile}")
         super().__init__(**data)
 
 # ------------------------------------------------------
@@ -127,6 +133,17 @@ class Settings(BaseSettings):
         extra="allow",
         debug=False
     )
+
+    @root_validator(pre=True)
+    def parse_debug_settings(cls, values):
+        debug_env = os.getenv('DEBUG', 'false').lower()
+        profile_env = os.getenv('PROFILE', 'false').lower()
+        
+        values['debug'] = {
+            'debug': debug_env in ('true', '1', 'yes', 'on'),
+            'profile': profile_env in ('true', '1', 'yes', 'on')
+        }
+        return values
 
     def __init__(self, **values: Any):
         print(f"Settings received values: {values}")
