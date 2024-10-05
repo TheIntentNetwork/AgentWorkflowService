@@ -103,7 +103,8 @@ class DebugSettings(BaseConfig):
         Parse boolean values from environment variables.
         """
         for field in ('debug', 'profile'):
-            values[field] = cls.parse_bool(values.get(field))
+            if field in values:
+                values[field] = cls.parse_bool(values[field])
         return values
 
 # ------------------------------------------------------
