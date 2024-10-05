@@ -555,6 +555,18 @@ class UserContextManager(BaseContextManager):
         await self.global_context_manager.start()
         self.logger.debug("UserContextManager service started successfully")
 
+    async def shutdown(self):
+        """
+        Shutdown the UserContextManager service.
+        Clean up any resources or connections.
+        """
+        self.logger.info(f"Shutting down UserContextManager service: {self.name}")
+        # Clean up any user-specific resources
+        await self.global_context_manager.stop()
+        # Clear in-memory store
+        self.in_memory_store.clear()
+        self.logger.debug("UserContextManager service shut down successfully")
+
     async def stop(self):
         """
         Stop the UserContextManager service.
