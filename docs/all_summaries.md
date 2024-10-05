@@ -57,3 +57,17 @@
 - Provides debugging and profiling tools for development and optimization
 
 This document provides an overview of the key components and functionality of the Agent Workflow Service. It will be updated as more components are documented.
+
+## Dependency Model (dependency.md)
+- Represents relationships and dependencies between nodes in the workflow
+- Base class: BaseDependency with attributes context_key and property_name
+- Subclasses: OneToOneDependency, OneRunDependency, and Dependency
+- Methods for updating subscriptions, handling dependency satisfaction, and converting to dictionary
+- Used to manage data flow and execution order in the workflow
+
+## NodeStatus Enum (node_status.md)
+- Represents various states of a node during its lifecycle
+- Includes states from creation to completion or failure
+- Used to track and manage node progress throughout the workflow
+- Utilized by Node model, workflow engine, and monitoring tools
+- Provides standardized status values for consistent state management
