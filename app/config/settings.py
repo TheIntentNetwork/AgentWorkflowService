@@ -89,23 +89,9 @@ class DebugSettings(BaseConfig):
     debug: bool = Field(default=False)
     profile: bool = Field(default=False)
 
-    @classmethod
-    def parse_bool(cls, value: Any) -> bool:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            return value.lower() in ('true', '1', 'yes', 'on')
-        return bool(value)
-
-    @root_validator(pre=True)
-    def parse_debug_values(cls, values):
-        """
-        Parse boolean values from environment variables.
-        """
-        for field in ('debug', 'profile'):
-            if field in values:
-                values[field] = cls.parse_bool(values[field])
-        return values
+    def __init__(self, **data):
+        print(f"DebugSettings received data: {data}")
+        super().__init__(**data)
 
 # ------------------------------------------------------
 # Service Configuration Model
@@ -141,6 +127,11 @@ class Settings(BaseSettings):
         extra="allow",
         debug=False
     )
+
+    def __init__(self, **values: Any):
+        print(f"Settings received values: {values}")
+        print(f"Environment variables: {dict(os.environ)}")
+        super().__init__(**values)
 
     @classmethod
     def load_service_config(cls, file_path: str = 'service_config.yml') -> ServiceConfigModel:
