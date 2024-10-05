@@ -15,7 +15,7 @@ from app.services.context.user_context_manager import UserContextManager
 
 class SessionManager(IService):
 
-    def __init__(self, name: str, service_registry: any, **kwargs):
+    def __init__(self, name: str, service_registry: Any, **kwargs):
         super().__init__(name=name, service_registry=service_registry, **kwargs)
         from app.services.queue.kafka import KafkaService
         from app.services.cache.redis import RedisService
@@ -43,7 +43,7 @@ class SessionManager(IService):
             self.logger.error(f"Failed to initialize sessions: {e}")
             raise
 
-    async def start_session_with_context(self, session: any, context: Any):
+    async def start_session_with_context(self, session: Any, context: Any):
         await session.start(context)
 
         # Publish a message to Kafka topic to signal the session start

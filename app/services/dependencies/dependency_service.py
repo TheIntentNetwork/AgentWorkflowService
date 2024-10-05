@@ -1,25 +1,32 @@
 from typing import List, Any, Dict
+from dependency_injector.wiring import inject, Provide
+from app.services.context.context_manager import ContextManager
+from app.services.events.event_manager import EventManager
+from containers import get_container
 from app.interfaces.service import IService
 from app.models.Dependency import Dependency
 from app.models.Node import Node
 from app.models.NodeStatus import NodeStatus
-from app.services.discovery.service_registry import ServiceRegistry
 from app.factories.agent_factory import AgentFactory
 from app.models.agency import Agency
 from app.interfaces.idependencyservice import IDependencyService
 
 class DependencyService(IDependencyService, IService):
-    def __init__(self, name: str, service_registry: 'ServiceRegistry', **kwargs):
-        super().__init__(name=name, service_registry=service_registry, config=kwargs)
-        self.name = name
-        self.service_registry = service_registry
-        self.context_manager = service_registry.get('context_manager')
-        self.event_manager = service_registry.get('event_manager')
+    @inject
+    def __init__(
+        self,
+        config: dict = Provide[lambda: get_container().config.dependency_service],
+        context_manager: ContextManager = Provide[lambda: get_container().context_manager],
+        event_manager: EventManager = Provide[lambda: get_container().event_manager]
+    ):
+        super().__init__(name="dependency_service", config=config)
+        self.context_manager = context_manager
+        self.event_manager = event_manager
         self.logger = self.get_logger_with_instance_id('DependencyService')
 
     @classmethod
-    def instance(cls, name: str, service_registry: 'ServiceRegistry', **kwargs):
-        return cls(name, service_registry, **kwargs)
+    def instance(cls, name: str, config: Any, **kwargs):
+        return cls(name, config, **kwargs)
 
     async def initialize(self):
         pass
@@ -64,7 +71,14 @@ class DependencyService(IDependencyService, IService):
         )
         return [universe_agent]
 
-    async def _perform_agency_completion(self, node, agency_chart, instructions):
+    @inject
+    async def _perform_agency_completion(
+        self,
+        node,
+        agency_chart,
+        instructions,
+        agent_factory: AgentFactory = Provide[lambda: get_container().agent_factory]
+    ):
         """Perform agency completion for dependency discovery."""
         agency = Agency(agency_chart=agency_chart, session_id=node.context_info.context.get('session_id'))
         response = await agency.get_completion(instructions)
@@ -150,7 +164,12 @@ class DependencyService(IDependencyService, IService):
         await self.context_manager.update_property(node, "status", NodeStatus.ready)
         self.logger.info(f"All dependencies resolved for node {node.id}")
 
-    async def get_dependencies(self, node):
+    @inject
+    async def get_dependencies(
+        self,
+        node,
+        agent_factory: AgentFactory = Provide[lambda: get_container().agent_factory]
+    ):
         instructions = f"""
         Search for outputs that will produce context that match the needs within this node's input_description using the RetrieveOutputs tool.
         Return a list of the context_keys that will be used to produce the output based on the outcome_description.
