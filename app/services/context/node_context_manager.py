@@ -1,116 +1,95 @@
 # app/services/context/node_context_manager.py
 
 import json
+from typing import List, Dict, Any, Union, Optional
+from dependency_injector.wiring import inject, Provide
+from containers import Container
 from app.config.service_config import ServiceConfig
-
-from app.services.discovery.service_registry import ServiceRegistry
+from app.services.cache.redis import RedisService
+from app.services.context.context_manager import ContextManager
 from app.services.context.db_context_manager import DBContextManager
-from typing import List, Dict, Any, Union
 from app.models.Node import Node
-from redis.commands.search.field import TextField, TagField, VectorField
+from app.logging_config import configure_logger
+from app.config.settings import settings
+from redisvl.query.filter import FilterExpression
 
 class NodeContextManager(DBContextManager):
-    _instance = None
-    
-    def __init__(self, name: str, service_registry: 'ServiceRegistry', config: ServiceConfig):
-        super().__init__(name, service_registry, config)
-        from app.services.cache.redis import RedisService
-        from app.services.context.context_manager import ContextManager
-        self.redis_service: RedisService = service_registry.get('redis')
-        self.context_manager: ContextManager = service_registry.get('context_manager')
-    
-    async def set_context(self, key: str, context: Dict[str, Any]) -> None:
-        """
-        Set the context for the node using the UniverseAgent.
+    @inject
+    def __init__(
+        self,
+        name: str,
+        config: ServiceConfig = Provide[Container.config.node_context_manager],
+        redis_service: RedisService = Provide[Container.redis],
+        context_manager: ContextManager = Provide[Container.context_manager]
+    ):
+        super().__init__(name, config)
+        self.redis_service = redis_service
+        self.context_manager = context_manager
+        self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self.node_context_types = self._load_node_context_types()
 
-        Args:
-            key (str): The key for the node.
-            context (Dict[str, Any]): The context data to set.
-        """
-        from app.models.agency import Agency
-        from app.factories.agent_factory import AgentFactory
-
-        # Create the UniverseAgent
-        universe_agent = await AgentFactory.from_name(
-            name='UniverseAgent',
-            session_id=context.get('session_id'),
-            context_info=context,
-            instructions="""
-            Set the context of the node based on the output of similar nodes.
-            
-            Your task is to:
-            1.) Use the RetrieveContext tool to find examples of workflows and steps that indicate how we have processed similar tasks in the past.
-            2.) Use the SetContext tool to set the context of the node based on the output of similar nodes.
-            3.) If user context is available, use the GetUserContext tool to retrieve it and incorporate it into the node's context.
-            
-            Rules:
-            - SetContext requires an updated_context object to save the context.
-            - Populate the context into the user_context field of the node's context along with any other information that will help the node complete its task.
-            
-            Example of updated_context:
-            {"updated_context": {"input_description": "The user's input description", "action_summary": "The action summary of the node", "outcome_description": "The outcome description of the node", "feedback": "The feedback of the node", "output": "The output of the node", "context": {"user_context": {"key": "value"}}}}
-            """,
-            tools=['RetrieveContext', 'SetContext'],
-            self_assign=False
-        )
-
-        # Perform the context setting
-        agency = Agency(agency_chart=[universe_agent], shared_instructions="", session_id=context.get('session_id'))
-        response = await agency.get_completion("Set the context for the node.")
-        
-        # Update the context with the response
-        context.update(response.get('updated_context', {}))
-        await self.context_manager.save_context(key, context)
+    def _load_node_context_types(self) -> Dict[str, Dict[str, str]]:
+        context_types = {}
+        for context_type, config in settings.service_config['db_context_managers'].items():
+            if context_type == 'node_context':
+                context_types[context_type] = {
+                    'get': next((q for q in config['queries'] if q.startswith('get_')), None),
+                    'upsert': next((q for q in config['queries'] if q.startswith('upsert_')), None),
+                    'delete': next((q for q in config['queries'] if q.startswith('delete_')), None)
+                }
+        return context_types
 
     async def load_node_context(self, node: Union[Node, Any], parent_or_child: str = 'parent') -> Union[Node, Dict[str, Any]]:
-        try: 
-            if node.name is not None:
-                node_name = node.name or node.node_template_name
-        except Exception as e:
-            if node.get('name', None) is not None:
-                node_name = node.get('name') or node.get('node_template_name')
-            else:
-                return node
+        try:
+            node_name = node.name or node.node_template_name if isinstance(node, Node) else node.get('name') or node.get('node_template_name')
+        except Exception:
+            return node
+
+        if node_name is None:
+            return node
+
+        templates = await self._load_node_templates(node_name, parent_or_child)
         
-        templates = []
-        if node_name is not None:
-            if parent_or_child == 'parent':
-                templates = await self.load_node_templates(name=node_name, query='get_node_template_with_children')
-            elif parent_or_child == 'parent_without_children':
-                templates = await self.load_node_templates(name=node_name,query='get_nodes_by_name')
-            elif parent_or_child == 'children':
-                templates = await self.load_node_templates(name=node_name, query='get_node_template_with_children')
-                templates = templates[0]['collection'] if templates else []
+        if not templates:
+            return node
 
-        index_name = f"models"
-        prefix = f"model"
+        await self._index_node_templates(templates)
+        node.context_info.context['node_templates'] = templates
 
+        # Load dynamic context
+        dynamic_context = await self._load_dynamic_context(node)
+        node.context_info.context.update(dynamic_context)
+
+        return node
+
+    async def _load_node_templates(self, node_name: str, parent_or_child: str) -> List[Dict[str, Any]]:
+        query_map = {
+            'parent': 'get_node_template_with_children',
+            'parent_without_children': 'get_nodes_by_name',
+            'children': 'get_node_template_with_children'
+        }
+        query = self.queries[query_map.get(parent_or_child, 'get_node_template_with_children')]
+        templates = await self.db.fetch_all(query, {'p_name': node_name}, "node_context")
+        
+        if parent_or_child == 'children':
+            templates = templates[0]['collection'] if templates else []
+
+        return templates
+
+    async def _index_node_templates(self, templates: List[Dict[str, Any]]):
+        index_name = "models"
+        prefix = "model"
         redis_data = []
-        if len(templates) > 1:
-            
-            
-            for i, template in enumerate(templates):
-                template_data = {}
-                template_data['id'] = f"{prefix}:{template['id']}"
-                template_data['type'] = template['type']
-                template_data['item'] = json.dumps(template)
-            
-                redis_data.append(template_data)
-        else:
-            if len(templates) == 0:
-                return node
-            
-            template = templates[0]
-            template_data = {}
-            template_data['id'] = f"{prefix}:{template['id']}"
-            template_data['type'] = template['type']
-            template_data['item'] = json.dumps(template)
+
+        for template in templates:
+            template_data = {
+                'id': f"{prefix}:{template['id']}",
+                'type': template['type'],
+                'item': json.dumps(template)
+            }
             redis_data.append(template_data)
 
-        # Load the data into Redis
         await self.redis_service.load_records(redis_data, index_name, {'type': False, 'item': False}, overwrite=True, prefix=prefix)
-        node.context_info.context['node_templates'] = redis_data
-        return node
 
     async def _load_dynamic_context(self, node: Union[Node, Dict[str, Any]]):
         dynamic_context = {}
@@ -122,6 +101,97 @@ class NodeContextManager(DBContextManager):
             dynamic_context[property_name] = context_value
         return dynamic_context
 
+    async def save_node_context(self, node_id: str, context_data: Dict[str, Any]):
+        self.logger.info(f"Saving node context for node_id: {node_id}")
+        
+        for context_type, data in context_data.items():
+            if context_type in self.node_context_types:
+                upsert_query = self.node_context_types[context_type].get('upsert')
+                if upsert_query:
+                    try:
+                        await self.context_manager.execute_query(
+                            upsert_query, {'p_node_id': node_id, **data}, context_type
+                        )
+                        await self._index_context_data(node_id, context_type, [data])
+                    except Exception as e:
+                        self.logger.error(f"Error saving {context_type} for node {node_id}: {str(e)}")
+                else:
+                    self.logger.warning(f"No upsert query found for context type: {context_type}")
+            else:
+                self.logger.warning(f"Unknown context type: {context_type}")
+
+    async def _index_context_data(self, node_id: str, context_type: str, context_data: List[Dict[str, Any]]):
+        for item in context_data:
+            index_key = f"node_context:{node_id}:{context_type}:{item.get('id', '')}"
+            item_data = {
+                'node_id': node_id,
+                'type': context_type,
+                'item': json.dumps(item)
+            }
+            await self.redis_service.save_context(index_key, item_data)
+
+    async def search_node_context(self, node_id: str, query: str, top_k: int = 10) -> Dict[str, List[Dict[str, Any]]]:
+        self.logger.info(f"Searching node context for node_id: {node_id} with query: {query}")
+        results = {}
+
+        try:
+            search_results = await self.redis_service.async_search_index(
+                query, "metadata_vector", "node_context", top_k,
+                filter_expression=FilterExpression(f"node_id=={node_id}")
+            )
+            
+            for result in search_results:
+                context_type = result['type']
+                item_data = json.loads(result['item'])
+                if context_type not in results:
+                    results[context_type] = []
+                results[context_type].append(item_data)
+        except Exception as e:
+            self.logger.error(f"Error searching node context for node {node_id}: {str(e)}")
+
+        return results
+
+    async def update_node_context(self, node_id: str, context_data: Dict[str, Any]) -> None:
+        self.logger.debug(f"Updating context for node_id: {node_id}")
+        try:
+            for context_type, data in context_data.items():
+                index_key = f"node_context:{node_id}:{context_type}"
+                item_data = {
+                    'node_id': node_id,
+                    'type': context_type,
+                    'item': json.dumps(data)
+                }
+                await self.redis_service.save_context(index_key, item_data)
+        except Exception as e:
+            self.logger.error(f"Error updating context for node {node_id}: {str(e)}")
+            raise e
+
+    async def get_node_data(self, node_id: str, data_type: str) -> List[Dict[str, Any]]:
+        get_query = self.node_context_types.get(data_type, {}).get('get')
+        if get_query:
+            return await self.context_manager.fetch_data(get_query, {'node_id': node_id}, data_type)
+        else:
+            self.logger.warning(f"No get query found for data type: {data_type}")
+            return []
+
+    async def set_node_data(self, node_id: str, data_type: str, data: Dict[str, Any]) -> None:
+        upsert_query = self.node_context_types.get(data_type, {}).get('upsert')
+        if upsert_query:
+            await self.context_manager.execute_query(upsert_query, {'node_id': node_id, **data}, data_type)
+            await self._index_context_data(node_id, data_type, [data])
+        else:
+            self.logger.warning(f"No upsert query found for data type: {data_type}")
+
+    async def delete_node_data(self, node_id: str, data_type: str, id: str) -> None:
+        delete_query = self.node_context_types.get(data_type, {}).get('delete')
+        if delete_query:
+            await self.context_manager.execute_query(delete_query, {'node_id': node_id, 'id': id}, data_type)
+            index_key = f"node_context:{node_id}:{data_type}:{id}"
+            await self.redis_service.client.delete(index_key)
+        else:
+            self.logger.warning(f"No delete query found for data type: {data_type}")
+
+    # Existing methods
     async def save_feedback(self, node, feedback):
         self.logger.info(f"Saving feedback for node: {node.id}")
         feedback_embedding = self.redis_service.generate_embeddings({'feedback': feedback}, ['feedback'])
@@ -140,27 +210,6 @@ class NodeContextManager(DBContextManager):
             ['feedback']
         )
         return [item['feedback'] for item in similar_feedback]
-
-    async def load_node_templates(self, name: str = None, query: str = None) -> List[Dict[str, Any]]:
-        
-        if name is not None:
-            query = self.queries[query]
-            self.logger.info(f"Loading node templates for model: {name}")
-            templates = await self.db.fetch_all(query, {'p_name': name}, "node_context")
-            return templates
-
-        
-
-    async def create_node_from_template(self, template: Dict[str, Any], session_id: str) -> Node:
-        node_data = {
-            'name': template['name'],
-            'type': template['type'],
-            'description': template['description'],
-            'context_info': template['context_info'],
-            'session_id': session_id,
-        }
-        node = await Node.create(**node_data)
-        return node
 
     async def set_node_dependencies(self, nodes: List[Node]):
         for node in nodes:
@@ -192,12 +241,19 @@ class NodeContextManager(DBContextManager):
         return await self.db.fetch_all(query, {'node_type': node_type})
 
     async def get_node_context_by_name(self, node_name: str) -> Dict[str, Any]:
-        """
-        Retrieve the context for a node based on its name.
-        """
-        templates = await self.load_node_templates(node_name, 'get_node_template_with_children')
+        templates = await self._load_node_templates(node_name, 'parent')
         if templates:
-            # Assuming the first template is the most relevant one
             template = templates[0]
             return json.loads(template['item']) if isinstance(template['item'], str) else template['item']
         return {}
+
+    async def create_node_from_template(self, template: Dict[str, Any], session_id: str) -> Node:
+        node_data = {
+            'name': template['name'],
+            'type': template['type'],
+            'description': template['description'],
+            'context_info': template['context_info'],
+            'session_id': session_id,
+        }
+        node = await Node.create(**node_data)
+        return node

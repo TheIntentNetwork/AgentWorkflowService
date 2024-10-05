@@ -2,9 +2,10 @@ import json
 from dependency_injector import containers, providers
 from app.config.settings import settings
 from app.services.cache.redis import RedisService
+from app.services.context.context_manager import ContextManager
+
 from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
-from app.models.ServiceConfig import ServiceConfig
 from app.services.context.user_context_manager import UserContextManager
 from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
@@ -21,6 +22,56 @@ class Container(containers.DeclarativeContainer):
     # -------------
     config = providers.Configuration()
     config.from_dict(settings.dict())
+    
+    # Caching
+    # -------
+    redis = providers.Singleton(
+        RedisService,
+        name="redis",
+        config=config.redis,
+        redis_url=config.REDIS_URL
+    )
+    
+    # Context Management
+    # ------------------
+    
+    context_manager_config = providers.Factory(
+        lambda config: json.loads(json.dumps(config['context_manager'])),
+        config
+    )
+    
+    context_manager = providers.Factory(
+        ContextManager,
+        config=context_manager_config,
+        redis=redis
+    )
+
+    user_context_manager_config = providers.Factory(
+        lambda config: json.loads(json.dumps(config['user_context_manager'])),
+        config
+    )
+
+    user_context_manager = providers.Factory(
+        UserContextManager,
+        name="user_context_manager",
+        config=user_context_manager_config,
+        redis=redis,
+        context_manager=context_manager
+    )
+    
+    node_context_manager_config = providers.Factory(
+        lambda config: json.loads(json.dumps(config['node_context_manager'])),
+        config
+    )
+    
+    from app.services.context.node_context_manager import NodeContextManager
+
+    node_context_manager = providers.Factory(
+        NodeContextManager,
+        config=node_context_manager_config,
+        redis=redis,
+        context_manager=context_manager
+    )
     
     # Worker
     # ------
@@ -39,12 +90,16 @@ class Container(containers.DeclarativeContainer):
         )
     )
     
-    dependency_service = providers.Singleton(
-        lambda: __import__('app.services.dependencies.dependency_service').services.dependency_service.DependencyService(
-            name="dependency_manager",
-            config=settings.dependency_manager
-        )
+    dependency_config = providers.Factory(
+        lambda settings: json.loads(json.dumps(settings['dependency_service'])),
+        config
     )
+    
+    dependency_service = providers.Singleton(
+            KafkaService,
+            config=dependency_config,
+            context_manager=context_manager
+        )
 
     # Database
     # --------
@@ -55,52 +110,6 @@ class Container(containers.DeclarativeContainer):
         )
     )
 
-    # Caching
-    # -------
-    redis = providers.Singleton(
-        RedisService,
-        name="redis",
-        config=config.redis,
-        redis_url=config.REDIS_URL
-    )
-
-    # Context Management
-    # ------------------
-    context_manager = providers.Factory(
-        lambda config, redis: __import__('app.services.context.context_manager').services.context.context_manager.ContextManager(
-            name="context_manager",
-            config=config.context_manager,
-            redis=redis
-        ),
-        config=config,
-        redis=redis
-    )
-
-    user_context_manager_config = providers.Factory(
-        ServiceConfig.parse_obj,
-        config.user_context_manager
-    )
-
-    user_context_manager = providers.Factory(
-        UserContextManager,
-        name="user_context_manager",
-        config=user_context_manager_config,
-        redis=redis,
-        context_manager=context_manager
-    )
-
-    node_context_manager = providers.Factory(
-        lambda config, redis, context_manager: __import__('app.services.context.node_context_manager').services.context.node_context_manager.NodeContextManager(
-            name="node_context_manager",
-            config=config.node_context_manager,
-            redis=redis,
-            context_manager=context_manager
-        ),
-        config=config,
-        redis=redis,
-        context_manager=context_manager
-    )
-    
     # Messaging
     # ---------
     kafka_config = providers.Factory(
