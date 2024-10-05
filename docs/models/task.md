@@ -6,29 +6,32 @@ The Task model represents a unit of work within the agent workflow system. It en
 ## Key Components
 
 ### Attributes
-- `id`: Unique identifier for the task
-- `name`: Name of the task
-- `description`: Brief description of the task's purpose
-- `nodes`: List of nodes that make up the task
-- `dependencies`: List of IDs of tasks that this task depends on
-- `status`: Current status of the task (e.g., pending, in progress, completed)
-- `events`: List of events associated with the task
+- `key`: The key of the task (str)
+- `id`: Unique identifier for the task (Optional[str])
+- `node_template_name`: The name of the task template (Optional[str])
+- `name`: Name of the task (Optional[str])
+- `description`: Brief description of the task's purpose (str)
+- `assignees`: List of agents involved in the task (List[str])
+- `status`: Current status of the task (Literal[None, "pending", "in-progress", "completed", "failed"])
+- `session_id`: ID of the session associated with the task (Optional[str])
+- `context_info`: Context information for the task (ContextInfo)
 
 ### Methods
-- `add_node(node)`: Adds a new node to the task
-- `add_dependency(dependency_id)`: Adds a dependency to the task
-- `update_status(new_status)`: Updates the status of the task
-- `add_event(event)`: Adds a new event to the task
-- `get_status()`: Returns the current status of the task
-- `get_dependencies()`: Returns the list of dependencies for the task
+- `create(**task_data)`: Class method to create a new Task instance
+- `handle(key, action, object_data, context)`: Class method to handle task actions
+- `process_action(action)`: Processes different actions on the task
+- `initialize()`: Initializes the task
+- `execute()`: Executes the task
+- `to_dict()`: Converts the Task instance to a dictionary
 
 ## Usage
-Tasks are created and managed by the Agency class. They represent the work to be done within the workflow system and are assigned to agents for execution.
+Tasks are created and managed within the workflow system. They represent the work to be done and are executed by agents.
 
 ## Interactions
-- Interacts with Agent objects when assigned for execution
-- Managed by the Agency for task creation, assignment, and monitoring
-- Contains Node objects that represent individual steps or actions within the task
+- Interacts with Agent objects during execution
+- Managed by the workflow system for task creation, assignment, and monitoring
+- Uses ContextInfo for maintaining task context
+- Interacts with various services like ContextManager, NodeContextManager, and AgentFactory
 
 ## Note
-The Task model is designed to be flexible and can accommodate various types of work within the agent workflow system. It can be extended or customized to fit specific workflow requirements.
+The Task model is designed to be flexible and can accommodate various types of work within the agent workflow system. It includes methods for initialization, execution, and context management, making it a central component in the workflow process.
