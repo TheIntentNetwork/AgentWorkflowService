@@ -1,51 +1,161 @@
 import os
-from pydantic import BaseModel, Field
-from typing import Dict, Any, List
-from dotenv import load_dotenv
 import yaml
-import json
-from app.models.ServiceConfig import DBContextManagerConfig
-from app.logging_config import configure_logger
-from app.config.service_config import ServiceConfig
+from pydantic import BaseModel, Field, root_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+from typing import Dict, Any, List
+from pathlib import Path
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
-class Settings(BaseModel):
-    BOOTSTRAP_SERVERS: str = Field(default=os.getenv("BOOTSTRAP_SERVERS"))
-    TOPICS: str = Field(default=os.getenv("TOPICS"))
-    CONSUMER_GROUP: str = Field(default=os.getenv("CONSUMER_GROUP"))
-    REDIS_URL: str = Field(default=os.getenv("REDIS_URL"))
-    OPENAI_API_KEY: str = Field(default=os.getenv("OPENAI_API_KEY"))
-    BROWSERLESS_API_KEY: str = Field(default=os.getenv("BROWSERLESS_API_KEY"))
-    DEBUG: bool = Field(default=os.getenv("DEBUG"))
-    SUPABASE_URL: str = Field(default=os.getenv("SUPABASE_URL"))
-    SUPABASE_KEY: str = Field(default=os.getenv("SUPABASE_KEY"))
-    SUPABASE_AUTH_JWT_SECRET: str = Field(default=os.getenv("SUPABASE_AUTH_JWT_SECRET"))
-    SUPABASE_AUTH_SERVICE_ROLE_KEY: str = Field(default=os.getenv("SUPABASE_AUTH_SERVICE_ROLE_KEY"))
-    SUPABASE_DB_PASSWORD: str = Field(default=os.getenv("SUPABASE_DB_PASSWORD"))
-    PROFILE: bool = Field(default=os.getenv("PROFILE"))
-    service_config: Dict[str, ServiceConfig] = None
-    
-    class Config:
-        env_file = '.env'
-        env_file_encoding = 'utf-8'
-        extra = 'allow'
+# ------------------------------------------------------
+# Base Configuration
+# ------------------------------------------------------
+
+class BaseConfig(BaseModel):
+    """
+    Base configuration class for nested settings.
+    """
+    model_config = SettingsConfigDict(
+        extra='allow',
+        env_prefix='',
+        env_file='.env',
+        env_file_encoding='utf-8'
+        )
+
+# ------------------------------------------------------
+# Kafka Settings
+# ------------------------------------------------------
+
+class KafkaSettings(BaseConfig):
+    """
+    Configuration settings for Kafka.
+    """
+    bootstrap_servers: List[str] = Field(default_factory=list)
+    consumer_group: str = Field(default="")
+    topics: List[str] = Field(default_factory=list)
+    security_protocol: str = Field(default="PLAINTEXT")
+    ssl_cafile: str = None
+    ssl_certfile: str = None
+    ssl_keyfile: str = None
+
+# ------------------------------------------------------
+# Redis Settings
+# ------------------------------------------------------
+
+class RedisSettings(BaseConfig):
+    """
+    Configuration settings for Redis.
+    """
+    host: str = Field(default="localhost")
+    port: int = Field(default=6379)
+    db: int = Field(default=0)
+    password: str = None
+
+# ------------------------------------------------------
+# OpenAI Settings
+# ------------------------------------------------------
+
+class OpenAISettings(BaseConfig):
+    """
+    Configuration settings for OpenAI API.
+    """
+    api_key: str = Field(..., env="OPENAI_API_KEY")
+    model: str = Field(default="gpt-4")
+    temperature: float = Field(default=0.7)
+    max_tokens: int = Field(default=150)
+
+# ------------------------------------------------------
+# AWS Settings
+# ------------------------------------------------------
+
+class AWSSettings(BaseConfig):
+    """
+    Configuration settings for AWS services.
+    """
+    access_key_id: str = Field(..., env="AWS_ACCESS_KEY_ID")
+    secret_access_key: str = Field(..., env="AWS_SECRET_ACCESS_KEY")
+    region: str = Field(default="us-west-2", env="AWS_REGION")
+
+# ------------------------------------------------------
+# Debug Settings
+# ------------------------------------------------------
+
+class DebugSettings(BaseConfig):
+    """
+    Configuration settings for debugging and profiling.
+    """
+    debug: bool = Field(default=False)
+    profile: bool = Field(default=False)
+
+    @root_validator(pre=True)
+    def parse_debug_values(cls, values):
+        """
+        Parse boolean values from environment variables.
+        """
+        for field in ('debug', 'profile'):
+            value = values.get(field)
+            if isinstance(value, str):
+                values[field] = value.lower() in ('true', '1', 'yes', 'on')
+        return values
+
+# ------------------------------------------------------
+# Service Configuration Model
+# ------------------------------------------------------
+
+class ServiceConfigModel(BaseModel):
+    """
+    Model to load additional service configurations from YAML.
+    """
+    # Define your service configuration fields here
+    pass
+
+# ------------------------------------------------------
+# Main Settings
+# ------------------------------------------------------
+
+class Settings(BaseSettings):
+    """
+    Main application settings, combining all configuration sections.
+    """
+    kafka: KafkaSettings = Field(default_factory=KafkaSettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
+    openai: OpenAISettings = Field(default_factory=OpenAISettings)
+    aws: AWSSettings = Field(default_factory=AWSSettings)
+    debug: DebugSettings = Field(default_factory=DebugSettings)
+    service_config: ServiceConfigModel = Field(default_factory=ServiceConfigModel)
+
+    model_config = SettingsConfigDict(
+        env_prefix="",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        extra="allow",
+    )
 
     @classmethod
-    def load_from_yaml(cls, yaml_file: str):
-        instance = cls()
-        with open(yaml_file, 'r') as f:
-            config = yaml.safe_load(f)
-        
-        logger = configure_logger('Settings')
-        instance.service_config = config
-        
-        return instance
+    def load_service_config(cls, file_path: str = 'service_config.yml') -> ServiceConfigModel:
+        """
+        Load the service configuration from a YAML file.
 
-    @classmethod
-    def reload(cls):
-        cls._instance = None
-        return cls.load_from_yaml('service_config.yml')
+        Args:
+            file_path (str): Path to the service_config.yml file.
 
-settings = Settings.load_from_yaml('service_config.yml')
+        Returns:
+            ServiceConfigModel: Parsed service configuration.
+        """
+        config_path = Path(file_path).resolve()
+        if not config_path.exists():
+            raise FileNotFoundError(f"Service configuration file not found at '{config_path}'")
+        with open(config_path, 'r') as f:
+            config_data = yaml.safe_load(f)
+        return ServiceConfigModel(**config_data)
+
+    # Initialize the Settings instance with loaded service_config
+    def __init__(self, **values: Any):
+        super().__init__(**values)
+        self.service_config = self.load_service_config()
+
+# Instantiate settings
+settings = Settings()
