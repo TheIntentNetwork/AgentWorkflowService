@@ -1,14 +1,15 @@
 import os
 import yaml
-from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict, PydanticBaseSettingsSource
+from pydantic import BaseModel, Field, root_validator
+from pydantic_settings import BaseSettings, EnvSettingsSource
 from dotenv import load_dotenv
 from typing import Dict, Any, List
 from pathlib import Path
 
 # Load environment variables from .env file
-load_dotenv()
-
+did_load = load_dotenv(dotenv_path='/APP/PP/.env')
+if did_load:
+    print("Loaded .env file")
 # ------------------------------------------------------
 # Base Configuration
 # ------------------------------------------------------
@@ -17,12 +18,11 @@ class BaseConfig(BaseModel):
     """
     Base configuration class for nested settings.
     """
-    model_config = SettingsConfigDict(
-        extra='allow',
-        env_prefix='',
-        env_file='.env',
-        env_file_encoding='utf-8'
-        )
+    class Config:
+        extra = 'allow'
+        env_prefix = ''
+        env_file = '.env'
+        env_file_encoding = 'utf-8'
 
 # ------------------------------------------------------
 # Kafka Settings
@@ -51,7 +51,10 @@ class RedisSettings(BaseConfig):
     host: str = Field(default="localhost")
     port: int = Field(default=6379)
     db: int = Field(default=0)
-    password: str = None
+    url: str = Field(default="redis://localhost:6379/")
+
+    class Config:
+        env_prefix = 'REDIS_'
 
 # ------------------------------------------------------
 # OpenAI Settings
@@ -61,118 +64,74 @@ class OpenAISettings(BaseConfig):
     """
     Configuration settings for OpenAI API.
     """
-    api_key: str = Field(..., env="OPENAI_API_KEY")
-    model: str = Field(default="gpt-4")
-    temperature: float = Field(default=0.7)
-    max_tokens: int = Field(default=150)
+    api_key: str = Field(default=None, env='OPENAI_API_KEY')
+    organization_id: str = Field(default=None)
+
+    class Config:
+        env_prefix = 'OPENAI_'
 
 # ------------------------------------------------------
-# AWS Settings
-# ------------------------------------------------------
-
-class AWSSettings(BaseConfig):
-    """
-    Configuration settings for AWS services.
-    """
-    access_key_id: str = Field(..., env="AWS_ACCESS_KEY_ID")
-    secret_access_key: str = Field(..., env="AWS_SECRET_ACCESS_KEY")
-    region: str = Field(default="us-west-2", env="AWS_REGION")
-
-# ------------------------------------------------------
-# Debug Settings
+# Application Debug Settings
 # ------------------------------------------------------
 
 class DebugSettings(BaseConfig):
     """
     Configuration settings for debugging and profiling.
     """
-    debug: bool = Field(default=False)
-    profile: bool = Field(default=False)
+    debug: bool = Field(default=False, env='DEBUG', json_schema_extra={'DEBUG': True})
+    profile: bool = Field(default=False, env='PROFILE')
 
-    def __init__(self, **data):
-        debug_env = os.getenv('DEBUG', 'false').lower()
-        profile_env = os.getenv('PROFILE', 'false').lower()
-        
-        self.debug = debug_env in ('true', '1', 'yes', 'on')
-        self.profile = profile_env in ('true', '1', 'yes', 'on')
-        
-        print(f"DebugSettings: debug={self.debug}, profile={self.profile}")
-        super().__init__(**data)
+    class Config:
+        env_prefix = ''
+        extra = 'allow'
 
+    @root_validator(pre=True)
+    def parse_bools(cls, values):
+        """
+        Parse boolean values from environment variables.
+        """
+        for field in ['debug', 'profile']:
+            value = values.get(field, False)
+            if isinstance(value, str):
+                values[field] = value.lower() in ('true', '1', 'yes', 'on')
+        return values
+    
 # ------------------------------------------------------
-# Service Configuration Model
+# Session Manager Settings
 # ------------------------------------------------------
 
-class ServiceConfigModel(BaseModel):
+class SessionSettings(BaseConfig):
     """
-    Model to load additional service configurations from YAML.
+    Configuration settings for the session manager.
     """
-    # Define your service configuration fields here
-    pass
+    session_timeout: int = Field(default=1800, env='SESSION_TIMEOUT')
+    session_cleanup_interval: int = Field(default=300, env='SESSION_CLEANUP_INTERVAL')
+
+    class Config:
+        env_prefix = 'SESSION_'
 
 # ------------------------------------------------------
 # Main Settings
 # ------------------------------------------------------
 
-class CustomSettingsSource(PydanticBaseSettingsSource):
-    def __call__(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {}
-        for field in self.settings_cls.model_fields.values():
-            value = self.get_field_value(field, field.alias)
-            if value is not None:
-                d[field.alias] = value
-        return d
-
-    def get_field_value(self, field, field_name):
-        value = super().get_field_value(field, field_name)
-        if field_name in ('debug', 'profile') and isinstance(value, str):
-            return value.lower() in ('true', '1', 'yes', 'on')
-        return value
-
 class Settings(BaseSettings):
     """
-    Main application settings, combining all configuration sections.
+    Main settings class for the application.
     """
+    debugging: DebugSettings = Field(default_factory=DebugSettings)
     kafka: KafkaSettings = Field(default_factory=KafkaSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     openai: OpenAISettings = Field(default_factory=OpenAISettings)
-    aws: AWSSettings = Field(default_factory=AWSSettings)
-    debug: DebugSettings = Field(default_factory=DebugSettings)
-    service_config: ServiceConfigModel = Field(default_factory=ServiceConfigModel)
+    session_manager: SessionSettings = Field(default_factory=SessionSettings)
 
-    model_config = SettingsConfigDict(
-        env_prefix="",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        env_nested_delimiter="__",
-        extra="allow",
-        debug=False
-    )
+    class Config:
+        env_file = '.env'
+        env_file_encoding = 'utf-8'
+        env_nested_delimiter = '__'
+        extra = 'allow'
 
     @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls,
-        init_settings,
-        env_settings,
-        dotenv_settings,
-        file_secret_settings,
-    ):
-        return (
-            init_settings,
-            CustomSettingsSource(settings_cls),
-            env_settings,
-            dotenv_settings,
-            file_secret_settings,
-        )
-
-    def __init__(self, **values: Any):
-        print(f"Settings received values: {values}")
-        print(f"Environment variables: {dict(os.environ)}")
-        super().__init__(**values)
-
-    @classmethod
-    def load_service_config(cls, file_path: str = 'service_config.yml') -> ServiceConfigModel:
+    def load_service_config(cls, file_path: str = 'service_config.yml') -> Dict[str, Any]:
         """
         Load the service configuration from a YAML file.
 
@@ -180,14 +139,15 @@ class Settings(BaseSettings):
             file_path (str): Path to the service_config.yml file.
 
         Returns:
-            ServiceConfigModel: Parsed service configuration.
+            Dict[str, Any]: Parsed service configuration dictionary.
         """
+        # Resolve the file path
         config_path = Path(file_path).resolve()
         if not config_path.exists():
             raise FileNotFoundError(f"Service configuration file not found at '{config_path}'")
         with open(config_path, 'r') as f:
             config_data = yaml.safe_load(f)
-        return ServiceConfigModel(**config_data)
+        return config_data
 
     # Initialize the Settings instance with loaded service_config
     def __init__(self, **values: Any):
