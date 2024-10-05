@@ -32,7 +32,7 @@ class SessionManager(IService):
 
     async def start(self):
         self.logger.info("Starting SessionManager")
-        await self.redis.connect()
+        await self.redis.start()  # Use start() instead of connect()
         await self.kafka.start()
         self.sessions = {}  # Initialize in-memory session storage
         await self.initialize_sessions()  # Load existing sessions from Redis

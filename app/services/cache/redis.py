@@ -29,6 +29,15 @@ def get_container():
 class RedisService(IService):
     _instance = None
     
+    async def connect(self):
+        """
+        Connect to Redis.
+        """
+        self.logger.info("Connecting to Redis")
+        # Implement the connection logic here
+        # For example:
+        # self.client = await aioredis.create_redis_pool(self.redis_url)
+        self.logger.info("Connected to Redis")
     @inject
     def __init__(
         self,
