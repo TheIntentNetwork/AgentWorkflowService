@@ -1,0 +1,190 @@
+import json
+from dependency_injector import containers, providers
+from app.config.settings import settings
+from app.services.cache.redis import RedisService
+from app.services.events.event_manager import EventManager
+from app.services.queue.kafka import KafkaService
+from app.models.ServiceConfig import ServiceConfig
+from app.services.context.user_context_manager import UserContextManager
+from app.services.events.event_manager import EventManager
+from app.services.queue.kafka import KafkaService
+
+class Container(containers.DeclarativeContainer):
+    """
+    Dependency Injection Container for the application.
+    This container manages the configuration and instantiation of various services and components.
+    """
+
+    # Configuration
+    # -------------
+    config = providers.Configuration()
+    config.from_dict(settings.dict())
+    
+    # Worker
+    # ------
+    worker = providers.Singleton(
+        lambda: __import__('app.worker.worker').worker.Worker(
+            name="worker",
+            worker_uuid="worker_uuid",
+            config=settings.service_config
+        )
+    )
+    
+    session_manager = providers.Singleton(
+        lambda: __import__('app.services.session.session_manager').services.session_manager.SessionManager(
+            name="session_manager",
+            config=settings.session_manager
+        )
+    )
+    
+    dependency_service = providers.Singleton(
+        lambda: __import__('app.services.dependencies.dependency_service').services.dependency_service.DependencyService(
+            name="dependency_manager",
+            config=settings.dependency_manager
+        )
+    )
+
+    # Database
+    # --------
+    db = providers.Singleton(
+        lambda: __import__('app.db.database').db.database.Database(
+            settings.SUPABASE_URL,
+            settings.SUPABASE_KEY
+        )
+    )
+
+    # Caching
+    # -------
+    redis = providers.Singleton(
+        RedisService,
+        name="redis",
+        config=config.redis,
+        redis_url=config.REDIS_URL
+    )
+
+    # Context Management
+    # ------------------
+    context_manager = providers.Factory(
+        lambda config, redis: __import__('app.services.context.context_manager').services.context.context_manager.ContextManager(
+            name="context_manager",
+            config=config.context_manager,
+            redis=redis
+        ),
+        config=config,
+        redis=redis
+    )
+
+    user_context_manager_config = providers.Factory(
+        ServiceConfig.parse_obj,
+        config.user_context_manager
+    )
+
+    user_context_manager = providers.Factory(
+        UserContextManager,
+        name="user_context_manager",
+        config=user_context_manager_config,
+        redis=redis,
+        context_manager=context_manager
+    )
+
+    node_context_manager = providers.Factory(
+        lambda config, redis, context_manager: __import__('app.services.context.node_context_manager').services.context.node_context_manager.NodeContextManager(
+            name="node_context_manager",
+            config=config.node_context_manager,
+            redis=redis,
+            context_manager=context_manager
+        ),
+        config=config,
+        redis=redis,
+        context_manager=context_manager
+    )
+    
+    # Messaging
+    # ---------
+    kafka_config = providers.Factory(
+        lambda settings: json.loads(json.dumps(settings['kafka'])),
+        config
+    )
+    
+    kafka = providers.Singleton(
+        KafkaService,
+        name="kafka",
+        config=kafka_config,
+    )
+
+    # Event Management
+    # ----------------
+    event_manager = providers.Singleton(
+        EventManager,
+        name="event_manager",
+        config=config.event_manager,
+        redis=redis,
+        kafka=kafka
+    )
+
+# Lifecycle Functions
+# -------------------
+
+async def init_resources():
+    """
+    Initialize all resources and services.
+    This function is called during application startup to ensure all
+    services are properly initialized and started.
+    """
+    await container.redis().start()
+    await container.kafka().start()
+    await container.event_manager().start()
+
+async def shutdown_resources():
+    """
+    Shutdown all resources and services.
+    This function is called during application shutdown to ensure all
+    services are properly stopped and resources are released.
+    """
+    await container.event_manager().shutdown()
+    await container.kafka().shutdown()
+    await container.redis().shutdown()
+    # ... (shutdown other services)
+
+# Create a global container variable
+container = None
+
+def create_container():
+    """
+    Create and configure the container instance.
+    """
+    global container
+    container = Container()
+    container.config.from_dict(settings.dict())
+    return container
+
+async def initialize():
+    """
+    Initialize the container and its resources.
+    This function should be called at the start of the application.
+    """
+    global container
+    if container is None:
+        container = create_container()
+    await init_resources()
+
+async def shutdown():
+    """
+    Shutdown the container and its resources.
+    This function should be called when the application is shutting down.
+    """
+    global container
+    if container is not None:
+        await shutdown_resources()
+        container = None
+
+def get_container():
+    """
+    Get the current container instance.
+    Returns:
+        Container: The current container instance.
+    """
+    global container
+    if container is None:
+        container = create_container()
+    return container
