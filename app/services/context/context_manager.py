@@ -328,18 +328,14 @@ class ContextManager(BaseContextManager):
         Initialize any necessary resources or connections.
         """
         self.logger.info(f"Starting ContextManager service: {self.name}")
-        # Initialize Redis connection
         await self.redis.connect()
-        # Any other initialization tasks
         self.logger.debug("ContextManager service started successfully")
 
-    async def stop(self):
+    async def shutdown(self):
         """
-        Stop the ContextManager service.
+        Shutdown the ContextManager service.
         Clean up any resources or connections.
         """
-        self.logger.info(f"Stopping ContextManager service: {self.name}")
-        # Close Redis connection
+        self.logger.info(f"Shutting down ContextManager service: {self.name}")
         await self.redis.disconnect()
-        # Any other cleanup tasks
-        self.logger.debug("ContextManager service stopped successfully")
+        self.logger.debug("ContextManager service shut down successfully")

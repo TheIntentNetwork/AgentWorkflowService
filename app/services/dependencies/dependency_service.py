@@ -28,8 +28,19 @@ class DependencyService(IDependencyService, IService):
     def instance(cls, name: str, config: Any, **kwargs):
         return cls(name, config, **kwargs)
 
-    async def initialize(self):
-        pass
+    async def start(self):
+        self.logger.info("Starting DependencyService")
+        await self.context_manager.start()
+        await self.event_manager.start()
+        self.logger.info("DependencyService started")
+
+    async def shutdown(self):
+        self.logger.info("Shutting down DependencyService")
+        # Cancel any ongoing dependency tracking tasks
+        # (You might need to keep track of these tasks during operation)
+        await self.context_manager.shutdown()
+        await self.event_manager.shutdown()
+        self.logger.info("DependencyService shut down")
 
     async def discover_and_register_dependencies(self, node):
         """

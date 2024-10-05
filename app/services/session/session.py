@@ -28,10 +28,20 @@ class SessionManager(IService):
         self.context_manager: UserContextManager = ServiceRegistry.instance().get("user_context")
         self.session_expiration = timedelta(hours=1)  # Default expiration time
 
-    async def _initialize_service(self):
-        self.logger.info("Initializing SessionManager")
-        # Add any initialization logic here if needed
-        self.logger.info("SessionManager initialized successfully")
+    async def start(self):
+        self.logger.info("Starting SessionManager")
+        await self.redis.connect()
+        await self.kafka.start()
+        self.sessions = {}  # Initialize in-memory session storage
+        await self.initialize_sessions()  # Load existing sessions from Redis
+        self.logger.info("SessionManager started")
+
+    async def shutdown(self):
+        self.logger.info("Shutting down SessionManager")
+        self.sessions.clear()  # Clear in-memory session storage
+        await self.redis.disconnect()
+        await self.kafka.shutdown()
+        self.logger.info("SessionManager shut down")
     
     async def initialize_sessions(self):
         try:

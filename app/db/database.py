@@ -12,11 +12,25 @@ class Database:
         from app.config.settings import ServiceConfig, settings
         if Database._instance is not None:
             raise RuntimeError("Attempt to create a second instance of Database")
-        self.supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_AUTH_SERVICE_ROLE_KEY)
+        self.settings = settings
         self.config: Dict[str, ServiceConfig] = settings.service_config['db_context_managers']
         Database._instance = self
         from app.logging_config import configure_logger
         self.logger = configure_logger('Database')
+
+    async def start(self):
+        self.logger.info("Starting Database service")
+        self.supabase: Client = create_client(self.settings.SUPABASE_URL, self.settings.SUPABASE_AUTH_SERVICE_ROLE_KEY)
+        self.logger.info("Database service started")
+
+    async def shutdown(self):
+        self.logger.info("Shutting down Database service")
+        if hasattr(self, 'supabase'):
+            # Close Supabase client if it has a close method
+            if hasattr(self.supabase, 'close'):
+                await self.supabase.close()
+            self.supabase = None
+        self.logger.info("Database service shut down")
     
     @classmethod
     def get_instance(cls) -> 'Database':
