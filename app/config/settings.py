@@ -123,6 +123,7 @@ class Settings(BaseSettings):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     openai: OpenAISettings = Field(default_factory=OpenAISettings)
     session_manager: SessionSettings = Field(default_factory=SessionSettings)
+    user_context_manager: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         env_file = '.env'
