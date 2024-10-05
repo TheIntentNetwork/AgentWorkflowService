@@ -20,26 +20,70 @@ import os
 import numpy as np
 from app.interfaces.service import IService
 from app.logging_config import configure_logger
+from dependency_injector.wiring import inject, Provide
 
-
+def get_container():
+    from containers import Container
+    return Container
 
 class RedisService(IService):
     _instance = None
     
-    def __init__(self, service_registry=None, config=None, **kwargs):
+    @inject
+    def __init__(
+        self,
+        name: str = "redis",
+        config: dict = Provide[lambda: get_container().config.redis],
+        redis_url: str = Provide[lambda: get_container().config.REDIS_URL]
+    ):
+        """
+        Initialize the RedisService.
+
+        Args:
+            name (str): The name of the service.
+            config (dict): Configuration dictionary.
+            redis_url (str): URL for connecting to Redis.
+        """
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
-        super().__init__(name="redis", config=config)
+        super().__init__(name=name, config=config)
+        self.logger.info(f"Initializing RedisService with instance_id: {self.instance_id}")
+        self.logger.info(f"Redis URL: {redis_url}")
+        
         self.name = "redis"  # Ensure consistent naming
-        self.redis_url = kwargs.get("redis_url")
-        self.redis_url = "redis://localhost:6379"
-        self.client = AsyncRedis.from_url(self.redis_url)
-        self.pubsub = self.client.pubsub()
+        self.redis_url = config['url']
+        self.client = None
+        self.pubsub = None
         self.subscriptions = {}
         self.initialized = True
         self.event_loop = asyncio.get_event_loop()
+        self.model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
+        # Moved listener thread initialization to the start() method
+        # self.listener_thread = threading.Thread(target=self.run_listener, daemon=True)
+        # self.listener_thread.start()
+
+    async def start(self):
+        """
+        Start the RedisService by initializing the client and pubsub,
+        then starting the listener thread.
+
+        This method initializes the Redis client and pubsub,
+        and starts the background listener thread that listens
+        for messages on subscribed channels.
+        """
+        self.logger.info("Starting RedisService with URL: {self.redis_url}")
+        self.client = AsyncRedis.from_url(self.redis_url)
+        self.pubsub = self.client.pubsub()
+        self.logger.info("RedisService started successfully")
+        # Start the listener thread after pubsub is initialized
         self.listener_thread = threading.Thread(target=self.run_listener, daemon=True)
         self.listener_thread.start()
-        self.model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
+        self.logger.info("Listener thread started successfully")
+
+    async def shutdown(self):
+        self.logger.info("Shutting down RedisService")
+        if self.client:
+            await self.client.close()
+        self.logger.info("RedisService shut down")
 
     async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
         try:
@@ -70,6 +114,12 @@ class RedisService(IService):
             raise
     
     def run_listener(self):
+        """
+        Run the listener in a separate thread to handle incoming messages.
+
+        This method creates a new event loop and runs the asynchronous
+        listen() coroutine, which subscribes to channels and processes messages.
+        """
         from app.logging_config import configure_logger
         self.logger = self.get_logger_with_instance_id('RedisService')
         self.logger.info(f"RedisService initialized with instance_id: {self.instance_id}")
