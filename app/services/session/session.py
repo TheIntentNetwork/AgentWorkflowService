@@ -27,7 +27,7 @@ class SessionManager(IService):
         self.redis: RedisService = get_container().redis()
         self.kafka: KafkaService = get_container().kafka()
         self.sessions: Dict[str, SessionContext] = {}
-        self.context_manager: UserContextManager = get_container().user_context_manager()
+        self.context_manager: UserContextManager = get_container().user_context_manager
         self.session_expiration = timedelta(hours=1)  # Default expiration time
 
     async def start(self):
