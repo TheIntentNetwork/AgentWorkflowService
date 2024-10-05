@@ -115,6 +115,14 @@ class ServiceConfigModel(BaseModel):
 # ------------------------------------------------------
 
 class CustomSettingsSource(PydanticBaseSettingsSource):
+    def __call__(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {}
+        for field in self.settings_cls.model_fields.values():
+            value = self.get_field_value(field, field.alias)
+            if value is not None:
+                d[field.alias] = value
+        return d
+
     def get_field_value(self, field, field_name):
         value = super().get_field_value(field, field_name)
         if field_name in ('debug', 'profile') and isinstance(value, str):
