@@ -114,6 +114,44 @@ class SessionSettings(BaseConfig):
 # Main Settings
 # ------------------------------------------------------
 
+class DatabaseSettings(BaseConfig):
+    """
+    Configuration settings for the database (Supabase).
+    """
+    url: str = Field(default="", env='SUPABASE_URL')
+    key: str = Field(default="", env='SUPABASE_KEY')
+    
+    class Config:
+        env_prefix = 'SUPABASE_'
+
+class LoggingSettings(BaseConfig):
+    """
+    Configuration settings for logging.
+    """
+    level: str = Field(default="INFO")
+    format: str = Field(default="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+class SecuritySettings(BaseConfig):
+    """
+    Configuration settings for security.
+    """
+    secret_key: str = Field(default="", env='SECRET_KEY')
+    allowed_hosts: List[str] = Field(default_factory=list)
+
+class WorkerSettings(BaseConfig):
+    """
+    Configuration settings for the Worker service.
+    """
+    max_tasks: int = Field(default=10)
+    task_timeout: int = Field(default=300)  # in seconds
+
+class DependencyServiceSettings(BaseConfig):
+    """
+    Configuration settings for the Dependency service.
+    """
+    max_depth: int = Field(default=5)
+    timeout: int = Field(default=60)  # in seconds
+
 class Settings(BaseSettings):
     """
     Main settings class for the application.
@@ -124,6 +162,11 @@ class Settings(BaseSettings):
     openai: OpenAISettings = Field(default_factory=OpenAISettings)
     session_manager: SessionSettings = Field(default_factory=SessionSettings)
     user_context_manager: Dict[str, Any] = Field(default_factory=dict)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
+    worker: WorkerSettings = Field(default_factory=WorkerSettings)
+    dependency_service: DependencyServiceSettings = Field(default_factory=DependencyServiceSettings)
 
     class Config:
         env_file = '.env'
