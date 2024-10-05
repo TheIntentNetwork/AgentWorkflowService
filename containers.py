@@ -32,7 +32,7 @@ class Container(containers.DeclarativeContainer):
     )
     
     session_manager = providers.Singleton(
-        lambda: __import__('app.services.session.session').services.session.SessionManager(
+        lambda: __import__('app.services.session.session').SessionManager(
             name="session_manager",
             config=settings.session_manager
         )
