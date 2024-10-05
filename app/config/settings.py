@@ -114,6 +114,13 @@ class ServiceConfigModel(BaseModel):
 # Main Settings
 # ------------------------------------------------------
 
+class CustomSettingsSource(PydanticBaseSettingsSource):
+    def get_field_value(self, field, field_name):
+        value = super().get_field_value(field, field_name)
+        if field_name in ('debug', 'profile') and isinstance(value, str):
+            return value.lower() in ('true', '1', 'yes', 'on')
+        return value
+
 class Settings(BaseSettings):
     """
     Main application settings, combining all configuration sections.
@@ -134,16 +141,22 @@ class Settings(BaseSettings):
         debug=False
     )
 
-    @root_validator(pre=True)
-    def parse_debug_settings(cls, values):
-        debug_env = os.getenv('DEBUG', 'false').lower()
-        profile_env = os.getenv('PROFILE', 'false').lower()
-        
-        values['debug'] = {
-            'debug': debug_env in ('true', '1', 'yes', 'on'),
-            'profile': profile_env in ('true', '1', 'yes', 'on')
-        }
-        return values
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        return (
+            init_settings,
+            CustomSettingsSource(settings_cls),
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
 
     def __init__(self, **values: Any):
         print(f"Settings received values: {values}")
