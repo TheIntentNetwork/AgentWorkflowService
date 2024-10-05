@@ -24,7 +24,7 @@ class Container(containers.DeclarativeContainer):
     # Worker
     # ------
     worker = providers.Singleton(
-        lambda: __import__('app.worker').Worker(
+        lambda: __import__('app.worker').worker.Worker(
             name="worker",
             worker_uuid="worker_uuid",
             config=settings.service_config
@@ -32,7 +32,7 @@ class Container(containers.DeclarativeContainer):
     )
     
     session_manager = providers.Singleton(
-        lambda: __import__('app.services.session.session_manager').services.session_manager.SessionManager(
+        lambda: __import__('app.services.session.session').services.session.SessionManager(
             name="session_manager",
             config=settings.session_manager
         )
