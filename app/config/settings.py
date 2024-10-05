@@ -89,15 +89,21 @@ class DebugSettings(BaseConfig):
     debug: bool = Field(default=False)
     profile: bool = Field(default=False)
 
+    @classmethod
+    def parse_bool(cls, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ('true', '1', 'yes', 'on')
+        return bool(value)
+
     @root_validator(pre=True)
     def parse_debug_values(cls, values):
         """
         Parse boolean values from environment variables.
         """
         for field in ('debug', 'profile'):
-            value = values.get(field)
-            if isinstance(value, str):
-                values[field] = value.lower() in ('true', '1', 'yes', 'on')
+            values[field] = cls.parse_bool(values.get(field))
         return values
 
 # ------------------------------------------------------
