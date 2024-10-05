@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Any, Dict, List, Union
 import uuid
+from app.config.settings import SessionSettings
 from app.models.Context import SessionContext
 from app.interfaces import IService
 from app.models.Session import Session
@@ -15,17 +16,18 @@ from app.services.context.user_context_manager import UserContextManager
 
 class SessionManager(IService):
 
-    def __init__(self, name: str, service_registry: Any, **kwargs):
-        super().__init__(name=name, service_registry=service_registry, **kwargs)
+    def __init__(self, name: str, config: SessionSettings, **kwargs):
+        super().__init__(name=name, config=config, **kwargs)
+        from containers import get_container
+        
         from app.services.queue.kafka import KafkaService
         from app.services.cache.redis import RedisService
-        from app.services import ServiceRegistry
         
         self.logger.debug("Initializing SessionManager")
-        self.redis: RedisService = ServiceRegistry.instance().get("redis")
-        self.kafka: KafkaService = ServiceRegistry.instance().get("kafka")
+        self.redis: RedisService = get_container().redis()
+        self.kafka: KafkaService = get_container().kafka()
         self.sessions: Dict[str, SessionContext] = {}
-        self.context_manager: UserContextManager = ServiceRegistry.instance().get("user_context")
+        self.context_manager: UserContextManager = get_container().user_context_manager()
         self.session_expiration = timedelta(hours=1)  # Default expiration time
 
     async def start(self):

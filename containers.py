@@ -9,6 +9,7 @@ from app.services.context.user_context_manager import UserContextManager
 from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
 from app.factories.agent_factory import AgentFactory
+from app.services.session.session import SessionManager
 
 class Container(containers.DeclarativeContainer):
     """
@@ -32,8 +33,8 @@ class Container(containers.DeclarativeContainer):
     )
     
     session_manager = providers.Singleton(
-        lambda: __import__('app.services.session.session').SessionManager(
-            name="session_manager",
+        lambda: __import__('app.services.session.session').services.session.session.SessionManager(
+            SessionManager,
             config=settings.session_manager
         )
     )
