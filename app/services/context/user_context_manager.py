@@ -5,7 +5,7 @@ import traceback
 from typing import Dict, Any, List, Optional, Union
 
 import numpy as np
-from app.models.Node import Node
+
 from app.services.context.db_context_manager import DBContextManager
 from app.services.discovery.service_registry import ServiceRegistry
 from app.config.service_config import ContextConfig, ServiceConfig
@@ -24,7 +24,7 @@ class UserContextManager(IService):
         for context_name, context_config in config.items():
             if context_name == 'node_context':
                 continue
-            service_registry.register(context_name, DBContextManager, config=context_config)
+            service_registry.register(context_name, DBContextManager, config=json.loads(context_config))
             self.logger.info(f"Registered {context_name} in ServiceRegistry")
             self.context_managers[context_name] = service_registry.get(context_name)
         
@@ -78,7 +78,7 @@ class UserContextManager(IService):
             if not self.in_memory_store[user_id]:
                 del self.in_memory_store[user_id]
 
-    async def load_user_context(self, data: Union[Node, Any]) -> Dict[str, Any]:
+    async def load_user_context(self, data: Any) -> Dict[str, Any]:
         from app.services.cache.redis import RedisService
         redis_service: RedisService = ServiceRegistry.instance().get('redis')
         user_id = data.context_info.context['user_context']['user_id']

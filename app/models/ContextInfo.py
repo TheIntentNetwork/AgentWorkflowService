@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, PrivateAttr
 from redisvl.query.filter import Tag, FilterExpression
@@ -9,27 +10,58 @@ from app.services.cache.redis import RedisService
 from seed_agent_data import get_agent_seed_data
 from seed_context_index import CustomJSONEncoder, create_test_data
 import numpy as np
+from app.config.settings import settings
+from app.services.context.user_context_manager import UserContextManager
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+async def setup_environment():
+    # Initialize ServiceRegistry
+    service_registry = ServiceRegistry.instance()
+    
+    # Initialize and register UserContextManager
+    user_context_config = settings.service_config.get('db_context_managers', {}).get('user_context', {})
+    logger.debug(f"User context config: {user_context_config}")
+    
+    if not isinstance(user_context_config, dict):
+        raise ValueError(f"Invalid user_context_config: {user_context_config}. Expected a dictionary.")
+    
+    user_context_manager = UserContextManager("user_context_manager", service_registry, user_context_config)
+    await service_registry.register('user_context', user_context_manager)
+    
+    # Initialize and register other necessary services
+    # For example:
+    # redis_service = RedisService(settings.REDIS_URL)
+    # await service_registry.register('redis', redis_service)
+    
+    # context_manager = ContextManager()
+    # await service_registry.register('context_manager', context_manager)
+    
+    # Add any other services that need to be initialized and registered
 
 class ContextInfo(BaseModel):
     key: Optional[str] = Field(None, description="The key of the context.")
-    input_keys: Optional[List[str]] = Field([], description="The input keys of the context object.")
+    input_keys: Optional[List[str]] = Field(None, description="The input keys of the context object.")
     input_description: Optional[str] = Field(None, description="The input description of the context object.")
     input_context: Optional[Dict] = Field(None, description="The input context of the context object.", init=False, init_var=False)
     action_summary: Optional[str] = Field(None, description="The action summary of the context object.")
     outcome_description: Optional[str] = Field(None, description="The outcome description of the context object.")
     feedback: Optional[List[str]] = Field(None, description="The feedback of the context object.")
     output: Optional[dict] = Field({}, description="The output structure of the context object.")
-    context: Optional[Dict[str, Any]] = Field({}, description="The context of the object.")
+    context: Optional[Dict[str, Any]] = Field(None, description="The context of the object.")
     
     _service_registry: Any = PrivateAttr()
     _redis_service: Any = PrivateAttr()
     _context_manager: Any = PrivateAttr()
+    _user_context_manager: Any = PrivateAttr()
 
     def __init__(self, **data):
         super().__init__(**data)
         self._service_registry = ServiceRegistry.instance()
         self._redis_service = self._service_registry.get('redis')
         self._context_manager = self._service_registry.get('context_manager')
+        self._user_context_manager = self._service_registry.get("user_context")
 
     async def query_vector_database(self, query: str, vector_field: str, index_name: str, return_fields: List[str], filter_expression: Optional[FilterExpression] = None, limit: int = 10):
         from ..logging_config import configure_logger
@@ -174,68 +206,104 @@ class ContextInfo(BaseModel):
             await self._redis_service.close()
 
     async def seed_data(self):
-        from app.services.context.user_context_manager import UserContextManager
         redis_service: RedisService = self._redis_service
-        user_context_manager = UserContextManager("user_context_manager", self._service_registry, self.config)
+        user_context_manager = self._user_context_manager
         
-        # Create index first
-        await redis_service.create_index("context", {
-            "name": {"type": "TEXT", "weight": 5.0},
-            "input_description": {"type": "TEXT", "weight": 1.0},
-            "action_summary": {"type": "TEXT", "weight": 1.0},
-            "outcome_description": {"type": "TEXT", "weight": 1.0},
-            "input_description_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
-            "input_context_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
-            "action_summary_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
-            "outcome_description_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
-            "feedback_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
-            "output_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"}
-        })
+        logger.debug(f"Redis service: {redis_service}")
+        logger.debug(f"User context manager: {user_context_manager}")
         
-        async def embed_and_store(data, prefix, parent_id=None):
-            try:
-                context_info = data.context_info if hasattr(data, 'context_info') else {}
-                
-                # Load user context
-                user_id = context_info.get('context', {}).get('user_context', {}).get('user_id')
-                if user_id:
-                    user_context = await user_context_manager.load_user_context(data)
-                    context_info['user_context'] = user_context
+        try:
+            # Create index first
+            await redis_service.create_index("context", {
+                "name": {"type": "TEXT", "weight": 5.0},
+                "input_description": {"type": "TEXT", "weight": 1.0},
+                "action_summary": {"type": "TEXT", "weight": 1.0},
+                "outcome_description": {"type": "TEXT", "weight": 1.0},
+                "input_description_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+                "input_context_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+                "action_summary_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+                "outcome_description_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+                "feedback_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"},
+                "output_vector": {"type": "VECTOR", "dims": 1536, "distance_metric": "COSINE"}
+            })
+            
+            async def embed_and_store(data: Any, prefix: str, parent_id: str = None):
+                try:
+                    context_info = data.context_info if hasattr(data, 'context_info') else {}
+                    logger.debug(f"Context info for {prefix}: {context_info}")
+                    
+                    # Load user context
+                    user_id = context_info.get('context', {}).get('user_context', {}).get('user_id')
+                    logger.debug(f"User ID for {prefix}: {user_id}")
+                    
+                    if user_id:
+                        user_context = await user_context_manager.load_user_context(data)
+                        logger.debug(f"Loaded user context for {prefix}: {user_context}")
+                        context_info['user_context'] = user_context
 
-                embeddings = redis_service.generate_embeddings(context_info.model_dump() if hasattr(context_info, 'model_dump') else context_info,
-                                                               ["input_description", "input_context", "action_summary", "outcome_description", "feedback", "output"])
-                
-                object_name = data.name if hasattr(data, 'name') else data.__class__.__name__
-                serializable_data = data.model_dump() if hasattr(data, 'model_dump') else {k: v for k, v in data.__dict__.items() if not k.startswith('_')}
+                    # Debug: Log the type and content of context_info before generating embeddings
+                    logger.debug(f"Type of context_info: {type(context_info)}")
+                    logger.debug(f"Content of context_info: {context_info}")
 
-                mapping = {
-                    "type": serializable_data.get("type", data.__class__.__name__),
-                    "name": object_name,
-                    **{field: json.dumps(getattr(context_info, field, None), cls=CustomJSONEncoder) for field in ["input_description", "action_summary", "outcome_description", "feedback", "output"]},
-                    "item": json.dumps(serializable_data, cls=CustomJSONEncoder),
-                    "context_info": json.dumps(context_info.model_dump() if hasattr(context_info, 'model_dump') else context_info, cls=CustomJSONEncoder),
-                    **{field: np.array(vector, dtype=np.float32).tobytes() for field, vector in embeddings.items()}
-                }
+                    embeddings = redis_service.generate_embeddings(
+                        context_info.model_dump() if hasattr(context_info, 'model_dump') else context_info,
+                        ["input_description", "input_context", "action_summary", "outcome_description", "feedback", "output"]
+                    )
 
-                if parent_id:
-                    mapping["parent_id"] = parent_id
+                    object_name = data.name if hasattr(data, 'name') else data.__class__.__name__
+                    serializable_data = data.model_dump() if hasattr(data, 'model_dump') else {k: v for k, v in data.__dict__.items() if not k.startswith('_')}
 
-                await redis_service.client.hset(prefix, mapping=mapping)
-                print(f"Data {prefix} stored in Redis")
+                    # Debug: Log each field before JSON serialization
+                    for field in ["input_description", "action_summary", "outcome_description", "feedback", "output"]:
+                        value = getattr(context_info, field, None)
+                        logger.debug(f"Field {field}: {value} (type: {type(value)})")
 
-                if hasattr(data, "collection") and data.collection is not None:
-                    for j, item in enumerate(data.collection):
-                        await embed_and_store(item, f"{prefix}:{j}", prefix)
+                    mapping = {
+                        "type": serializable_data.get("type", data.__class__.__name__),
+                        "name": object_name,
+                        **{field: self._safe_json_dumps(getattr(context_info, field, None)) for field in ["input_description", "action_summary", "outcome_description", "feedback", "output"]},
+                        "item": self._safe_json_dumps(serializable_data),
+                        "context_info": self._safe_json_dumps(context_info.model_dump() if hasattr(context_info, 'model_dump') else context_info),
+                        **{f"{field}_vector": np.array(vector, dtype=np.float32).tobytes() for field, vector in embeddings.items()}
+                    }
 
-            except Exception as e:
-                print(f"Error processing item {prefix}: {str(e)}")
-                raise
+                    # Debug: Log the mapping before storing in Redis
+                    logger.debug(f"Mapping to be stored in Redis: {mapping}")
 
-        data = create_test_data()
-        for i, item in enumerate(data):
-            await embed_and_store(item, f"context:{i}")
+                    if parent_id:
+                        mapping["parent_id"] = parent_id
 
-        print("All data seeded successfully")
+                    await redis_service.client.hset(prefix, mapping=mapping)
+                    logger.info(f"Data {prefix} stored in Redis")
+
+                    if hasattr(data, "collection") and data.collection is not None:
+                        for j, item in enumerate(data.collection):
+                            await embed_and_store(item, f"{prefix}:{j}", prefix)
+
+                except Exception as e:
+                    logger.error(f"Error processing item {prefix}: {str(e)}", exc_info=True)
+                    raise
+
+            data = create_test_data()
+            for i, item in enumerate(data):
+                await embed_and_store(item, f"context:{i}")
+
+            logger.info("All data seeded successfully")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decoding error in seed_data: {str(e)}")
+            logger.error(f"Problematic JSON: {e.doc}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in seed_data: {str(e)}", exc_info=True)
+            raise
+
+    @staticmethod
+    def _safe_json_dumps(obj: Any) -> str:
+        try:
+            return json.dumps(obj)
+        except TypeError as e:
+            logger.warning(f"Could not JSON serialize object: {obj}. Error: {str(e)}")
+            return str(obj)
 
 async def test_context_info_methods():
     context_info = ContextInfo()
@@ -282,12 +350,25 @@ async def test_context_info_methods():
 
 # Update the main function to call our test function
 async def main():
-    context_info = ContextInfo()
     try:
+        await setup_environment()
+        context_info = ContextInfo()
         await context_info.seed_data()
         await test_context_info_methods()
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decoding error: {str(e)}")
+        logger.error(f"Problematic JSON: {e.doc}")
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}", exc_info=True)
     finally:
-        await context_info.cleanup()
+        try:
+            # Cleanup code if necessary
+            pass
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                print("Warning: Event loop was closed before cleanup could complete.")
+            else:
+                raise
 
 if __name__ == "__main__":
     import asyncio

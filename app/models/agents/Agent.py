@@ -25,13 +25,14 @@ from app.logging_config import configure_logger
 from app.utilities.openapi import validate_openapi_spec
 from colorama import init, Fore, Back, Style
 
-from app.models.ContextInfo import ContextInfo
 from app.tools.oai import Retrieval, CodeInterpreter
 from app.services.discovery.service_registry import ServiceRegistry
 from typing import List, Optional
+from app.models.ContextInfo import ContextInfo
 
 if TYPE_CHECKING:
     from app.tools.base_tool import BaseTool
+    
 
 #init(autoreset=True)
 
@@ -43,8 +44,7 @@ class ExampleMessage(TypedDict):
     content: str
     attachments: Optional[List[dict]]
     metadata: Optional[Dict[str, str]]
-
-
+    
 class Agent:
     def __enter__(self):
         return self
@@ -218,6 +218,7 @@ class Agent:
                 except asyncio.TimeoutError:
                     # No message received within timeout, continue loop
                     print("No message received within timeout, continue loop")
+                    await asyncio.sleep(2)
                     continue
         except asyncio.CancelledError:
             # Task was cancelled, exit gracefully

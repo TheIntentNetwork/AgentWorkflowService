@@ -4,9 +4,12 @@ import traceback
 from colorama import init, Fore, Back, Style
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Literal, Optional
-from app.models.ContextInfo import ContextInfo
+from typing import TYPE_CHECKING
 from app.models.agency import Agency
 from app.services.queue.kafka import KafkaService
+
+if TYPE_CHECKING:
+    from app.models.ContextInfo import ContextInfo
 
 init(autoreset=True)
 

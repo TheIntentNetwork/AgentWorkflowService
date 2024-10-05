@@ -14,7 +14,8 @@ from app.tools.base_tool import BaseTool
 from app.services.queue.kafka import KafkaService
 from uuid import UUID, uuid4
 
-from app.models.ContextInfo import ContextInfo
+if TYPE_CHECKING:
+    from app.models.ContextInfo import ContextInfo
 
 class NodePrototype(BaseModel, extra='allow'):
     name: str

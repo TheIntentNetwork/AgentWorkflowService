@@ -57,7 +57,7 @@ class ExecutionService(IService):
 
     @staticmethod
     async def start(node: IRunnableContext) -> None:
-        logger.info(f"Starting ExecutionService in thread: {threading.current_thread().name}")
+        self.logger.info(f"Starting ExecutionService in thread: {threading.current_thread().name}")
         """
         Start the ExecutionService.
         """

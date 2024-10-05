@@ -19,7 +19,7 @@ from app.services.discovery.service_registry import ServiceRegistry
 
 from app.utilities.context_update import ContextUpdate, context_update_manager
 
-class Node(BaseModel, IRunnableContext):
+class Node(BaseModel):
     # Basic attributes
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="The ID of the node.", init=False, init_var=False, type=pydantic.SkipValidation())
     name: str = Field(..., description="The name of the node.")
@@ -151,6 +151,37 @@ class Node(BaseModel, IRunnableContext):
         Use the RetrieveContext tool to find examples of models and steps that indicate how we have processed similar tasks in the past.
         
         Use the SetContext tool to set the context of the node based on the output of similar nodes.
+        
+        Here is an example of a properly formatted SetContext request:
+        {
+            "input_description": "The user context which contains their intake form and any supplemental information related to the conditions they are experiencing.",
+            "outcome_description": "A comprehensive set of information about the user's conditions, including extracted conditions from the intake form and saved user metadata.",
+            "action_summary": "Gather intake conditions and write the user's metadata, ensuring accurate extraction and preparation of conditions for further processing.",
+            "output": {
+                "conditions": [
+                "{condition1}",
+                "{condition2}"
+                ],
+                "user_metadata": {
+                "user_id": "{user_id}",
+                "conditions": [
+                    "{condition1}",
+                    "{condition2}"
+                ],
+                "intake_date": "{intake_date}"
+                }
+            },
+            "context": {
+                "goals": [
+                "Extract conditions from the intake form.",
+                "Save the user's metadata including the extracted conditions.",
+                "Prepare the conditions list for further processing."
+                ],
+                "user_context": {
+                "user_id": "{user_id}"
+                }
+            }
+            }
         """
         
         context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
@@ -158,12 +189,6 @@ class Node(BaseModel, IRunnableContext):
         # Update and merge context
         updated_context = await context_manager.update_context(self.session_id, self.context_info.context)
         
-        from app.services.context.node_context_manager import NodeContextManager
-        # Merge with node context based on node name
-        
-        node_context_manager: NodeContextManager = ServiceRegistry.instance().get('node_context')
-        node_context = await node_context_manager.load_node_context(self, 'parent')
-        self.context_info.context = self._deep_merge(updated_context, node_context.context_info.context)
         
         self._logger.debug(f"Task context after update: {self.context_info}")
         
@@ -178,9 +203,7 @@ class Node(BaseModel, IRunnableContext):
         
         agency_chart = [universe_agent]
         await self.perform_agency_completion(agency_chart, instructions, self.session_id)
-        
-        # Update the node's context with the retrieved and set context
-        self.context_info.context.update(universe_agent.context_info.context)
+        self._deep_merge(self.context_info, universe_agent.context_info.context['updated_context'])
     
     async def execute(self):
         self._logger.info(f"Executing node: {self.id}")

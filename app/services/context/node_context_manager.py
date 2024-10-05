@@ -79,8 +79,8 @@ class NodeContextManager(DBContextManager):
             elif parent_or_child == 'parent_without_children':
                 templates = await self.load_node_templates(name=node_name,query='get_nodes_by_name')
             elif parent_or_child == 'children':
-                templates = await self.load_node_templates(name=node_name, query='get_node_template_with_children')[0]['collection']
-                templates = [json.loads(template) for template in templates]
+                templates = await self.load_node_templates(name=node_name, query='get_node_template_with_children')
+                templates = templates[0]['collection'] if templates else []
 
         index_name = f"models"
         prefix = f"model"

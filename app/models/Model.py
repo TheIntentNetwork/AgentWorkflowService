@@ -85,9 +85,6 @@ class Model(Node):
             
         self.context_info.key = self.context_info.key
         
-        node_context_manager: NodeContextManager = ServiceRegistry.instance().get('node_context')
-        await node_context_manager.load_node_context(self, 'children')
-        
         # Prepare agent_data
         agent_data = {
             "name": "UniverseAgent",
@@ -98,14 +95,14 @@ class Model(Node):
             Outcome Description: {self.context_info.context.get('outcome_description', '')}
             
             Your process is as follows:
-            1.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that represent the nodes within the collection of this model.
+            1.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that represent the nodes within the 'node_templates' of this model context.
             
                     Your Guidelines:
-                    - You must create all nodes within the model collection.
+                    - You must create all nodes within the 'node_templates' of the model context but do not create the parent model node.
                     - If you forget to call the CreateNodes tool, you have failed your task.
                     - Only assign tools that are known. Do not make up tool names.
                     - Only introduce changes in the node context if there is relevent feedback for the context of this task.
-                    - The node that is responsible for generating the output necessary to fulfill the current context output requirements, should be the only node that is created with this specific output. Outputs should fulfill the input requirements of the next node in the workflow.
+                    - The node that is responsible for generating the output necessary to fulfill the current context output requirements, should be the only node that is created with this specific output. Outputs should fulfill the input requirements of the next node in the model 'node_templates'.
                     
                     Processing and Feedback Rule:
                     - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.

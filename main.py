@@ -21,7 +21,7 @@ import objgraph
 import tracemalloc
 from memory_profiler import memory_usage
 from app.logging_config import configure_logger, setup_logging
-from app.utilities.llm_client import set_openai_key
+
 
 sys.dont_write_bytecode = True
 load_dotenv()
@@ -82,6 +82,7 @@ def create_app():
             from app.services import ServiceRegistry
             service_registry = ServiceRegistry.instance()
             from app.config.settings import settings as _settings
+            from app.utilities.llm_client import set_openai_key
             
             try:
                 if not _settings.OPENAI_API_KEY:
