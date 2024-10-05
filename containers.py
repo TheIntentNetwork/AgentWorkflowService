@@ -64,13 +64,13 @@ class Container(containers.DeclarativeContainer):
         config
     )
     
-    from app.services.context.node_context_manager import NodeContextManager
 
     node_context_manager = providers.Factory(
-        NodeContextManager,
-        config=node_context_manager_config,
-        redis=redis,
-        context_manager=context_manager
+        lambda: __import__('app.services.context.node_context_manager').services.context.node_context_manager.NodeContextManager(
+            config=node_context_manager_config,
+            redis=redis,
+            context_manager=context_manager
+        )
     )
     
     # Worker
