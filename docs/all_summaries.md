@@ -50,13 +50,18 @@
 - Building blocks of tasks within the agent workflow system
 - Allows for fine-grained control and monitoring of task execution
 
+## Model Class (model.md)
+- Specialized type of Node representing a collection of nodes forming a specific model or workflow pattern
+- Attributes: type (always "model"), collection (list of child nodes), process_inputs_as_items (flag for input processing)
+- Methods: execute, clear_dependencies, to_json
+- Manages child nodes, handles dynamic node creation, and processes inputs
+- Interacts with various services like ContextManager, AgentFactory, and KafkaService
+
 ## Overall Architecture
 - Microservices architecture using FastAPI, Redis, and Kafka
 - Containerized deployment using Docker
 - Includes various services for specific functionalities (Worker, EventManager, etc.)
 - Provides debugging and profiling tools for development and optimization
-
-This document provides an overview of the key components and functionality of the Agent Workflow Service. It will be updated as more components are documented.
 
 ## Dependency Model (dependency.md)
 - Represents relationships and dependencies between nodes in the workflow
@@ -71,3 +76,27 @@ This document provides an overview of the key components and functionality of th
 - Used to track and manage node progress throughout the workflow
 - Utilized by Node model, workflow engine, and monitoring tools
 - Provides standardized status values for consistent state management
+
+## Service Classes
+
+### KafkaService
+- Handles Kafka-related operations in the agent workflow system
+- Provides methods for subscribing to Kafka topics, publishing messages, and managing the Kafka consumer
+- Features asynchronous subscription, message publishing, and error handling
+
+### RedisService
+- Manages Redis-related operations in the agent workflow system
+- Handles pub/sub functionality, data storage, and retrieval from Redis
+- Supports Redis search and vector operations
+
+### EventManager
+- Central hub for event management in the agent workflow system
+- Coordinates event subscriptions, publications, and processing across different components
+- Integrates with Kafka and Redis for event distribution
+
+### ContextManager
+- Responsible for managing context data in the agent workflow system
+- Handles storage, retrieval, and updates of context information
+- Supports property-based context updates, batch updates, and context merging based on similarity
+
+This document provides an overview of the key components and functionality of the Agent Workflow Service. It will be updated as more components are documented.
