@@ -13,7 +13,7 @@ from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
 from app.factories.agent_factory import AgentFactory
 from app.services.session.session import SessionManager
-# Remove the import of Worker from here
+from app.worker import Worker
 from app.db.database import Database
 
 class Container(containers.DeclarativeContainer):
@@ -98,7 +98,7 @@ class Container(containers.DeclarativeContainer):
     )
 
     @providers.inject
-    def configure_worker(self, worker: Worker = providers.Dependency(worker), redis: RedisService = providers.Dependency(redis)):
+    def configure_worker(self, worker: 'Worker' = providers.Dependency(worker), redis: RedisService = providers.Dependency(redis)):
         worker.set_redis(redis)
         return worker
 
