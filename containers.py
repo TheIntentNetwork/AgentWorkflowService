@@ -14,6 +14,7 @@ from app.services.queue.kafka import KafkaService
 from app.factories.agent_factory import AgentFactory
 from app.services.session.session import SessionManager
 from app.worker import Worker
+from app.db.database import Database
 
 class Container(containers.DeclarativeContainer):
     """
@@ -25,6 +26,10 @@ class Container(containers.DeclarativeContainer):
     # -------------
     config = providers.Configuration()
     config.from_dict(settings.dict())
+    
+    # Database
+    # --------
+    db = providers.Singleton(Database)
     
     # Caching
     # -------
