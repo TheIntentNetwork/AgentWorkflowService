@@ -264,9 +264,9 @@ class DBContextManager(IService):
 	async def start(self):
 		"""Start the DBContextManager service."""
 		self.logger.info(f"Starting DBContextManager service: {self.service_name}")
-		# No specific resources to initialize
+		# Add any startup logic here
 
-	async def shutdown(self):
-		"""Shutdown the DBContextManager service."""
-		self.logger.info(f"Shutting down DBContextManager service: {self.service_name}")
-		# No specific resources to clean up
+	async def stop(self):
+		"""Stop the DBContextManager service."""
+		self.logger.info(f"Stopping DBContextManager service: {self.service_name}")
+		# Add any cleanup logic here

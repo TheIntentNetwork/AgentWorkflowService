@@ -1,9 +1,11 @@
 import json
+import uuid
 from dependency_injector import containers, providers
 from app.config.settings import settings
 from app.services.cache.redis import RedisService
 from app.services.context.context_manager import ContextManager
 
+from app.services.context.node_context_manager import NodeContextManager
 from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
 from app.services.context.user_context_manager import UserContextManager
@@ -11,6 +13,7 @@ from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
 from app.factories.agent_factory import AgentFactory
 from app.services.session.session import SessionManager
+from app.worker import Worker
 
 class Container(containers.DeclarativeContainer):
     """
@@ -66,12 +69,8 @@ class Container(containers.DeclarativeContainer):
     
 
     node_context_manager = providers.Factory(
-        lambda config, redis, context_manager: __import__('app.services.context.node_context_manager').services.context.node_context_manager.NodeContextManager(
-            name="node_context_manager",
-            config=config.node_context_manager,
-            redis_service=redis,
-            context_manager=context_manager
-        ),
+        NodeContextManager,
+        name="node_context_manager",
         config=config,
         redis=redis,
         context_manager=context_manager
@@ -79,12 +78,17 @@ class Container(containers.DeclarativeContainer):
     
     # Worker
     # ------
+    
+    worker_config = providers.Factory(
+        lambda config: json.loads(json.dumps(config['worker'])),
+        config
+    )
+    
     worker = providers.Singleton(
-        lambda: __import__('app.worker').worker.Worker(
-            name="worker",
-            worker_uuid="worker_uuid",
-            config=settings.service_config
-        )
+        Worker,
+        name="worker",
+        worker_uuid=uuid.uuid4(),
+        config=worker_config
     )
     
     session_manager = providers.Singleton(
@@ -117,7 +121,7 @@ class Container(containers.DeclarativeContainer):
     # Messaging
     # ---------
     kafka_config = providers.Factory(
-        lambda settings: json.loads(json.dumps(settings['kafka'])),
+        lambda settings: json.loads(json.dumps(settings['kafka'])) or settings.kafka,
         config
     )
     
