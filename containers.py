@@ -71,9 +71,10 @@ class Container(containers.DeclarativeContainer):
     node_context_manager = providers.Factory(
         NodeContextManager,
         name="node_context_manager",
-        config=config,
+        config=config.node_context_manager,
         redis=redis,
-        context_manager=context_manager
+        context_manager=context_manager,
+        database=db
     )
     
     # Worker
