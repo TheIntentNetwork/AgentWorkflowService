@@ -13,7 +13,7 @@ from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
 from app.factories.agent_factory import AgentFactory
 from app.services.session.session import SessionManager
-from app.worker import Worker
+# Remove the import of Worker from here
 from app.db.database import Database
 
 class Container(containers.DeclarativeContainer):
@@ -96,6 +96,13 @@ class Container(containers.DeclarativeContainer):
         worker_uuid=uuid.uuid4(),
         config=worker_config
     )
+
+    @providers.inject
+    def configure_worker(self, worker: Worker = providers.Dependency(worker), redis: RedisService = providers.Dependency(redis)):
+        worker.set_redis(redis)
+        return worker
+
+    worker = providers.Singleton(configure_worker, worker=worker)
     
     session_manager = providers.Singleton(
         lambda: __import__('app.services.session.session').services.session.session.SessionManager(
