@@ -6,16 +6,18 @@ from app.models.Node import Node
 from app.models.agents.Agent import Agent
 from app.logging_config import configure_logger
 import asyncio
-from app.models.LifecycleNode import LifecycleNode
 from app.models.NodeStatus import NodeStatus
 from app.models.CreateReportLifecycle import CreateReportLifecycle
+from dependency_injector.wiring import inject, Provide
+from containers import Container
+from app.services.context.context_manager import ContextManager
 
 class UniverseAgent(Agent):
-    
-    def __init__(self, **kwargs):
-        from app.services.discovery import ServiceRegistry
-        self.context_manager = ServiceRegistry.instance().get(name="context_manager")
-        self.lifecycle_manager = ServiceRegistry.instance().get(name="lifecycle_manager")
+    @inject
+    def __init__(self, context_manager: ContextManager = Provide[Container.context_manager], **kwargs):
+        super().__init__(**kwargs)
+        self.context_manager = context_manager
+        #self.lifecycle_manager = get_container().lifecycle_manager()
         self.logger = configure_logger(self.__class__.__name__)
         self.logger.debug("Initializing UniverseAgent with kwargs: %s", kwargs)
         self._contexts: Dict[str, Any] = {}
@@ -43,9 +45,9 @@ class UniverseAgent(Agent):
 
     async def load_initial_configuration(self):
         # Load initial goals and configurations
-        from app.services.discovery import ServiceRegistry
+        from di import get_container
         from app.services.orchestrators.lifecycle.Execution import ExecutionService
-        self._execution_service: ExecutionService = ServiceRegistry.instance().get(name="execution_service")
+        self._execution_service: ExecutionService = get_container().execution_service()
         self._execution_service.execute(Node("Monitor System Processes", "Monitor specific processes within the system such as the number of sessions, active agents, resource utilization, and metrics of the current status of processes on the local worker process.", context_info=ContextInfo(input_description="Current system state including sessions, active agents, resource utilization, and process metrics.", action_summary="Collect and monitor data on sessions, active agents, resource utilization, and process metrics by creating new nodes that will monitor the system and update the context with the new information.", outcome_description="A comprehensive overview of the system's current state with detailed metrics on sessions, active agents, resource utilization, and process status.", feedback=["Ensure all relevant system metrics are accurately collected and monitored."], output={})))
     
     async def monitor_system(self):

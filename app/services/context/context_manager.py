@@ -2,98 +2,88 @@
 from asyncio import Queue
 import asyncio
 import json
+import traceback
 from typing import Dict, Any, List, Union, Optional
 from collections import defaultdict
 from datetime import datetime, timedelta
 
 from dependency_injector.wiring import inject, Provide
-from containers import get_container
 
 from app.interfaces.service import IService
+from app.models.Node import Node
 from app.services.cache.redis import RedisService
 from app.logging_config import configure_logger
 from app.services.context.base_context_manager import BaseContextManager
 from app.db.database import Database
 from app.models.ServiceConfig import ServiceConfig
+from app.utilities.resource_tracker import ResourceTracker, resource_tracker
+from scalene import scalene_profiler
+
+from profiler import profile_async
 
 class ContextManager(BaseContextManager):
     """
     ContextManager is responsible for managing context data across different scopes (global, session, user).
     It provides methods for storing, retrieving, and updating context data, as well as managing temporary records.
     """
-
     @inject
     def __init__(
         self,
-        config: ServiceConfig = Provide[lambda: get_container().config.context_manager],
-        redis: RedisService = Provide[lambda: get_container().redis]
+        name: str,
+        config: ServiceConfig,
+        redis: RedisService,
+        resource_tracker: ResourceTracker = resource_tracker
     ):
-        """
-        Initialize the ContextManager.
-
-        Args:
-            config (ServiceConfig): Configuration for the context manager.
-            redis (RedisService): Redis service for caching.
-        """
-        super().__init__(name="context_manager", config=config)
+        super().__init__(name=name, config=config)
+        self.logger.info(f"Initializing {self.__class__.__name__} with name: {self.name}")
         self.redis = redis
         self.in_memory_store: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(lambda: defaultdict(dict))
         self.session_contexts: Dict[str, Dict[str, Any]] = {}
         self.global_context: Dict[str, Any] = {}
+        self.resource_tracker = resource_tracker
+        self.resource_tracker.track(self.__class__.__name__, self)
         self.config = config
         self.default_expiration = timedelta(hours=1)
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
 
-    # Core Context Management
-    # -----------------------
-
-    async def set_context(self, key: str, value: Dict[str, Any]) -> None:
+    async def start(self):
         """
-        Set context data for a given key.
-
-        Args:
-            key (str): The context key.
-            value (Dict[str, Any]): The context data to store.
+        Start the ContextManager service.
+        Initialize any necessary resources or connections.
         """
-        try:
-            json_string = json.dumps(value)
-            await self.redis.client.hset(key, key, json_string)
-            self.logger.debug(f"Context saved for key {key}")
-        except Exception as e:
-            self.logger.error(f"Error saving context for key {key}: {str(e)}")
-            raise
-
-    async def get_context(self, key: str) -> Optional[Dict[str, Any]]:
+        self.logger.info(f"Starting ContextManager service: {self.name}")
+        self.logger.debug("ContextManager service started successfully")
+    
+    async def stop(self):
         """
-        Retrieve context data for a given key.
-
-        Args:
-            key (str): The context key.
-
-        Returns:
-            Optional[Dict[str, Any]]: The context data if found, None otherwise.
+        Stop the ContextManager service.
+        Clean up any resources or connections.
         """
-        try:
-            json_string = await self.redis.client.hget(key, key)
-            if json_string:
-                return json.loads(json_string)
-            self.logger.debug(f"No context found for key {key}")
-            return None
-        except Exception as e:
-            self.logger.error(f"Error getting context for key {key}: {str(e)}")
-            raise
+        self.logger.info(f"Stopping ContextManager service: {self.name}")
+        # Add cleanup logic here
+        self.logger.debug("ContextManager stopped successfully")
 
-    async def update_context(self, key: str, value: Dict[str, Any]) -> None:
+    async def shutdown(self):
+        """
+        Shutdown the ContextManager service.
+        Clean up any resources or connections.
+        """
+        self.logger.info(f"Shutting down ContextManager service: {self.name}")
+        self.logger.debug("ContextManager service shut down successfully")
+
+    @profile_async
+    async def update_context(self, key: str, value: Dict[str, Any]) -> Dict[str, Any]:
         """
         Update context data for a given key.
-
+        
         Args:
             key (str): The context key.
             value (Dict[str, Any]): The context data to update.
         """
-        existing_context = await self.get_context(key) or {}
+        existing_context = await self.redis.get_context(key) or {}
         updated_context = self._deep_merge(existing_context, value)
-        await self.set_context(key, updated_context)
+        await self.redis.save_context(key, updated_context)
+        return updated_context
 
     async def delete_context(self, key: str) -> None:
         """
@@ -103,7 +93,7 @@ class ContextManager(BaseContextManager):
             key (str): The context key to delete.
         """
         try:
-            await self.redis.client.hdel(key, key)
+            await self.redis.client.hdel(key)
             self.logger.debug(f"Context deleted for key {key}")
         except Exception as e:
             self.logger.error(f"Error deleting context for key {key}: {str(e)}")
@@ -135,7 +125,9 @@ class ContextManager(BaseContextManager):
             params (Dict[str, Any]): The query parameters.
             context_type (str): The type of context for logging purposes.
         """
-        await Database.execute_query(query, params)
+        from containers import get_container
+        database = get_container().db()
+        database.fetch_all(query, params, context_type)
 
     # Helper Methods
     # --------------
@@ -322,20 +314,148 @@ class ContextManager(BaseContextManager):
         """
         pass
 
-    async def start(self):
+    @profile_async
+    async def save_context(self, key: str, value: Union[Dict[str, Any], Any], property: str = None, update_index: bool = False) -> None:
         """
-        Start the ContextManager service.
-        Initialize any necessary resources or connections.
-        """
-        self.logger.info(f"Starting ContextManager service: {self.name}")
-        await self.redis.connect()
-        self.logger.debug("ContextManager service started successfully")
+        Save or update context data for a given key.
 
-    async def shutdown(self):
+        Args:
+            key (str): The context key.
+            value (Union[Dict[str, Any], Any]): The context data to save. If property is None, this should be a dictionary
+                                                representing the entire context. Otherwise, it's the value for the specific property.
+            property (str, optional): The specific property to update. If None, update the entire context.
+
+        Raises:
+            ValueError: If the key doesn't exist when trying to update a specific property.
         """
-        Shutdown the ContextManager service.
-        Clean up any resources or connections.
+        try:
+            if property is None:
+                # Update the entire context
+                if not isinstance(value, dict):
+                    raise ValueError("When updating the entire context, value must be a dictionary.")
+                await self.redis.save_context(key, value)
+                self.logger.debug(f"Entire context saved for key {key}")
+            else:
+                # Update a specific property
+                existing_context = await self.redis.get_context(key)
+                if existing_context is None:
+                    raise ValueError(f"Cannot update property '{property}' for non-existent key '{key}'")
+                
+                existing_context[property] = value
+                await self.redis.save_context(key, existing_context)
+                self.logger.debug(f"Property '{property}' updated for key {key}")
+                
+            if update_index:
+                await self.save_node_state_and_update_embeddings(value)
+
+        except Exception as e:
+            self.logger.error(f"Error saving context for key {key}: {str(e)}")
+            raise
+
+    async def save_node_state_and_update_embeddings(self, node: Union[Node, Dict[str, Any]]) -> None:
         """
-        self.logger.info(f"Shutting down ContextManager service: {self.name}")
-        await self.redis.disconnect()
-        self.logger.debug("ContextManager service shut down successfully")
+        Save the node state and update its embeddings in Redis.
+
+        Args:
+            node (Union[Node, Dict[str, Any]]): The node whose state and embeddings need to be updated.
+        """
+        try:
+            from app.models.Node import Node
+            from app.models.Task import Task
+
+            if isinstance(node, dict):
+                node_data = node
+                node_id = node_data.get('id')
+            elif isinstance(node, (Node, Task)):
+                node_data = node.model_dump()
+                node_id = node.id
+            else:
+                raise ValueError(f"Unsupported node type: {type(node)}")
+
+            if node_id is None:
+                raise ValueError("Node ID is missing")
+
+            # Prepare the data for embedding
+            fields = ['id', 'name', 'parent_id', 'session_id', 'description', 'type', 'input_description', 'action_summary', 'outcome_description', 'output', 'feedback']
+            
+            # Generate embeddings
+            embeddings = self.redis.generate_embeddings(node_data, fields, {'description': True, 'input_description': True, 'action_summary': True, 'outcome_description': True, 'output': True, 'feedback': True})
+            
+            # Merge embeddings with node data
+            node_data.update(embeddings)
+
+            # Prepare the record for Redis
+            record = {
+                'key': f"node:{node_id}",
+                'session_id': node_data.get('session_id', ''),
+                'name': node_data.get('name', ''),
+                'parent_id': node_data.get('parent_id', ''),
+                'type': node_data.get('type', ''),
+                'status': node_data.get('status', ''),
+                'description': node_data.get('description', ''),
+                'input_description': node_data.get('input_description', ''),
+                'action_summary': node_data.get('action_summary', ''),
+                'outcome_description': node_data.get('outcome_description', ''),
+                'context': json.dumps(node_data.get('context', {})),
+                'metadata': json.dumps(node_data),
+                'name_vector': embeddings.get('name_vector', []),
+                'description_vector': embeddings.get('description_vector', []),
+                'input_vector': embeddings.get('input_description_vector', []),
+                'action_vector': embeddings.get('action_summary_vector', []),
+                'output_vector': embeddings.get('outcome_description_vector', []),
+                'metadata_vector': embeddings.get('metadata_vector', []),
+            }
+
+            # Use the RedisService to save the record
+            await self.redis.save_context(f"node:{node_id}", record)
+
+            self.logger.info(f"Node state and embeddings updated for node ID: {node_id}")
+        except Exception as e:
+            self.logger.error(f"Error saving node state and updating embeddings: {str(e)}")
+            self.logger.error(traceback.format_exc())
+
+    async def get_merged_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Retrieve and merge context data from various sources based on the provided context.
+
+        Args:
+            context (Dict[str, Any]): The current context containing keys for relevant data.
+
+        Returns:
+            Dict[str, Any]: A merged context containing data from various sources.
+        """
+        merged_context = {}
+
+        # Merge global context
+        global_context = await self.get_global_context("global")
+        merged_context = self._deep_merge(merged_context, global_context)
+
+        # Merge session context if session_id is provided
+        if 'session_id' in context:
+            session_context = await self.get_session_context(context['session_id'], "session")
+            merged_context = self._deep_merge(merged_context, session_context)
+
+        # Merge user context if user_id is provided
+        if 'user_context' in context:
+            user_context = await self.redis.get_context(f"user:{context['user_context']['user_id']}")
+            if user_context:
+                merged_context = self._deep_merge(merged_context, user_context)
+
+        # Merge task-specific context if task_id is provided
+        if 'task_context' in context:
+            task_context = await self.redis.get_context(f"task:{context['task_context']['task_id']}")
+            if task_context:
+                merged_context = self._deep_merge(merged_context, task_context)
+
+        # Merge any other relevant contexts based on the provided context keys
+        for key, value in context.items():
+            if key.endswith('_id') and key not in ['session_id', 'user_id', 'task_id']:
+                specific_context = await self.redis.get_context(f"{key[:-3]}:{value}")
+                if specific_context:
+                    merged_context = self._deep_merge(merged_context, specific_context)
+
+        return merged_context
+    
+    async def get_context(self, key: str) -> Dict[str, Any]:
+        results = await self.redis.client.hgetall(key)
+        return results

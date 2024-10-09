@@ -9,6 +9,10 @@ from watchtower import CloudWatchLogHandler
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 import watchtower
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Initialize colorama
 init(autoreset=True)
@@ -37,30 +41,30 @@ class CustomFormatter(ColoredFormatter):
         super().__init__(*args, **kwargs)
         self.last_message = None
         self.repeat_count = 0
-
-    def format(self, record):
-        log_colors = {
+        self.log_colors = {
             'DEBUG': Fore.CYAN,
             'INFO': Fore.GREEN,
             'WARNING': Fore.YELLOW,
             'ERROR': Fore.RED,
             'CRITICAL': Fore.RED + Style.BRIGHT,
         }
+
+    def format(self, record):
         timestamp = f"{Fore.WHITE}{self.formatTime(record, self.datefmt)}{Style.RESET_ALL}"
         log_label = f"{Fore.CYAN}{record.name}.{record.funcName}{Style.RESET_ALL}"
-        log_level = f"{log_colors.get(record.levelname, Fore.WHITE)}{record.levelname:<8}{Style.RESET_ALL}"
+        log_level = f"{self.log_colors.get(record.levelname, Fore.WHITE)}{record.levelname:<8}{Style.RESET_ALL}"
         message = f"{Fore.WHITE}{record.getMessage()}{Style.RESET_ALL}"
         
         if message == self.last_message:
             self.repeat_count += 1
             return None
-        else:
-            formatted_message = f"{timestamp} - {log_level} - {log_label}: {message}"
-            if self.repeat_count > 0:
-                formatted_message = f"Last message repeated {self.repeat_count} times\n{formatted_message}"
-            self.last_message = message
-            self.repeat_count = 0
-            return formatted_message
+        
+        formatted_message = f"{timestamp} - {log_level} - {log_label}: {message}"
+        if self.repeat_count > 0:
+            formatted_message = f"Last message repeated {self.repeat_count} times\n{formatted_message}"
+        self.last_message = message
+        self.repeat_count = 0
+        return formatted_message
 
 class SafeCloudWatchLogHandler(CloudWatchLogHandler):
     def __init__(self, *args, **kwargs):
@@ -123,9 +127,23 @@ class SafeStreamHandler(logging.StreamHandler):
         except Exception:
             self.handleError(record)
 
-def configure_logger(name, logging_level=logging.INFO):
+def get_logging_level():
+    """Get the logging level from the .env file."""
+    level = os.getenv('LOGGING_LEVEL', 'INFO').upper()
+    return getattr(logging, level, logging.INFO)
+
+def configure_logger(name, log_level=None):
     logger = logging.getLogger(name)
+    logging_level = None
     if not logger.handlers:
+        # Get logging level from .env
+        if log_level is None:
+            logging_level = get_logging_level()
+        else:
+            logging_level = log_level
+        
+        print(f"Configuring logger '{name}' with level: {logging.getLevelName(logging_level)} ({logging_level})")
+        
         # Console handler with colored output
         console_handler = logging.StreamHandler()
         console_formatter = ColoredFormatter(
@@ -143,6 +161,7 @@ def configure_logger(name, logging_level=logging.INFO):
             style='%'
         )
         console_handler.setFormatter(console_formatter)
+        console_handler.setLevel(logging_level)  # Set the handler level explicitly
         logger.addHandler(console_handler)
 
         # CloudWatch handler
@@ -172,11 +191,10 @@ def configure_logger(name, logging_level=logging.INFO):
 
     return logger
 
-# This function can be called to set up logging for the entire application
 def setup_logging():
     """Set up the basic configuration for logging."""
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(get_logging_level())
     
     # Configure the root logger with our custom setup
     configure_logger('')  # Empty string configures the root logger

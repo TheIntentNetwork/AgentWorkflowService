@@ -1,35 +1,53 @@
 import json
+from typing import Any, Dict
 import uuid
+import weakref
 from dependency_injector import containers, providers
 from app.config.settings import settings
 from app.services.cache.redis import RedisService
 from app.services.context.context_manager import ContextManager
 
 from app.services.context.node_context_manager import NodeContextManager
-from app.services.events.event_manager import EventManager
-from app.services.queue.kafka import KafkaService
 from app.services.context.user_context_manager import UserContextManager
+from app.services.dependencies.dependency_service import DependencyService
 from app.services.events.event_manager import EventManager
 from app.services.queue.kafka import KafkaService
 from app.factories.agent_factory import AgentFactory
 from app.services.session.session import SessionManager
+from app.utilities import resource_tracker
 from app.worker import Worker
 from app.db.database import Database
+from app.services.worker.worker import Worker
+from app.services.events.event_manager import EventManager
+from app.utilities.resource_tracker import resource_tracker
+from profiler import profile_async
 
 class Container(containers.DeclarativeContainer):
     """
     Dependency Injection Container for the application.
     This container manages the configuration and instantiation of various services and components.
     """
+    
+    def __init__(self):
+        super().__init__()
+        self.resource_tracker = resource_tracker
 
     # Configuration
     # -------------
     config = providers.Configuration()
     config.from_dict(settings.dict())
     
+    # Provide resource_tracker as a dependency
+    resource_tracker_provider = providers.Object(resource_tracker)
+    
     # Database
     # --------
-    db = providers.Singleton(Database)
+    
+    db = providers.Singleton(
+        Database,
+        config=config.database,
+        resource_tracker=resource_tracker_provider
+    )
     
     # Caching
     # -------
@@ -37,78 +55,79 @@ class Container(containers.DeclarativeContainer):
         RedisService,
         name="redis",
         config=config.redis,
-        redis_url=config.REDIS_URL
+        resource_tracker=resource_tracker_provider
     )
-    
+
     # Context Management
     # ------------------
     
-    context_manager_config = providers.Factory(
-        lambda config: json.loads(json.dumps(config['context_manager'])),
-        config
-    )
-    
-    context_manager = providers.Factory(
+    context_manager = providers.Singleton(
         ContextManager,
-        config=context_manager_config,
-        redis=redis
+        name="context_manager",
+        config=config.context_manager,
+        redis=redis,
+        resource_tracker=resource_tracker_provider
     )
 
-    user_context_manager_config = providers.Factory(
-        lambda config: json.loads(json.dumps(config['user_context_manager'])),
-        config
-    )
-
-    user_context_manager = providers.Factory(
+    user_context_manager = providers.Singleton(
         UserContextManager,
         name="user_context_manager",
-        config=user_context_manager_config,
-        redis=redis,
-        context_manager=context_manager
-    )
-    
-    node_context_manager_config = providers.Factory(
-        lambda config: json.loads(json.dumps(config['node_context_manager'])),
-        config
-    )
-    
-
-    node_context_manager = providers.Factory(
-        NodeContextManager,
-        name="node_context_manager",
-        config=config.node_context_manager,
+        config=config.user_context_manager,
         redis=redis,
         context_manager=context_manager,
-        database=db
+        resource_tracker=resource_tracker_provider
     )
-    
-    # Worker
-    # ------
-    
-    worker_config = providers.Factory(
-        lambda config: json.loads(json.dumps(config['worker'])),
+
+    db_context_managers_config = providers.Factory(
+        lambda config: config.get('db_context_managers', {}),
         config
     )
+    
+    node_context_manager = providers.Singleton(
+        NodeContextManager,
+        name="node_context_manager",
+        config=config.db_context_managers,
+        redis_service=redis,
+        context_manager=context_manager,
+        database=db,
+        resource_tracker=resource_tracker_provider
+    )
+
+    # Use these configs when initializing your managers
+
+    # Worker
+    # ------
     
     worker = providers.Singleton(
         Worker,
         name="worker",
-        worker_uuid=uuid.uuid4(),
-        config=worker_config
+        worker_uuid=providers.Factory(uuid.uuid4),
+        config=config.worker,
+        resource_tracker=resource_tracker_provider
     )
 
-    @providers.inject
-    def configure_worker(self, worker: 'Worker' = providers.Dependency(worker), redis: RedisService = providers.Dependency(redis)):
-        worker.set_redis(redis)
+    def configure_worker(self):
+        worker = self.worker()
+        redis = self.redis()
+        # Worker configuration logic here
+        # For example:
+        worker.setup(redis)
         return worker
 
-    worker = providers.Singleton(configure_worker, worker=worker)
-    
     session_manager = providers.Singleton(
-        lambda: __import__('app.services.session.session').services.session.session.SessionManager(
-            SessionManager,
-            config=settings.session_manager
-        )
+        SessionManager,
+        name="session_manager",
+        config=config.session_manager,
+        resource_tracker=resource_tracker_provider
+    )
+    
+    # Messaging
+    # ---------
+    kafka = providers.Singleton(
+        KafkaService,
+        name="kafka",
+        config=config.kafka,
+        resource_tracker=resource_tracker_provider
     )
     
     dependency_config = providers.Factory(
@@ -117,32 +136,12 @@ class Container(containers.DeclarativeContainer):
     )
     
     dependency_service = providers.Singleton(
-            KafkaService,
+            DependencyService,
             config=dependency_config,
-            context_manager=context_manager
+            context_manager=context_manager,
+            kafka_service=kafka,
+            resource_tracker=resource_tracker_provider
         )
-
-    # Database
-    # --------
-    db = providers.Singleton(
-        lambda: __import__('app.db.database').db.database.Database(
-            settings.SUPABASE_URL,
-            settings.SUPABASE_KEY
-        )
-    )
-
-    # Messaging
-    # ---------
-    kafka_config = providers.Factory(
-        lambda settings: json.loads(json.dumps(settings['kafka'])) or settings.kafka,
-        config
-    )
-    
-    kafka = providers.Singleton(
-        KafkaService,
-        name="kafka",
-        config=kafka_config,
-    )
 
     # Event Management
     # ----------------
@@ -151,20 +150,26 @@ class Container(containers.DeclarativeContainer):
         name="event_manager",
         config=config.event_manager,
         redis=redis,
-        kafka=kafka
+        kafka=kafka,
+        worker=worker,
+        resource_tracker=resource_tracker_provider
     )
 
     # Agent Factory
     # -------------
-    agent_factory = providers.Factory(
+    agent_factory = providers.Singleton(
         AgentFactory,
         name="agent_factory",
         config=config.agent_factory,
         context_manager=context_manager,
-        user_context_manager=user_context_manager,
-        node_context_manager=node_context_manager,
-        event_manager=event_manager
+        event_manager=event_manager,
+        resource_tracker=resource_tracker_provider
     )
+
+# Define get_container function here if needed
+@profile_async
+def get_container():
+    return Container()
 
 # Lifecycle Functions
 # -------------------
@@ -179,6 +184,7 @@ async def init_resources():
     await container.kafka().start()
     await container.event_manager().start()
     await container.worker().start()
+    await container.db().start()
     await container.session_manager().start()
     await container.dependency_service().start()
     await container.context_manager().start()
@@ -197,6 +203,7 @@ async def shutdown_resources():
     await container.dependency_service().shutdown()
     await container.session_manager().shutdown()
     await container.worker().shutdown()
+    await container.db().shutdown()
     await container.event_manager().shutdown()
     await container.kafka().shutdown()
     await container.redis().shutdown()
@@ -213,6 +220,7 @@ def create_container():
     container.config.from_dict(settings.dict())
     return container
 
+@profile_async
 async def initialize():
     """
     Initialize the container and its resources.
@@ -223,6 +231,7 @@ async def initialize():
         container = create_container()
     await init_resources()
 
+@profile_async
 async def shutdown():
     """
     Shutdown the container and its resources.

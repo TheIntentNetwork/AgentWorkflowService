@@ -378,6 +378,7 @@ OR REPLACE FUNCTION public.get_child_nodes_by_parent_name (p_name TEXT) RETURNS 
   child_node_description TEXT
 ) AS $$
 BEGIN
+    -- Return all child nodes that have the parent_id matching the parent node found by name
     RETURN QUERY
     SELECT 
         nct.id AS child_node_id,
@@ -385,13 +386,9 @@ BEGIN
         nct.type AS child_node_type,
         nct.description AS child_node_description
     FROM 
-        public.node_templates nt
-    JOIN 
-        public.node_relationships nr ON nr.parent_node_id = nt.id
-    JOIN 
-        public.node_templates nct ON nct.id = nr.child_node_id  -- Join to get child node details
+        public.node_templates nct
     WHERE 
-        nt.name = p_name;  -- Filter by the parent node name
+        nct.parent_id = (SELECT id FROM public.node_templates WHERE name = p_name LIMIT 1);  -- Get the parent node id by name
 END;
 $$ LANGUAGE plpgsql;
 

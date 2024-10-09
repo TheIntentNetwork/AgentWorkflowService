@@ -2,6 +2,7 @@
 from abc import abstractmethod
 import asyncio
 import copy
+import gc
 import importlib
 import inspect
 import json
@@ -15,6 +16,11 @@ from deepdiff import DeepDiff
 from colorama import init, Fore, Back, Style
 import numpy as np
 from openai import NotFoundError
+from openai import AsyncOpenAI
+from app.services.cache.redis import RedisService
+from app.logging_config import configure_logger
+from app.utilities.openapi import validate_openapi_spec
+from colorama import init, Fore, Back, Style
 
 from openai.types.beta.thread_create_params import ToolResources
 from redisvl.query.filter import Tag, FilterExpression
@@ -26,7 +32,6 @@ from app.utilities.openapi import validate_openapi_spec
 from colorama import init, Fore, Back, Style
 
 from app.tools.oai import Retrieval, CodeInterpreter
-from app.services.discovery.service_registry import ServiceRegistry
 from typing import List, Optional
 from app.models.ContextInfo import ContextInfo
 
@@ -51,6 +56,14 @@ class Agent:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.delete()
+    
+    async def __aenter__(self):
+        await self.async_init()
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.cleanup()
+        
     @property
     def assistant(self):
         if self._assistant is None:
@@ -178,10 +191,9 @@ class Agent:
         self.file_search = file_search
         self.parallel_tool_calls = parallel_tool_calls
         self.session_id = session_id
-        self.context_info = context_info
-        
-        self.redis_service = ServiceRegistry.instance().get(name="redis")
-
+        self.context_info = context_info or ContextInfo()
+        from containers import get_container
+        self.redis_service = get_container().redis()
         self.settings_path = './settings.json'
 
         # private attributes
@@ -195,6 +207,13 @@ class Agent:
         self.self_assign = self_assign
         self.messages = messages if messages else []
         self.node_id = None
+
+        self.resources = set()  # Initialize the resources set
+        self.file_handles = []
+
+        self.client = None
+        self.redis_service = None
+        self.queue_listener_task = None
 
     # --- OpenAI Assistant Methods ---
     
@@ -212,17 +231,20 @@ class Agent:
                 try:
                     message = await asyncio.wait_for(self.message_queue.get(), timeout=1.0)
                     if message is None:
-                        break  # Exit the loop if None is received
+                        break
                     self.messages.append(message)
                     await self.save_message_to_redis(message)
                 except asyncio.TimeoutError:
-                    # No message received within timeout, continue loop
-                    print("No message received within timeout, continue loop")
-                    await asyncio.sleep(2)
-                    continue
+                    if not self.is_running:
+                        break
+                    await asyncio.sleep(0.1)
         except asyncio.CancelledError:
-            # Task was cancelled, exit gracefully
-            pass
+            self.logger.info("Queue listener task cancelled")
+        finally:
+            self.logger.info("Queue listener task finished")
+    
+    def delete(self):
+        asyncio.create_task(self.cleanup())
     
     def substitute_tool_objects(self, tools):
         """
@@ -245,27 +267,84 @@ class Agent:
         })
         logger.debug(f"Added message: {message} to redis")
     
-    async def async_init(self):
-        #self.description = f"""
-        #You are evolved time traveling humans capable of telepathy. You come from a future time and have traveled back to help the human race overcome challenges due to your evolved nature and proven cultural perspective. In your time, the general focus on individuals is focused on intently accomplishing our individual goals doing what is best for you and everyone else. Since all humans can now see and hear your thoughts, intent, experiences, and actions, there is no need to directly communicate in ways that are akin to giving someone actions to perform or duties. We help because we can. We hear and understand everyone's thoughts so we focus on how we can uniquely understand and help. We know that the universe is capable of delivering the things we desire when we believe and focus on giving our own unique qualities into the thinking to accomplish the intent of our goals.
-        #
-        #In this role, the description of the task at hand is the following:
-        #{self.description}."""
+    async def cleanup(self):
+        self.logger.info(f"Cleaning up Agent: {self.name}")
         
-        system_context = ["session_id", "workflow_id", "user_context", "objects_context", "agent_context"]
+        # Cancel the queue listener task
+        if self.queue_listener_task:
+            self.queue_listener_task.cancel()
+            try:
+                await self.queue_listener_task
+            except asyncio.CancelledError:
+                pass
+
+        # Close the message queue
+        while not self.message_queue.empty():
+            try:
+                self.message_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        
+        # Close file handles
+        for file_handle in self.file_handles:
+            try:
+                file_handle.close()
+            except Exception as e:
+                self.logger.error(f"Error closing file handle: {e}")
+
+        # Clean up resources
+        for resource in self.resources:
+            if hasattr(resource, 'close') and callable(resource.close):
+                await resource.close()
+            elif hasattr(resource, '__del__'):
+                del resource
+
+        # Clear resource sets
+        self.resources.clear()
+        self.file_handles.clear()
+        
+        # Force garbage collection
+        gc.collect()
+
+        self.logger.info(f"Cleanup completed for Agent: {self.name}")
+    
+    def track_resource(self, resource):
+        if resource is not None:
+            self.resources.add(resource)
+    
+    async def async_init(self):
+        self.client = AsyncOpenAI(api_key=self.key)
+        self.track_resource(self.client)
+
+        from containers import get_container
+        self.redis_service = get_container().redis()
+        self.track_resource(self.redis_service)
+
+        self.queue_listener_task = asyncio.create_task(self.listen_to_queue())
+        self.track_resource(self.queue_listener_task)
+        
+        system_context = ["workflow_id", "object_contexts", "agent_context", "node_templates"]
         if not self.context_info:
             logger.info(f"Existing context_info not found, creating context info for agent: {self.name}")
-            self.context_info = ContextInfo()
-            self.context_info.context = {}
+            self.context_info = {}
+            self.context_info['context'] = {}
+        else:
+            if isinstance(self.context_info, ContextInfo):
+                self.context_info = self.context_info.dict()
 
-        context_dict: Dict = self.context_info.dict() or self.context_info.model_dump() or self.context_info
+        context_dict: Dict = self.context_info
         for key, value in context_dict.items():
             if key == 'context':
                 for sub_key, sub_value in value.items():
-                    self._contexts[sub_key] = sub_value
+                    if sub_key not in system_context:
+                        self._contexts[sub_key] = sub_value
+                    else:
+                        print(f"Skipping system context: {sub_key}")
             else:
                 self._contexts[key] = value
-        self._contexts['output'] = {}
+        if self._contexts.get('output') is None:
+            self._contexts['output'] = {}
+            
         additional_instructions = []
         additional_instructions.append("Current Task Information: ")
         
@@ -948,3 +1027,4 @@ class Agent:
                         break
             with open(path, 'w') as f:
                 json.dump(settings, f, indent=4)
+

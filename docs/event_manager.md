@@ -66,7 +66,7 @@ An asynchronous method that handles updates for a specific node.
 
 An asynchronous method that handles context updates by saving the context to Redis.
 
-### `__event_listener(message: any)`
+### `__event_listener(message: Any)`
 
 A private asynchronous method that listens for events and maps them to appropriate handlers.
 
@@ -76,7 +76,7 @@ An asynchronous method that closes the EventManager, performing necessary cleanu
 
 ## Private Methods
 
-### `__event_listener(message: any)`
+### `__event_listener(message: Any)`
 
 A private asynchronous method that listens for events and maps them to appropriate handlers.
 

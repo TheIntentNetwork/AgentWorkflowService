@@ -17,6 +17,7 @@ from kafka.consumer.fetcher import ConsumerRecord
 from app.config.settings import KafkaSettings
 from app.interfaces.service import IService
 from app.logging_config import configure_logger
+from app.utilities.resource_tracker import ResourceTracker
 
 load_dotenv()
 
@@ -29,7 +30,7 @@ def safe_decode(m):
 class KafkaService(IService):
     name = "kafka"
 
-    def __init__(self, name: str, config: KafkaSettings):
+    def __init__(self, name: str, config: KafkaSettings, resource_tracker: ResourceTracker):
         """
         Initialize the KafkaService.
 
@@ -47,7 +48,8 @@ class KafkaService(IService):
         self.consumer_thread = None
         self.consumer_thread_running = False
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
-
+        self.resource_tracker = resource_tracker
+        self.resource_tracker.track(self.__class__.__name__, self)
         # Initialize other necessary attributes
         self.event_loop = asyncio.get_event_loop()
         self.subscriptions = {}
@@ -73,6 +75,10 @@ class KafkaService(IService):
         Start the KafkaService by initializing the producer and consumer,
         then starting the consumer thread.
         """
+        if self.producer or self.consumer:
+            self.logger.warning("KafkaService is already running")
+            return
+
         self.logger.info("Starting KafkaService")
         self.consumer = KafkaConsumer(
             bootstrap_servers=self.bootstrap_servers,
@@ -201,10 +207,15 @@ class KafkaService(IService):
         self.producer.close()
     
     async def stop(self):
+        self.logger.info("Stopping KafkaService")
         if self.producer:
             self.producer.close()
         if self.consumer:
-            await self.consumer.stop()
+            self.consumer.close()
+        if self.consumer_thread and self.consumer_thread.is_alive():
+            self.consumer_thread_running = False
+            self.consumer_thread.join()
+        self.logger.info("KafkaService stopped successfully")
 
     async def close(self):
         self.logger.info("Closing KafkaService")

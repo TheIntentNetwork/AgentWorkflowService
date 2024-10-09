@@ -5,28 +5,40 @@ from app.config.service_config import ServiceConfig
 from app.services.cache.redis import RedisService
 from app.interfaces.service import IService
 from app.logging_config import configure_logger
-from containers import get_container
 
 
 class Worker(IService):
     name = "worker"
+
+    async def start(self):
+        """
+        Start the Worker service.
+        """
+        # Startup logic here
+        pass
     _instance = None
 
     def __init__(self, name: str, worker_uuid: str, config: ServiceConfig, **kwargs):
         super().__init__(name=name, config=config, **kwargs)
+        from containers import get_container
         self.name = name
         self.worker_uuid = worker_uuid
         self.redis: RedisService = get_container().redis()
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
-        self.logger.info(f"Worker initialized with instance_id: {self.worker_uuid}")
+        self.logger.info(f"Worker initialized with instance_id: {str(self.worker_uuid)}")
         self.is_active = False
         self.task_queue = asyncio.Queue()
 
     async def _initialize_service(self, worker_uuid: Optional[str] = None):
         self.worker_uuid = worker_uuid or str(uuid.uuid4())
-        self.logger.info(f"Initializing Worker service with UUID: {self.worker_uuid}")
+        self.logger.info(f"Initializing Worker service with UUID: {str(self.worker_uuid)}")
         await self.join()
         self.is_active = True
+        from containers import get_container
+        # Initialize EventManager with this Worker instance
+        event_manager = get_container().event_manager()
+        event_manager.worker = self
+        
         asyncio.create_task(self.process_tasks())
         self.logger.debug("Worker service initialized successfully")
 
@@ -66,16 +78,16 @@ class Worker(IService):
     async def join(self):
         try:
             await self.redis.client.sadd("workers", self.worker_uuid)
-            self.logger.debug(f"Worker {self.worker_uuid} joined the pool")
+            self.logger.debug(f"Worker {str(self.worker_uuid)} joined the pool")
         except Exception as e:
-            self.logger.error(f"Failed to join worker {self.worker_uuid} to the pool: {str(e)}")
+            self.logger.error(f"Failed to join worker {str(self.worker_uuid)} to the pool: {str(e)}")
             raise
 
     async def leave(self):
         try:
             await self.redis.client.srem("workers", self.worker_uuid)
-            self.logger.debug(f"Worker {self.worker_uuid} left the pool")
+            self.logger.debug(f"Worker {str(self.worker_uuid)} left the pool")
         except Exception as e:
-            self.logger.error(f"Failed to remove worker {self.worker_uuid} from the pool: {str(e)}")
+            self.logger.error(f"Failed to remove worker {str(self.worker_uuid)} from the pool: {str(e)}")
             raise
 

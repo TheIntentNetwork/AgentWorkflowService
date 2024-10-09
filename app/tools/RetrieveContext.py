@@ -5,16 +5,11 @@ import threading
 import traceback
 from pydantic import BaseModel, Field
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
-from app.services.context.node_context_manager import NodeContextManager
-from app.services.context.user_context_manager import UserContextManager
 from app.tools.base_tool import BaseTool
-from asyncio import sleep
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from redisvl.query.filter import Tag, FilterExpression
-from enum import Enum, auto
 
-from app.services.discovery.service_registry import ServiceRegistry
 from app.logging_config import configure_logger
     
 
@@ -60,39 +55,42 @@ class RetrieveContext(BaseTool):
     """
     This class represents the RetrieveContext tool which returns seeded data and historical examples that can be used to create new agents, models, steps. Models are saved copies of successfully tested node structures that can be used to create a new set of steps.
     """
-    type: Literal["form", "step", "model"] = Field(..., description="The type of the context to retrieve.")
-    key: str = Field(..., description="The key of the context to retrieve.")
+    type: Literal["form", "step", "model", "node"] = Field(..., description="The type of the context to retrieve.")
     query: str = Field(..., description="The query of the context to retrieval.")
     session_id: Optional[str] = Field(None, description="The session ID for the context.")
 
     async def run(self) -> str:
-        from app.services.cache.redis import RedisService
-        from redisvl.query.filter import FilterExpression, Tag
-        
-        redis_service: RedisService = ServiceRegistry.instance().get('redis')
-        context_manager = ServiceRegistry.instance().get('context_manager')
+        from di import get_container
+        container = get_container()
+        redis_service = container.redis()
+        context_manager = container.context_manager()
         logger = configure_logger(self.__class__.__name__)
         user_id = None
         
+        filter_expression = None
+        
         try:
             # Retrieve user ID from the context
-            user_context = self.caller_agent.context_info.context.get('user_context', {})
-            if user_context:
-                user_id = user_context.get('user_id')
-            
-            if not user_id:
-                logger.error("RetrieveContext: User ID not found in context")
-                return []
+            if self.type == "form":
+                user_context = self.caller_agent.context_info.context.get('user_context', {})
+                if user_context:
+                    user_id = user_context.get('user_id')
+                
+                if not user_id:
+                    logger.error("RetrieveContext: User ID not found in context")
+                    return []
 
-            filter_expression = Tag("type") == self.type
+                filter_expression = Tag("type") == self.type
+                filter_expression &= Tag("user_id") == user_id
 
             # Determine which index to search based on the type
             index_name = {
                 "user_meta": "user_context",
                 "form": "user_context",
                 "step": "context",
-                "model": "context",
-                "agent": "context"
+                "model": "models",
+                "node": "context",
+                "agent": "agents"
             }.get(self.type)
 
             if not index_name:
@@ -106,7 +104,8 @@ class RetrieveContext(BaseTool):
             logger.debug(f"RetrieveContext: Retrieved context: {context}")
         except Exception as e:
             logger.error(f"RetrieveContext: Failed to retrieve context: {e}")
-            raise e
+            logger.error(traceback.format_exc())
+            return []
         
         return context
         

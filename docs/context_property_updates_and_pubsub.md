@@ -22,8 +22,9 @@ Example implementation:
 class EventManager(IService):
     def __init__(self, **kwargs):
         self.logger = configure_logger('EventManager')
-        self.__redis: RedisService = self.service_registry.get("redis")
-        self.__kafka: KafkaService = self.service_registry.get("kafka")
+        from containers import get_container
+        self.__redis: RedisService = get_container().redis()
+        self.__kafka: KafkaService = get_container().redis()
         self.queue = asyncio.Queue()
         self.event_loop = asyncio.get_event_loop()
         self.consumer_thread = threading.Thread(target=self.run, daemon=True)
@@ -85,7 +86,7 @@ class Node:
         await self.redis.client.pubsub().subscribe(**{f"node:{dependency.context_key}:output": self.on_dependency_update})
         self.dependencies.append(dependency)
 
-    async def on_dependency_update(self, message: any) -> None:
+    async def on_dependency_update(self, message: Any) -> None:
         output = json.loads(message['data'])
         self.context_info.output.update(output)
 ```

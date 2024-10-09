@@ -18,6 +18,9 @@ from app.models.message_output import MessageOutput
 from app.models.agents.Agent import Agent
 from app.models.User import User
 from typing import AsyncGenerator, Type, Union
+from scalene import scalene_profiler
+
+from profiler import profile_async, profile_generator
 
 class Thread:
     id: str = None
@@ -50,38 +53,27 @@ class Thread:
                         **example,
                     )
 
+    profile_generator
     async def get_completion_stream(self,
-                          message: str,
-                          event_handler: Type[AgencyEventHandler],
-                          message_files: List[str] = None,
-                          attachments: Optional[List[Attachment]] = None,
-                          recipient_agent=None,
-                          additional_instructions: str = None,
-                          tool_choice: AssistantToolChoice = None) -> AsyncGenerator[Union[str, MessageOutput], None]:
+                                    message: str,
+                                    event_handler: Type[AgencyEventHandler],
+                                    message_files: List[str] = None,
+                                    attachments: Optional[List[Attachment]] = None,
+                                    recipient_agent=None,
+                                    additional_instructions: str = None,
+                                    tool_choice: AssistantToolChoice = None) -> AsyncGenerator[Union[str, MessageOutput], None]:
         """
         Asynchronously streams the completion for a given message.
 
         This method processes the input message and yields chunks of the response
         or MessageOutput objects.
-
-        Args:
-            message (str): The input message to process.
-            event_handler (type(AgencyEventHandler)): Event handler for processing stream events.
-            message_files (List[str], optional): List of file IDs to be sent as attachments.
-            attachments (Optional[List[Attachment]], optional): List of attachments in OpenAI format.
-            recipient_agent (Agent, optional): The specific agent to process the message.
-            additional_instructions (str, optional): Any additional instructions for processing.
-            tool_choice (AssistantToolChoice, optional): Specific tool choice for the agent to use.
-
-        Yields:
-            Union[str, MessageOutput]: Chunks of the response or MessageOutput objects.
         """
         async for item in self._get_completion_internal(
             message, message_files, attachments, recipient_agent,
             additional_instructions, event_handler, tool_choice
         ):
             yield item
-
+    @profile_generator
     async def _get_completion_internal(self,
                                message: str | List[dict],
                                message_files: List[str] = None,
@@ -92,7 +84,7 @@ class Thread:
                                tool_choice: AssistantToolChoice = None
                                ) -> AsyncGenerator[Union[str, MessageOutput], None]:
         from app.logging_config import configure_logger
-        logger = configure_logger("Thread", 'DEBUG')
+        logger = configure_logger("Thread")
         logger.info(f"Starting _get_completion_internal for message: {message[:50]}...")
 
         if not recipient_agent:
@@ -241,7 +233,7 @@ class Thread:
 
     async def _run_until_done(self):
         from app.logging_config import configure_logger
-        logger = configure_logger("Thread", 'DEBUG')
+        logger = configure_logger("Thread")
         start_time = time.time()
         while True:
             self.run = self.client.beta.threads.runs.retrieve(
@@ -305,47 +297,38 @@ class Thread:
         logger.error("No valid assistant message found in the thread")
         raise Exception("No valid assistant message found in the thread")
 
+    @profile_async
     async def execute_tool(self, tool_call, recipient_agent=None, event_handler=None, tool_names=[]):
         from app.logging_config import configure_logger
-        
         logger = configure_logger("Thread", 'DEBUG')
-        if not recipient_agent:
-            recipient_agent = self.recipient_agent
-
+        recipient_agent = recipient_agent or self.recipient_agent
         funcs = recipient_agent.functions
-        logger.debug(f"functions: {funcs}")
+        
         func = next((func for func in funcs if func.__name__ == tool_call.function.name), None)
-
         if not func:
             logger.error(f"Error: Function {tool_call.function.name} not found. Available functions: {[func.__name__ for func in funcs]}")
             return f"Error: Function {tool_call.function.name} not found. Available functions: {[func.__name__ for func in funcs]}"
 
         try:
-            args = tool_call.function.arguments
-            args = json.loads(args) if args else {}
-            logger.debug(f"args: {args}")
+            args = json.loads(tool_call.function.arguments or '{}')
             func = func(**args)
-            logger.debug(f"func: {func}")
-            for tool_name in tool_names:
-                if tool_name == tool_call.function.name and (
-                        hasattr(func, "one_call_at_a_time") and func.one_call_at_a_time):
-                    return f"Error: Function {tool_call.function.name} is already called. You can only call this function once at a time. Please wait for the previous call to finish before calling it again."
+            
+            if any(tool_name == tool_call.function.name and getattr(func, "one_call_at_a_time", False) for tool_name in tool_names):
+                return f"Error: Function {tool_call.function.name} is already called. You can only call this function once at a time. Please wait for the previous call to finish before calling it again."
+            
             func.caller_agent = recipient_agent
             func.event_handler = event_handler
+            
             if inspect.iscoroutinefunction(func.run):
-                logger.debug(f"Running async function: {func.__class__.__name__}")
                 output = await func.run()
             else:
-                logger.debug(f"Running sync function: {func.__class__.__name__}")
-                loop = asyncio.get_event_loop()
-                output = await loop.run_in_executor(None, func.run)
-            logger.debug(f"Function completed with output: {output}")
+                output = await asyncio.get_running_loop().run_in_executor(None, func.run)
+            
+            logger.debug(f"Function {func.__class__.__name__} completed with output: {output}")
             return output
         except Exception as e:
-            error_message = f"Error: {e}" + traceback.format_exc()
+            error_message = f"Error: {e}\n{traceback.format_exc().split('For further information visit')[0]}"
             logger.error(error_message)
-            if "For further information visit" in error_message:
-                error_message = error_message.split("For further information visit")[0]
             return error_message
     
     def _submit_tool_outputs(self, tool_outputs: List[Dict[str, Any]], event_handler):
@@ -379,6 +362,7 @@ class Thread:
             logger.error(f"Error submitting tool outputs: {str(e)}")
             raise
 
+    @profile_generator
     async def _handle_tool_calls(self, tool_calls, recipient_agent, event_handler):
         from app.logging_config import configure_logger
         logger = configure_logger("Thread", 'DEBUG')

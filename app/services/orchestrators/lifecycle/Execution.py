@@ -11,7 +11,6 @@ from app.models.Dependency import Dependency
 from app.models.agency import Agency
 from app.models.agents.Agent import Agent
 from app.models.ContextInfo import ContextInfo
-from app.services.discovery.service_registry import ServiceRegistry
 from app.logging_config import configure_logger
 from redisvl.query.filter import Tag
 from app.interfaces.service import IService
@@ -26,11 +25,11 @@ class ExecutionService(IService):
     name = "execution_service"
 
     def __init__(self, **kwargs):
-        self.service_registry = ServiceRegistry.instance()
         self.initialized = True
         self.logger = configure_logger('ExecutionService')
-        self.context_manager: ContextManager = self.service_registry.get('context_manager')
-        self.event_manager: EventManager = self.service_registry.get('event_manager')
+        from containers import get_container
+        self.context_manager: ContextManager = get_container().context_manager
+        self.event_manager: EventManager = get_container().event_manager
 
     async def close(self):
         """

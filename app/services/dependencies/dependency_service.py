@@ -2,45 +2,47 @@ from typing import List, Any, Dict
 from dependency_injector.wiring import inject, Provide
 from app.services.context.context_manager import ContextManager
 from app.services.events.event_manager import EventManager
-from containers import get_container
 from app.interfaces.service import IService
 from app.models.Dependency import Dependency
 from app.models.Node import Node
 from app.models.NodeStatus import NodeStatus
-from app.factories.agent_factory import AgentFactory
 from app.models.agency import Agency
 from app.interfaces.idependencyservice import IDependencyService
+from app.services.queue.kafka import KafkaService
+import logging
+
+from app.utilities.resource_tracker import ResourceTracker
 
 class DependencyService(IDependencyService, IService):
     @inject
     def __init__(
         self,
-        config: dict = Provide[lambda: get_container().config.dependency_service],
-        context_manager: ContextManager = Provide[lambda: get_container().context_manager],
-        event_manager: EventManager = Provide[lambda: get_container().event_manager]
+        config: dict,
+        kafka_service: KafkaService,
+        context_manager: ContextManager,
+        resource_tracker: 'ResourceTracker' = Provide['resource_tracker']
     ):
         super().__init__(name="dependency_service", config=config)
+        self.kafka_service = kafka_service
         self.context_manager = context_manager
-        self.event_manager = event_manager
         self.logger = self.get_logger_with_instance_id('DependencyService')
+        self.resource_tracker = resource_tracker
+        self.resource_tracker.track(self.__class__.__name__, self)
+    
+    async def start(self):
+        self.logger.info("Starting DependencyService")
+        # Initialize any internal resources here
+        # Don't start kafka_service or context_manager here
+        self.logger.info("DependencyService started successfully")
+
+    async def shutdown(self):
+        self.logger.info("Shutting down DependencyService")
+        # Clean up any internal resources here
+        self.logger.info("DependencyService shut down successfully")
 
     @classmethod
     def instance(cls, name: str, config: Any, **kwargs):
         return cls(name, config, **kwargs)
-
-    async def start(self):
-        self.logger.info("Starting DependencyService")
-        await self.context_manager.start()
-        await self.event_manager.start()
-        self.logger.info("DependencyService started")
-
-    async def shutdown(self):
-        self.logger.info("Shutting down DependencyService")
-        # Cancel any ongoing dependency tracking tasks
-        # (You might need to keep track of these tasks during operation)
-        await self.context_manager.shutdown()
-        await self.event_manager.shutdown()
-        self.logger.info("DependencyService shut down")
 
     async def discover_and_register_dependencies(self, node):
         """
@@ -58,20 +60,22 @@ class DependencyService(IDependencyService, IService):
         """Build the agency chart for dependency discovery."""
         
         instructions = f"""Analyze the input description and context of the node to identify required dependencies.
-        Use the RetrieveContext tool to find relevant outputs from other nodes that can satisfy these dependencies.
+        Use the RetrieveContext tool to find relevant outputs from other 'node' type context that can satisfy these dependencies.
         Register the discovered dependencies using the RegisterDependencies tool.
 
         Node Input Description: {node.context_info.input_description}
         Node Action Summary: {node.context_info.action_summary}
         Node Outcome Description: {node.context_info.outcome_description}
+        
+        You will search for 'node' types that can provide the necessary context to complete the action_summary and produce the output_description.
 
         Rules:
-        1. Only register dependencies for required context necessary to complete the action_summary and produce the output_description.
+        1. Only register dependencies for required context necessary to complete the action_summary and produce the output_description which can be found in the input_description and searching for the 'node' type.
         2. Do not register dependencies for outputs of the current node.
         3. Focus solely on identifying and registering dependencies.
         4. Use the RetrieveContext tool to find relevant outputs from other nodes.
         5. Use the RegisterDependencies tool to register each discovered dependency."""
-        
+        from app.factories.agent_factory import AgentFactory
         universe_agent = await AgentFactory.from_name(
             name="UniverseAgent",
             session_id=node.context_info.context.get('session_id'),
@@ -87,8 +91,7 @@ class DependencyService(IDependencyService, IService):
         self,
         node,
         agency_chart,
-        instructions,
-        agent_factory: AgentFactory = Provide[lambda: get_container().agent_factory]
+        instructions
     ):
         """Perform agency completion for dependency discovery."""
         agency = Agency(agency_chart=agency_chart, session_id=node.context_info.context.get('session_id'))
@@ -172,14 +175,13 @@ class DependencyService(IDependencyService, IService):
         self.logger.info(f"Resolved dependency {dependency.context_key} for node {node.id}")
 
     async def on_all_dependencies_resolved(self, node):
-        await self.context_manager.update_property(node, "status", NodeStatus.ready)
+        await self.context_manager.save_context(node, NodeStatus.ready, "status")
         self.logger.info(f"All dependencies resolved for node {node.id}")
 
     @inject
     async def get_dependencies(
         self,
-        node,
-        agent_factory: AgentFactory = Provide[lambda: get_container().agent_factory]
+        node: Node,
     ):
         instructions = f"""
         Search for outputs that will produce context that match the needs within this node's input_description using the RetrieveOutputs tool.
@@ -196,6 +198,7 @@ class DependencyService(IDependencyService, IService):
         """
         
         tools = ['RetrieveOutputs', 'RegisterDependencies']
+        from app.factories.agent_factory import AgentFactory
         universe_agent = await AgentFactory.from_name(name="UniverseAgent", session_id=node.context_info.context.get('session_id'), tools=tools, instructions=instructions, context_info=node.context_info, self_assign=False)
         agency_chart = [universe_agent]
         response = await node.perform_agency_completion(agency_chart, instructions, node.context_info.context.get('session_id'))
@@ -204,12 +207,3 @@ class DependencyService(IDependencyService, IService):
         self.logger.info(f"Summarized Incoming Context: {dependencies}")
         for dependency in dependencies:
             await self.add_dependency(node, dependency)
-
-    async def analyze_input_description(self, description: str) -> List[str]:
-        # Implement logic to extract dependency requirements from the input description
-        # This could involve NLP techniques or pattern matching
-        pass
-
-    async def match_dependencies(self, requirements: List[str]) -> List[Dependency]:
-        # Implement logic to find existing nodes that can satisfy the identified requirements
-        pass

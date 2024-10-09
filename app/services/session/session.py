@@ -18,6 +18,7 @@ class SessionManager(IService):
 
     def __init__(self, name: str, config: SessionSettings, **kwargs):
         super().__init__(name=name, config=config, **kwargs)
+        self.config = config  # Add this line
         from containers import get_container
         
         from app.services.queue.kafka import KafkaService
@@ -27,33 +28,48 @@ class SessionManager(IService):
         self.redis: RedisService = get_container().redis()
         self.kafka: KafkaService = get_container().kafka()
         self.sessions: Dict[str, SessionContext] = {}
-        self.context_manager: UserContextManager = get_container().user_context_manager
-        self.session_expiration = timedelta(hours=1)  # Default expiration time
+        self.context_manager: UserContextManager = get_container().context_manager()
+        self.session_expiration = timedelta(seconds=config['session_timeout'])
 
     async def start(self):
         self.logger.info("Starting SessionManager")
-        await self.redis.start()  # Use start() instead of connect()
-        await self.kafka.start()
-        self.sessions = {}  # Initialize in-memory session storage
-        await self.initialize_sessions()  # Load existing sessions from Redis
-        self.logger.info("SessionManager started")
+        try:
+            self.sessions = {}  # Initialize in-memory session storage
+            await self.initialize_sessions()  # Load existing sessions from Redis
+            # Start the cleanup task
+            asyncio.create_task(self.periodic_cleanup())
+            self.logger.info("SessionManager started successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to start SessionManager: {str(e)}")
+            raise
 
     async def shutdown(self):
         self.logger.info("Shutting down SessionManager")
-        self.sessions.clear()  # Clear in-memory session storage
-        await self.redis.disconnect()
-        await self.kafka.shutdown()
-        self.logger.info("SessionManager shut down")
-    
+        try:
+            # Save all sessions to Redis before shutting down
+            for session_id, session_context in self.sessions.items():
+                await self.redis.client.hset('sessions', session_id, json.dumps(session_context.to_dict()))
+            self.sessions.clear()  # Clear in-memory session storage
+            self.logger.info("SessionManager shut down successfully")
+        except Exception as e:
+            self.logger.error(f"Error during SessionManager shutdown: {str(e)}")
+            raise
+
     async def initialize_sessions(self):
         try:
-            session_ids = await self.redis.client.hgetall("sessions")
-            for session_id in session_ids:
-                session_context = SessionContext.from_dict(self.redis.client.hget(session_id))
+            session_data = await self.redis.client.hgetall("sessions")
+            for session_id, session_json in session_data.items():
+                session_context = SessionContext.from_dict(json.loads(session_json))
                 self.sessions[session_id] = session_context
+            self.logger.info(f"Initialized {len(self.sessions)} sessions from Redis")
         except Exception as e:
-            self.logger.error(f"Failed to initialize sessions: {e}")
+            self.logger.error(f"Failed to initialize sessions: {str(e)}")
             raise
+
+    async def periodic_cleanup(self):
+        while True:
+            await asyncio.sleep(self.config['session_cleanup_interval'])
+            await self.cleanup_expired_sessions()
 
     async def start_session_with_context(self, session: Any, context: Any):
         await session.start(context)
@@ -130,5 +146,12 @@ class SessionManager(IService):
         # Implement Redis update logic here
 
     async def cleanup_expired_sessions(self):
-        await self.context_manager.remove_expired_records()
+        current_time = asyncio.get_event_loop().time()
+        expired_sessions = [
+            session_id for session_id, session in self.sessions.items()
+            if (current_time - session.last_accessed) > self.session_expiration.total_seconds()
+        ]
+        for session_id in expired_sessions:
+            await self.end_session(session_id.split(':')[0], session_id)
+        self.logger.info(f"Cleaned up {len(expired_sessions)} expired sessions")
 

@@ -10,21 +10,21 @@ from app.services.cache.redis import RedisService
 from app.logging_config import configure_logger
 from app.config.settings import settings
 from redisvl.query.filter import FilterExpression, Tag
+from app.services.context.context_manager import ContextManager
+from app.utilities.resource_tracker import ResourceTracker
+from scalene import scalene_profiler
 
-class UserContextManager(BaseContextManager):
-    """
-    UserContextManager is responsible for managing user-specific context data.
-    It provides methods for loading, saving, searching, and manipulating user context data.
-    """
+from profiler import profile_async
 
+class UserContextManager(ContextManager):
     @inject
     def __init__(
         self,
         name: str,
         config: ServiceConfig,
         redis: RedisService,
-        context_manager: BaseContextManager,
-        session_id: str = None
+        context_manager: ContextManager,
+        resource_tracker: 'ResourceTracker' = Provide['resource_tracker']
     ):
         """
         Initialize the UserContextManager.
@@ -33,16 +33,15 @@ class UserContextManager(BaseContextManager):
             name (str): The name of the context manager.
             config (ServiceConfig): Configuration for the user context manager.
             redis (RedisService): Redis service for caching.
-            context_manager (BaseContextManager): Global context manager.
-            session_id (str, optional): Session ID for the current user session.
+            context_manager (ContextManager): Global context manager.
         """
-        super().__init__(name=name, config=config)
-        self.redis = redis
-        self.global_context_manager = context_manager
-        self.session_id = session_id
+        super().__init__(name=name, config=config, redis=redis)
+        self.context_manager = context_manager
         self.in_memory_store = {}
+        self.resource_tracker = resource_tracker
+        self.resource_tracker.track(self.__class__.__name__, self)
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
-        self.db_context_managers = config.db_context_managers
+        self.db_context_managers = config.get('db_context_managers', {})
         self.user_context_types = self._load_user_context_types()
         
         # Debug logging for startup
@@ -50,20 +49,53 @@ class UserContextManager(BaseContextManager):
         self.logger.debug(f"Number of db_context_managers: {len(self.db_context_managers)}")
         self._log_db_context_managers()
 
+    async def start(self):
+        """
+        Start the UserContextManager service.
+        Initialize any necessary resources or connections.
+        """
+        self.logger.info(f"Starting UserContextManager service: {self.name}")
+        # Initialize any user-specific resources
+        self.logger.debug("UserContextManager service started successfully")
+
+    async def shutdown(self):
+        """
+        Shutdown the UserContextManager service.
+        Clean up any resources or connections.
+        """
+        self.logger.info(f"Shutting down UserContextManager service: {self.name}")
+        # Clean up any user-specific resources
+        await super().shutdown()
+        # Clear in-memory store
+        self.in_memory_store.clear()
+        self.logger.debug("UserContextManager service shut down successfully")
+    
+    async def stop(self):
+        """
+        Stop the UserContextManager service.
+        Clean up any resources or connections.
+        """
+        self.logger.info(f"Stopping UserContextManager service: {self.name}")
+        # Clean up any user-specific resources
+        await super().stop()
+        # Clear in-memory store
+        self.in_memory_store.clear()
+        self.logger.debug("UserContextManager service stopped successfully")
+
     def _log_db_context_managers(self):
         """
         Log details of db_context_managers for debugging purposes.
         """
         for context_type, config in self.db_context_managers.items():
             self.logger.debug(f"Processing db_context_manager: {context_type}")
-            self.logger.debug(f"  Name: {config.name}")
-            self.logger.debug(f"  Table Name: {config.table_name}")
-            self.logger.debug(f"  Allowed Operations: {config.allowed_operations}")
-            self.logger.debug(f"  Permissions: {config.permissions}")
-            self.logger.debug(f"  Context Prefix: {config.context_prefix}")
-            self.logger.debug(f"  Fields: {config.fields}")
-            self.logger.debug(f"  Number of Queries: {len(config.queries)}")
-            for query_name, query_details in config.queries.items():
+            self.logger.debug(f"  Name: {config['name']}")
+            self.logger.debug(f"  Table Name: {config['table_name']}")
+            self.logger.debug(f"  Allowed Operations: {config['allowed_operations']}")
+            self.logger.debug(f"  Permissions: {config['permissions']}")
+            self.logger.debug(f"  Context Prefix: {config['context_prefix']}")
+            self.logger.debug(f"  Fields: {config['fields']}")
+            self.logger.debug(f"  Number of Queries: {len(config['queries'])}")
+            for query_name, query_details in config['queries'].items():
                 self.logger.debug(f"    Query: {query_name}")
                 self.logger.debug(f"      Function: {query_details.get('function')}")
                 self.logger.debug(f"      Params: {query_details.get('params')}")
@@ -80,21 +112,21 @@ class UserContextManager(BaseContextManager):
         """
         context_types = {}
         for context_type, config in self.db_context_managers.items():
-            if context_type != 'node_context':
-                context_types[context_type] = {
-                    'get': next((q for q in config.queries if q.startswith('get_')), None),
-                    'upsert': next((q for q in config.queries if q.startswith('upsert_')), None),
-                    'delete': next((q for q in config.queries if q.startswith('delete_')), None)
-                }
-                self.logger.debug(f"Loaded context type: {context_type}")
-                self.logger.debug(f"  Get query: {context_types[context_type]['get']}")
-                self.logger.debug(f"  Upsert query: {context_types[context_type]['upsert']}")
-                self.logger.debug(f"  Delete query: {context_types[context_type]['delete']}")
+            queries = config.get('queries', {})
+            context_types[context_type] = {
+                'get': next((q for q in queries if q.startswith('get_')), None),
+                'upsert': next((q for q in queries if q.startswith('upsert_')), None),
+                'delete': next((q for q in queries if q.startswith('delete_')), None)
+            }
+            self.logger.debug(f"Loaded context type: {context_type}")
+            self.logger.debug(f"  Get query: {context_types[context_type]['get']}")
+            self.logger.debug(f"  Upsert query: {context_types[context_type]['upsert']}")
+            self.logger.debug(f"  Delete query: {context_types[context_type]['delete']}")
         return context_types
 
     # User Context Loading and Saving
     # -------------------------------
-
+    @profile_async
     async def load_user_context(self, user_id: str) -> Dict[str, Any]:
         """
         Load the context data for a specific user.
@@ -113,7 +145,7 @@ class UserContextManager(BaseContextManager):
             if get_query:
                 try:
                     self.logger.debug(f"Fetching {context_type} data for user {user_id}")
-                    context_data = await self.global_context_manager.fetch_data(
+                    context_data = await self.context_manager.fetch_data(
                         get_query, {'p_user_id': user_id}, context_type
                     )
                     user_context[context_type] = context_data
@@ -130,7 +162,7 @@ class UserContextManager(BaseContextManager):
         self.logger.debug(f"Loaded user context for user {user_id}: {json.dumps(user_context, default=str)}")
 
         return user_context
-
+    @profile_async
     async def save_user_context(self, user_id: str, context_data: Dict[str, Any]) -> None:
         """
         Save context data for a specific user.
@@ -147,7 +179,7 @@ class UserContextManager(BaseContextManager):
                 if upsert_query:
                     try:
                         self.logger.debug(f"Upserting {context_type} data for user {user_id}")
-                        await self.global_context_manager.execute_query(
+                        await self.context_manager.execute_query(
                             upsert_query, {'p_user_id': user_id, **data}, context_type
                         )
                         self.logger.debug(f"Indexing {context_type} data for user {user_id}")
@@ -166,6 +198,7 @@ class UserContextManager(BaseContextManager):
     # Context Data Indexing and Searching
     # -----------------------------------
 
+    @profile_async
     async def _index_context_data(self, user_id: str, context_type: str, context_data: List[Dict[str, Any]]) -> None:
         """
         Index context data for efficient searching.
@@ -184,6 +217,7 @@ class UserContextManager(BaseContextManager):
             }
             await self.redis.save_context(index_key, item_data)
 
+    @profile_async
     async def search_user_context(self, user_id: str, query: str, top_k: int = 10) -> Dict[str, List[Dict[str, Any]]]:
         """
         Search the user's context data.
@@ -388,6 +422,7 @@ class UserContextManager(BaseContextManager):
     # User Data Management
     # --------------------
 
+    @profile_async
     async def get_user_data(self, user_id: str, data_type: str) -> List[Dict[str, Any]]:
         """
         Retrieve specific user data.
@@ -401,7 +436,7 @@ class UserContextManager(BaseContextManager):
         """
         get_query = self.user_context_types.get(data_type, {}).get('get')
         if get_query:
-            return await self.global_context_manager.fetch_data(get_query, {'user_id': user_id}, data_type)
+            return await self.context_manager.fetch_data(get_query, {'user_id': user_id}, data_type)
         else:
             self.logger.warning(f"No get query found for data type: {data_type}")
             return []
@@ -417,7 +452,7 @@ class UserContextManager(BaseContextManager):
         """
         upsert_query = self.user_context_types.get(data_type, {}).get('upsert')
         if upsert_query:
-            await self.global_context_manager.execute_query(upsert_query, {'user_id': user_id, **data}, data_type)
+            await self.context_manager.execute_query(upsert_query, {'user_id': user_id, **data}, data_type)
             await self._index_context_data(user_id, data_type, [data])
         else:
             self.logger.warning(f"No upsert query found for data type: {data_type}")
@@ -433,7 +468,7 @@ class UserContextManager(BaseContextManager):
         """
         delete_query = self.user_context_types.get(data_type, {}).get('delete')
         if delete_query:
-            await self.global_context_manager.execute_query(delete_query, {'user_id': user_id, 'id': id}, data_type)
+            await self.context_manager.execute_query(delete_query, {'user_id': user_id, 'id': id}, data_type)
             index_key = f"user_context:{user_id}:{data_type}:{id}"
             await self.redis.client.delete(index_key)
         else:
@@ -544,37 +579,3 @@ class UserContextManager(BaseContextManager):
             
         self.logger.debug(f"Getting user context for user {user_id}, session {session_id}")
         return await self.get_context(user_id, session_id)
-
-    async def start(self):
-        """
-        Start the UserContextManager service.
-        Initialize any necessary resources or connections.
-        """
-        self.logger.info(f"Starting UserContextManager service: {self.name}")
-        # Initialize any user-specific resources
-        await self.global_context_manager.start()
-        self.logger.debug("UserContextManager service started successfully")
-
-    async def shutdown(self):
-        """
-        Shutdown the UserContextManager service.
-        Clean up any resources or connections.
-        """
-        self.logger.info(f"Shutting down UserContextManager service: {self.name}")
-        # Clean up any user-specific resources
-        await self.global_context_manager.stop()
-        # Clear in-memory store
-        self.in_memory_store.clear()
-        self.logger.debug("UserContextManager service shut down successfully")
-
-    async def stop(self):
-        """
-        Stop the UserContextManager service.
-        Clean up any resources or connections.
-        """
-        self.logger.info(f"Stopping UserContextManager service: {self.name}")
-        # Clean up any user-specific resources
-        await self.global_context_manager.stop()
-        # Clear in-memory store
-        self.in_memory_store.clear()
-        self.logger.debug("UserContextManager service stopped successfully")

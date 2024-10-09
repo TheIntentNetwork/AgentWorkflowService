@@ -13,7 +13,7 @@ class LifecycleManager(IService):
     name = "lifecycle_manager"
     _instance = None
 
-    def __init__(self, name: str, service_registry: any, **kwargs):
+    def __init__(self, name: str, service_registry: Any, **kwargs):
         self.instance_id = str(uuid.uuid4())
         self.name = name
         self.service_registry = service_registry

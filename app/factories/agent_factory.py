@@ -1,37 +1,34 @@
 import importlib
 import traceback
-
 from typing import Any, Dict
+from dependency_injector.wiring import inject, Provide
 
 class AgentFactory:
 
     @staticmethod
-    async def from_name(**agent_data: Dict[str, Any]) -> Any:
+    @inject
+    async def from_name(context_manager=Provide['context_manager'], **agent_data: Dict[str, Any]) -> Any:
         from app.models.agents.Agent import Agent
         from app.logging_config import configure_logger
+        logger = configure_logger('AgentFactory')
+
         if agent_data.get('name', None):
-            logger = configure_logger('AgentFactory')
             agents_module = 'app.agents'
             module = importlib.import_module(agents_module)
             agent_class = getattr(module, agent_data['name'], None)
             if agent_class and issubclass(agent_class, Agent):
-                if hasattr(agent_class, 'create'):
-                    try:
+                try:
+                    if hasattr(agent_class, 'create'):
                         instantiated_agent = await agent_class.create(**agent_data)
-                        logger.info(f"Instantiated Agent class: {agent_class}")
-                        logger.debug(f"with data: {agent_data}")
-                        return instantiated_agent  # Ensure the instantiated agent is returned
-                    except Exception as e:
-                        logger.error(f"Error creating agent {agent_data['name']}: {e} with create method with traceback: {traceback.format_exc()}")  # Log the error and traceback
-                else:
-                    try:
-                        instantiated_agent = agent_class(**agent_data)  # Fallback to default constructor if no create method                        
-                        logger.info(f"Instantiated Agent class: {agent_class}")
-                        logger.debug(f"with data: {agent_data}")
-                        return instantiated_agent  # Ensure the instantiated agent is returned
-                    except Exception as e:
-                        logger.error(f"Error creating agent {agent_data['name']}: {e}")
-                        
+                    else:
+                        instantiated_agent = agent_class(**agent_data)
+                    logger.info(f"Instantiated Agent class: {agent_class}")
+                    logger.debug(f"with data: {agent_data}")
+                    return instantiated_agent
+                except Exception as e:
+                    logger.error(f"Error creating agent {agent_data['name']}: {e}")
+                    logger.error(traceback.format_exc())
+        
         return await Agent.create(**agent_data)
     
     @staticmethod

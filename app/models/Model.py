@@ -1,22 +1,40 @@
 import traceback
-from pydantic import Field
-from app.models.ContextInfo import ContextInfo
+import uuid
+from pydantic import Field, validator
 from app.models.Node import Node
-from typing import Coroutine, List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.logging_config import configure_logger
 import json
 
 from app.models.agency import Agency
-from app.services.context.node_context_manager import NodeContextManager
 from app.services.queue.kafka import KafkaService
 
 class Model(Node):
     type: str = Field(default="model")
-    collection: List[Dict[str, Any]] = Field(default_factory=list)
+    dependencies: Optional[List[Any]] = Field(default_factory=list)
+    process_inputs_as_items: bool = Field(default=False)
     
     def __init__(self, **data):
+        # Ensure collection and dependencies are lists
+        data['collection'] = data.get('collection', [])
+        data['dependencies'] = data.get('dependencies', [])
+        data['context_info'] = data.get('context_info', {})
         super().__init__(**data)
         self.collection = data.get('collection', [])
+
+    @validator('collection', 'dependencies', pre=True)
+    def ensure_list(cls, v):
+        if v == '':
+            return []
+        elif isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return [v]
+        elif isinstance(v, list):
+            return v
+        else:
+            return [v]
 
     class Config:
         arbitrary_types_allowed = True
@@ -39,13 +57,13 @@ class Model(Node):
             context (Any): The context in which the task is to be executed.
         """
         from app.factories.agent_factory import AgentFactory
-        from app.services.discovery.service_registry import ServiceRegistry
+        from containers import get_container
         from app.services.context.context_manager import ContextManager
         from app.logging_config import configure_logger
         logger = configure_logger('Model')
         logger.debug(f"Model context: {self.context_info}")
         
-        context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
+        context_manager: ContextManager = get_container().context_manager()
         
         # Set task context
         await context_manager.set_session_context(self.session_id, 'model_context', self.context_info)
@@ -97,15 +115,15 @@ class Model(Node):
             Your process is as follows:
             1.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that represent the nodes within the 'node_templates' of this model context.
             
-                    Your Guidelines:
-                    - You must create all nodes within the 'node_templates' of the model context but do not create the parent model node.
-                    - If you forget to call the CreateNodes tool, you have failed your task.
-                    - Only assign tools that are known. Do not make up tool names.
-                    - Only introduce changes in the node context if there is relevent feedback for the context of this task.
-                    - The node that is responsible for generating the output necessary to fulfill the current context output requirements, should be the only node that is created with this specific output. Outputs should fulfill the input requirements of the next node in the model 'node_templates'.
-                    
-                    Processing and Feedback Rule:
-                    - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.
+            Your Guidelines:
+            - You must create a new node that meets the goals of the model context to complete your task using the CreateNodes tool. Nodes should be created with the name of the model context that it is associated with.
+            - If you forget to call the CreateNodes tool, you have failed your task.
+            - Only assign tools that are known. Do not make up tool names.
+            - Only introduce changes in the node context if there is relevent feedback for the context of this task.
+            - The model node that is responsible for generating the output necessary to fulfill the current context output requirements, should be the only node that is created with this specific output.
+            
+            Processing and Feedback Rule:
+            - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.
             
             """,
             "session_id": self.session_id,
@@ -137,7 +155,7 @@ class Model(Node):
                 logger.error(f"Error executing node: {e} {traceback.format_exc()}")
                 response = {}
             logger.info(f"Node completed: {self.description}")
-            kafka: KafkaService = ServiceRegistry.instance().get('kafka')
+            kafka: KafkaService = get_container().kafka()
             await kafka.send_message('node_completed',
                 {
                     "sessionId": self.session_id,
@@ -149,7 +167,9 @@ class Model(Node):
         # Execute child nodes
         initialized_nodes = []
         for node_data in self.collection:
-            node: Node = await Node.create(**node_data, session_id=self.session_id)
+            node_data['id'] = uuid.uuid4()
+            node_data['parent_id'] = self.id
+            node: Node = await Node.create(**node_data)
             await node.initialize()
             initialized_nodes.append(node)
         

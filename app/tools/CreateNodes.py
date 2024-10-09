@@ -7,19 +7,20 @@ import traceback
 import uuid
 import app
 from pydantic import BaseModel, Extra, Field
-from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union
 from app.services.cache.redis import RedisService
 from app.tools.base_tool import BaseTool
 
 from app.services.queue.kafka import KafkaService
 from uuid import UUID, uuid4
+from app.models.ContextInfo import ContextInfo
 
-if TYPE_CHECKING:
-    from app.models.ContextInfo import ContextInfo
 
 class NodePrototype(BaseModel, extra='allow'):
-    name: str
+    name: str = Field(..., description="The name of the node. e.g. 'CreateCustomerReport'")
     description: str
+    parent_id: Optional[str]
+    order_sequence: Optional[int]
     type: Literal['model', 'step']
     collection: List[Dict[str, 'NodePrototype']] = []
     context_info: 'ContextInfo'
@@ -31,6 +32,7 @@ class CreateNodes(BaseTool):
     2. Identify the intent behind the goal.
     3. Break down the goal into actionable steps.
     4. Create a node object for each of the actionable steps needed.
+    5. Be sure to include any parent_id or order_sequence fields needed to maintain the order of the steps.
     
     """
     
@@ -43,17 +45,33 @@ class CreateNodes(BaseTool):
     
     async def run(self) -> str:
         self._logger.info("Creating nodes")
-        from app.services.discovery import ServiceRegistry
-        redis_service: RedisService = ServiceRegistry.instance().get('redis')
-        kafka_service: KafkaService = ServiceRegistry.instance().get('kafka')
+        from containers import get_container
+        container = get_container()
+        redis_service: RedisService = container.redis()
+        kafka_service: KafkaService = container.kafka()
 
         for node in self.nodes:
+            if node.name.startswith("node:") or node.name.startswith("task:"):
+                raise ValueError(f"Node name cannot start with 'node:' or 'task:' should be the name of the model or node that it was modeled after.")
+            
             node.id = str(uuid4())
             node.status = "pending"
             node.session_id = self.caller_agent.session_id
+            
+            # Initialize context_info if it doesn't exist
+            if node.context_info is None:
+                node.context_info = ContextInfo(context={})
+            
+            # Ensure context is a dictionary
+            if not isinstance(node.context_info.context, dict):
+                node.context_info.context = {}
+            
+            # Add session_id to the context
             node.context_info.context['session_id'] = self.caller_agent.session_id
-            if self.caller_agent.context_info.context.get('user_context', None):
-                node.context_info.context['user_context'] = self.caller_agent.context_info.context['user_context']
+
+            # Normalize and copy context
+            normalized_context = self.get_normalized_context()
+            node.context_info.context.update(normalized_context)
         
         payload = {
             "session_id": self.caller_agent.session_id,
@@ -70,3 +88,11 @@ class CreateNodes(BaseTool):
             })
 
         return payload
+
+    def get_normalized_context(self) -> Dict[str, Any]:
+        if isinstance(self.caller_agent.context_info, BaseModel):
+            return self.caller_agent.context_info.model_dump()
+        elif isinstance(self.caller_agent.context_info, dict):
+            return self.caller_agent.context_info
+        else:
+            return {}

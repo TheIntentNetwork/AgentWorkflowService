@@ -44,9 +44,9 @@ class StepAgent(Agent):
         """.format(skills_and_knowledge_description=self.skills_and_knowledge_description, instructions=kwargs.get('instructions', 'Define the steps to achieve the goal.'))
     
     async def async_init(self):
-        from app.services.discovery.service_registry import ServiceRegistry
         from app.services.cache import RedisService
-        redis_service: RedisService = ServiceRegistry.instance().get('redis')
+        from containers import get_container
+        redis_service: RedisService = get_container().redis()
         context = await redis_service.client.hgetall(f"workflow:{self.workflowId}:step:{self.stepId}")
         for key, value in context.items():
             self.__setattr__(key, json.loads(value))

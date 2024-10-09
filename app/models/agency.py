@@ -21,6 +21,7 @@ from typing_extensions import override
 
 
 from app.models.agents.Agent import Agent
+from profiler import profile_async
 from .message_output import MessageOutput
 from .message_output import MessageOutputLive
 from .thread import Thread
@@ -155,6 +156,7 @@ class Agency(BaseModel):
         self._init_threads()
         self.logger.info("Threads initialized.")
 
+    @profile_async
     async def get_completion(self, 
                              message: str,
                              message_files: List[str] = None,
@@ -166,29 +168,6 @@ class Agency(BaseModel):
                              session_id: str = None,
                              dependencies: List[str] = None,
                              ) -> str:
-        """
-        Asynchronously retrieves the completion for a given message.
-
-        This method processes the input message and returns the completed response
-        from the specified agent or the default CEO agent.
-
-        Args:
-            message (str): The input message to process.
-            message_files (List[str], optional): List of file IDs to be sent as attachments.
-            recipient_agent (Agent, optional): The specific agent to process the message. If None, defaults to CEO.
-            event_handler (type(AgencyEventHandler), optional): Event handler for processing stream events.
-            additional_instructions (str, optional): Any additional instructions for processing.
-            attachments (List[dict], optional): List of attachments in OpenAI format.
-            tool_choice (dict, optional): Specific tool choice for the agent to use.
-            session_id (str, optional): Unique identifier for the session.
-            dependencies (List[str], optional): List of dependencies for the completion.
-
-        Returns:
-            str: The final completion response.
-
-        Raises:
-            Exception: Any exceptions raised during the completion process.
-        """
         self.logger.debug(f"Getting completion for message: {message} for recipient: {recipient_agent.name if recipient_agent else 'CEO'}")
         
         if recipient_agent and recipient_agent.additional_instructions:
@@ -227,27 +206,6 @@ class Agency(BaseModel):
                                     attachments: List[dict] = None,
                                     tool_choice: dict = None
                                     ) -> AsyncGenerator[Union[str, MessageOutput], None]:
-        """
-        Asynchronously streams the completion for a given message.
-
-        This method processes the input message and yields chunks of the response
-        or MessageOutput objects from the specified agent or the default CEO agent.
-
-        Args:
-            message (str): The input message to process.
-            message_files (List[str], optional): List of file IDs to be sent as attachments.
-            recipient_agent (Agent, optional): The specific agent to process the message. If None, defaults to CEO.
-            event_handler (type(AgencyEventHandler), optional): Event handler for processing stream events.
-            additional_instructions (str, optional): Any additional instructions for processing.
-            attachments (List[dict], optional): List of attachments in OpenAI format.
-            tool_choice (dict, optional): Specific tool choice for the agent to use.
-
-        Yields:
-            Union[str, MessageOutput]: Chunks of the response or MessageOutput objects.
-
-        Raises:
-            Exception: Any exceptions raised during the completion process.
-        """
         try:
             async for chunk in self.main_thread.get_completion_stream(
                 message=message,
@@ -629,7 +587,7 @@ class Agency(BaseModel):
                     print(f"Recipient agent {recipient_agent} not found.")
                     continue
 
-            self.get_completion_stream(message=text, event_handler=TermEventHandler, recipient_agent=recipient_agent)
+            yield self.get_completion_stream(message=text, event_handler=TermEventHandler, recipient_agent=recipient_agent)
 
     def get_customgpt_schema(self, url: str):
         """Returns the OpenAPI schema for the agency from the CEO agent, that you can use to integrate with custom gpts.

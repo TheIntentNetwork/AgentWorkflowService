@@ -1,9 +1,5 @@
-from pydantic import BaseModel
-from typing import Dict, List, Any
-
-class QueryConfig(BaseModel):
-    function: str
-    params: List[str]
+from pydantic import BaseModel, Field
+from typing import Dict, Any, List, Optional
 
 class DBContextManagerConfig(BaseModel):
     name: str
@@ -12,4 +8,17 @@ class DBContextManagerConfig(BaseModel):
     permissions: Dict[str, bool]
     context_prefix: str
     fields: List[str]
-    queries: Dict[str, QueryConfig]
+    queries: Dict[str, Dict[str, Any]]
+
+class ServiceConfig(BaseModel):
+    name: str
+    db_context_managers: Dict[str, DBContextManagerConfig]
+
+    class Config:
+        extra = "allow"
+
+class Settings(BaseModel):
+    service_config: Dict[str, ServiceConfig] = Field(default_factory=dict)
+
+    class Config:
+        extra = "allow"

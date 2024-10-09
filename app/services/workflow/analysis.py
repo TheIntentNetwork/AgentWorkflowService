@@ -69,6 +69,6 @@ class Analysis:
         return {
             'feedback_scores': feedback_scores,
             'summarized_issues': summarized_issues,
-            'feedback_threshold_exceeded': any(score > THRESHOLD for score in feedback_scores),
+            'feedback_threshold_exceeded': Any(score > THRESHOLD for score in feedback_scores),
             'impact': 'positive' if all(score > THRESHOLD for score in feedback_scores) else 'negative'
         }

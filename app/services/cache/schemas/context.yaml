@@ -18,6 +18,10 @@ fields:
   type: tag
   attrs:
     weight: 1.0
+- name: parent_id
+  type: tag
+  attrs:
+    weight: 1.0
 - name: input_description
   type: text
   attrs:

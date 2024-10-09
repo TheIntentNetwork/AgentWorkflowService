@@ -17,7 +17,7 @@ RECTANGLE BaseNode {
 
   +create(**node_data)
   +add_dependency(dependency: Dependency)
-  +on_dependency_update(message: any)
+  +on_dependency_update(message: Any)
   +initialize()
   +PreInitialize()
   +Initializing()

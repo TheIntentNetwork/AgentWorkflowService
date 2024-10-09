@@ -1,364 +1,313 @@
+user_context_manager:
+  db_context_managers:
+    user_context:
+      name: user_context
+      table_name: users
+      allowed_operations:
+        - fetch_all
+        - fetch_one
+        - execute
+      permissions:
+        read: true
+        write: true
+        delete: false
+      context_prefix: "user_context:"
+      fields:
+        - id
+        - username
+        - email
+        - form_state
+        - course_state
+        - last_notified
+        - last_logged_in
+        - pending
+        - preferences
+        - order_count
+        - old_user_id
+      queries:
+        get_by_id:
+          function: get_user_by_id
+          params:
+            - p_id
+        get_all:
+          function: get_all_users
+          params: []
+        update:
+          function: update_user
+          params:
+            - p_id
+            - p_user_data
+        insert:
+          function: insert_user
+          params:
+            - p_user_data
+        delete:
+          function: delete_user
+          params:
+            - p_id
+
+    user_meta:
+      name: user_meta
+      table_name: user_meta
+      allowed_operations:
+        - fetch_all
+        - fetch_one
+        - execute
+        - insert
+      permissions:
+        read: true
+        write: true
+        delete: false
+      context_prefix: "user_meta:"
+      fields:
+        - umeta_id
+        - user_id
+        - meta_key
+        - meta_value
+      queries:
+        get_user_meta:
+          function: get_user_meta
+          params:
+            - p_user_id
+        get_by_id:
+          function: get_user_meta_by_id
+          params:
+            - id
+        get_all:
+          function: get_all_user_meta
+          params: []
+        update:
+          function: update_user_meta
+          params:
+            - p_id
+            - p_meta_key
+            - p_meta_value
+        insert:
+          function: insert_user_meta
+          params:
+            - p_user_id
+            - p_meta_key
+            - p_meta_value
+        delete:
+          function: delete_user_meta
+          params:
+            - p_id
+        upsert_user_meta:
+          function: upsert_user_meta
+          params:
+            - p_id
+            - p_user_id
+            - p_meta_key
+            - p_meta_value
+        delete_user_meta:
+          function: delete_user_meta_by_user_id_and_id
+          params:
+            - p_user_id
+            - p_id
+
+    forms:
+      name: forms
+      table_name: forms
+      allowed_operations:
+        - fetch_all
+        - fetch_one
+        - execute
+        - insert
+      permissions:
+        read: true
+        write: true
+        delete: false
+      context_prefix: "user_data:"
+      fields:
+        - id
+        - user_id
+        - title
+        - status
+        - type
+        - form
+        - created_at
+        - updated_at
+      queries:
+        get_user_forms:
+          function: get_user_forms
+          params:
+            - p_user_id
+        upsert_user_forms:
+          function: upsert_user_forms
+          params:
+            - p_id
+            - p_user_id
+            - p_title
+            - p_form
+            - p_status
+            - p_type
+        delete_user_form:
+          function: delete_user_form
+          params:
+            - p_user_id
+            - p_id
+
+    courses:
+      name: courses
+      table_name: user_courses
+      allowed_operations:
+        - fetch_all
+        - fetch_one
+        - execute
+        - insert
+      permissions:
+        read: true
+        write: true
+        delete: false
+      context_prefix: "courses:"
+      fields:
+        - id
+        - user_id
+        - course_id
+        - status
+        - progress
+        - started_at
+        - completed_at
+      queries:
+        get_user_courses:
+          function: get_user_courses
+          params:
+            - p_user_id
+        upsert_user_courses:
+          function: upsert_user_courses
+          params:
+            - p_id
+            - p_user_id
+            - p_course_id
+            - p_status
+            - p_progress
+            - p_started_at
+            - p_completed_at
+        delete_user_courses:
+          function: delete_user_courses
+          params:
+            - p_user_id
+            - p_id
+
+    purchases:
+      name: purchases
+      table_name: purchases
+      allowed_operations:
+        - fetch_all
+        - fetch_one
+        - execute
+        - insert
+      permissions:
+        read: true
+        write: true
+        delete: false
+      context_prefix: "purchases:"
+      fields:
+        - id
+        - user_id
+        - product_id
+        - amount
+        - status
+        - created_at
+      queries:
+        get_user_purchases:
+          function: get_user_purchases
+          params:
+            - p_user_id
+        upsert_user_purchases:
+          function: upsert_user_purchases
+          params:
+            - p_id
+            - p_user_id
+            - p_product_id
+            - p_amount
+            - p_status
+        delete_user_purchases:
+          function: delete_user_purchases
+          params:
+            - p_user_id
+            - p_id
+    notes:
+      name: notes
+      table_name: notes
+      allowed_operations:
+        - fetch_all
+        - fetch_one
+        - execute
+        - insert
+      permissions:
+        read: true
+      context_prefix: "notes:"
+      fields:
+        - id
+        - user_id
+        - title
+        - content
+        - created_at
+        - updated_at
+      queries:
+        get_user_notes:
+          function: get_user_notes
+          params:
+            - p_user_id
+        upsert_user_notes:
+          function: upsert_user_notes
+          params:
+            - p_id
+            - p_user_id
+            - p_title
+            - p_content
+            - p_created_at
+            - p_updated_at
+        delete_user_notes:
+          function: delete_user_notes
+          params:
+            - p_user_id
+            - p_id
+
+    scheduled_events:
+      name: scheduled_events
+      table_name: scheduled_events
+      allowed_operations: 
+        - fetch_all
+        - fetch_one
+        - execute
+        - insert
+      permissions:
+        read: true
+      context_prefix: "events:"
+      fields: 
+        - id
+        - user_id
+        - title
+        - description
+        - start_time
+        - end_time
+        - created_at
+        - updated_at
+      queries:  
+        get_user_events:
+          function: get_user_events
+          params:
+            - p_user_id
+        upsert_user_events:
+          function: upsert_user_events
+          params:
+            - p_id
+            - p_user_id
+            - p_title
+            - p_description
+            - p_start_time
+            - p_end_time
+            - p_created_at
+            - p_updated_at
+        delete_user_events:
+          function: delete_user_events
+          params:
+            - p_user_id
+            - p_id
+
 db_context_managers:
-  user_context:
-    name: user_context
-    table_name: users
-    allowed_operations:
-      - fetch_all
-      - fetch_one
-      - execute
-    permissions:
-      read: true
-      write: true
-      delete: false
-    context_prefix: "user_context:"
-    fields:
-      - id
-      - username
-      - email
-      - form_state
-      - course_state
-      - last_notified
-      - last_logged_in
-      - pending
-      - preferences
-      - order_count
-      - old_user_id
-    queries:
-      get_by_id:
-        function: get_user_by_id
-        params:
-          - p_id
-      get_all:
-        function: get_all_users
-        params: []
-      update:
-        function: update_user
-        params:
-          - p_id
-          - p_user_data
-      insert:
-        function: insert_user
-        params:
-          - p_user_data
-      delete:
-        function: delete_user
-        params:
-          - p_id
-
-  user_meta:
-    name: user_meta
-    table_name: user_meta
-    allowed_operations:
-      - fetch_all
-      - fetch_one
-      - execute
-      - insert
-    permissions:
-      read: true
-      write: true
-      delete: false
-    context_prefix: "user_meta:"
-    fields:
-      - umeta_id
-      - user_id
-      - meta_key
-      - meta_value
-    queries:
-      get_user_meta:
-        function: get_user_meta
-        params:
-          - p_user_id
-      get_by_id:
-        function: get_user_meta_by_id
-        params:
-          - id
-      get_all:
-        function: get_all_user_meta
-        params: []
-      update:
-        function: update_user_meta
-        params:
-          - p_id
-          - p_meta_key
-          - p_meta_value
-      insert:
-        function: insert_user_meta
-        params:
-          - p_user_id
-          - p_meta_key
-          - p_meta_value
-      delete:
-        function: delete_user_meta
-        params:
-          - p_id
-      upsert_user_meta:
-        function: upsert_user_meta
-        params:
-          - p_id
-          - p_user_id
-          - p_meta_key
-          - p_meta_value
-      delete_user_meta:
-        function: delete_user_meta_by_user_id_and_id
-        params:
-          - p_user_id
-          - p_id
-
-  forms:
-    name: forms
-    table_name: forms
-    allowed_operations:
-      - fetch_all
-      - fetch_one
-      - execute
-      - insert
-    permissions:
-      read: true
-      write: true
-      delete: false
-    context_prefix: "user_data:"
-    fields:
-      - id
-      - user_id
-      - title
-      - status
-      - type
-      - form
-      - created_at
-      - updated_at
-    queries:
-      get_user_forms:
-        function: get_user_forms
-        params:
-          - p_user_id
-      upsert_user_forms:
-        function: upsert_user_forms
-        params:
-          - p_id
-          - p_user_id
-          - p_title
-          - p_form
-          - p_status
-          - p_type
-      delete_user_form:
-        function: delete_user_form
-        params:
-          - p_user_id
-          - p_id
-
-  courses:
-    name: courses
-    table_name: user_courses
-    allowed_operations:
-      - fetch_all
-      - fetch_one
-      - execute
-      - insert
-    permissions:
-      read: true
-      write: true
-      delete: false
-    context_prefix: "courses:"
-    fields:
-      - id
-      - user_id
-      - course_id
-      - status
-      - progress
-      - started_at
-      - completed_at
-    queries:
-      get_user_courses:
-        function: get_user_courses
-        params:
-          - p_user_id
-      upsert_user_courses:
-        function: upsert_user_courses
-        params:
-          - p_id
-          - p_user_id
-          - p_course_id
-          - p_status
-          - p_progress
-          - p_started_at
-          - p_completed_at
-      delete_user_courses:
-        function: delete_user_courses
-        params:
-          - p_user_id
-          - p_id
-
-  purchases:
-    name: purchases
-    table_name: purchases
-    allowed_operations:
-      - fetch_all
-      - fetch_one
-      - execute
-      - insert
-    permissions:
-      read: true
-      write: true
-      delete: false
-    context_prefix: "purchases:"
-    fields:
-      - id
-      - user_id
-      - product_id
-      - amount
-      - status
-      - created_at
-    queries:
-      get_user_purchases:
-        function: get_user_purchases
-        params:
-          - p_user_id
-      upsert_user_purchases:
-        function: upsert_user_purchases
-        params:
-          - p_id
-          - p_user_id
-          - p_product_id
-          - p_amount
-          - p_status
-      delete_user_purchases:
-        function: delete_user_purchases
-        params:
-          - p_user_id
-          - p_id
-
-  subscriptions:
-    name: subscriptions
-    table_name: subscriptions
-    allowed_operations:
-      - fetch_all
-      - fetch_one
-      - execute
-      - insert
-    permissions:
-      read: true
-      write: true
-      delete: false
-    context_prefix: "subscriptions:"
-    fields:
-      - id
-      - user_id
-      - status
-      - metadata
-      - price_id
-      - quantity
-      - cancel_at_period_end
-      - created
-      - current_period_start
-      - current_period_end
-      - ended_at
-      - cancel_at
-    queries:
-      get_user_subscriptions:
-        function: get_user_subscriptions
-        params:
-          - p_user_id
-      upsert_user_subscriptions:
-        function: upsert_user_subscriptions
-        params:
-          - p_id
-          - p_user_id
-          - p_status
-          - p_metadata
-          - p_price_id
-          - p_quantity
-          - p_cancel_at_period_end
-          - p_created
-          - p_current_period_start
-          - p_current_period_end
-          - p_ended_at
-          - p_cancel_at
-      delete_user_subscriptions:
-        function: delete_user_subscriptions
-        params:
-          - p_user_id
-          - p_id
-
-  notes:
-    name: notes
-    table_name: notes
-    allowed_operations:
-      - fetch_all
-      - fetch_one
-      - execute
-      - insert
-    permissions:
-      read: true
-    context_prefix: "notes:"
-    fields:
-      - id
-      - user_id
-      - title
-      - content
-      - created_at
-      - updated_at
-    queries:
-      get_user_notes:
-        function: get_user_notes
-        params:
-          - p_user_id
-      upsert_user_notes:
-        function: upsert_user_notes
-        params:
-          - p_id
-          - p_user_id
-          - p_title
-          - p_content
-          - p_created_at
-          - p_updated_at
-      delete_user_notes:
-        function: delete_user_notes
-        params:
-          - p_user_id
-          - p_id
-
-  events:
-    name: events
-    table_name: events
-    allowed_operations: 
-      - fetch_all
-      - fetch_one
-      - execute
-      - insert
-    permissions:
-      read: true
-    context_prefix: "events:"
-    fields: 
-      - id
-      - user_id
-      - title
-      - description
-      - start_time
-      - end_time
-      - created_at
-      - updated_at
-    queries:  
-      get_user_events:
-        function: get_user_events
-        params:
-          - p_user_id
-      upsert_user_events:
-        function: upsert_user_events
-        params:
-          - p_id
-          - p_user_id
-          - p_title
-          - p_description
-          - p_start_time
-          - p_end_time
-          - p_created_at
-          - p_updated_at
-      delete_user_events:
-        function: delete_user_events
-        params:
-          - p_user_id
-          - p_id
-
   videos:
     name: videos
     table_name: videos
@@ -369,6 +318,8 @@ db_context_managers:
       - insert
     permissions:
       read: true
+      write: true
+      delete: false
     context_prefix: "videos:"
     fields:
       - id
@@ -396,7 +347,7 @@ db_context_managers:
         params:
           - p_user_id
           - p_id
-          
+
   node_context:
     name: node_context
     table_name: node_templates

@@ -2,7 +2,6 @@ from enum import Enum
 from typing import List, Optional, Union
 from pydantic import BaseModel, Field
 from app.services.supabase.supabase import Supabase, Client
-from app.services.discovery.service_registry import ServiceRegistry
 
 from app.tools.base_tool import BaseTool
 from app.logging_config import configure_logger

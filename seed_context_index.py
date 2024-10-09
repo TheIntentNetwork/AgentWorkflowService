@@ -8,12 +8,10 @@ import os
 import re
 import string
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
-from uuid import uuid4
-from git import TYPE_CHECKING
+
 import numpy as np
 from pydantic import BaseModel, Field, SkipValidation
 import redis
-from huggingface_hub import hf_hub_download, snapshot_download
 from redis.commands.search.field import VectorField, TagField, TextField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
@@ -25,8 +23,8 @@ from redisvl.utils.vectorize import (
 from types import FunctionType
 from logging import Logger
 
-from app.services.discovery import service_registry
-from app.services.discovery.service_registry import ServiceRegistry
+from app.config import settings
+from app.models.ContextInfo import ContextInfo
 
 class CustomJSONEncoder(json.JSONEncoder):
     def __init__(self, *args, **kwargs):
@@ -79,14 +77,17 @@ def debug_print(*args, **kwargs):
 from app.services.cache.redis import RedisService
 from app.services.queue.kafka import KafkaService
 
-redis_url = os.getenv("REDIS_URL")
-service_registry = ServiceRegistry.instance()
-service_registry.register("redis", RedisService, **{"redis_url": redis_url})
+redis_url = settings.REDIS_URL
+redis_service = RedisService(name="redis", config={"redis_url": redis_url})
+
 bootstrap_servers = os.getenv("BOOTSTRAP_SERVERS").split(",")
 topics = os.getenv("TOPICS").split(",")
 consumer_group = os.getenv("CONSUMER_GROUP")
 redis_url = os.getenv("REDIS_URL")
-service_registry.register("kafka", KafkaService, **{"bootstrap_servers": bootstrap_servers, "topics": topics, "consumer_group": consumer_group})
+from containers import get_container
+
+#container = get_container()
+#kafka_service = container.kafka()
 
 class Indexes(Enum):
     Context = "context"
@@ -186,7 +187,7 @@ except:
 # except:
 #    print("Workflow index already exists")
 
-model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2', force_download=True)
+model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
 
 def preprocess_text(text: str) -> str:
     if not text:
@@ -348,8 +349,8 @@ async def create_index(index_data: List[any], index_name: str):
 async def query_vector_database_for_prompts():
     from app.services.cache.redis import RedisService
     redis_url = os.getenv("REDIS_URL")
-    ServiceRegistry.instance().register(name="redis", service=RedisService, **{"redis_url": redis_url})
-    redis_service: RedisService = ServiceRegistry.instance().get(name="redis")
+    container = get_container()
+    redis_service: RedisService = container.redis()
     
     embeddings = redis_service.generate_embeddings({"description": "This is a test."}, ["description"])
     # Print the length of the embeddings in each field

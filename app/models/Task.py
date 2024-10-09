@@ -4,16 +4,11 @@ import traceback
 from colorama import init, Fore, Back, Style
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Literal, Optional
-from typing import TYPE_CHECKING
-from app.models.agency import Agency
-from app.services.queue.kafka import KafkaService
-
-if TYPE_CHECKING:
-    from app.models.ContextInfo import ContextInfo
+from app.models.ContextInfo import ContextInfo    
 
 init(autoreset=True)
 
-class Task(BaseModel):
+class Task(BaseModel, extra='allow'):
     key: str = Field(..., description="The key of the task.");
     id: Optional[str] = Field(..., description="The ID of the task.");
     node_template_name: Optional[str] = Field(None, description="The name of the task.");
@@ -72,19 +67,15 @@ class Task(BaseModel):
         # Create the Task instance
         task = cls(**task_data)
 
-        # Initialize the task
-        await task.initialize()
-
         logger.info(f"Task created with ID: {task.id}")
         return task
 
     @classmethod
     async def handle(cls, key, action, object_data, context):
         from app.services.context.context_manager import ContextManager
-        from app.services.discovery.service_registry import ServiceRegistry
+        from containers import get_container
         
-        service_registry = ServiceRegistry.instance()
-        context_manager: ContextManager = service_registry.get('context_manager')
+        context_manager: ContextManager = get_container().context_manager()
         
         if action == 'initialize':
             task = await cls.create(**object_data)
@@ -99,9 +90,6 @@ class Task(BaseModel):
     async def process_action(self, action):
         if action == 'initialize':
             await self.initialize()
-        elif action == 'execute':
-            await self.execute()
-        # Add other action handlers as needed
 
     async def initialize(self) -> None:
         """
@@ -125,50 +113,52 @@ class Task(BaseModel):
         return target
     
     async def execute(self) -> None:
-        from app.services.discovery.service_registry import ServiceRegistry
+        from containers import get_container
         from app.services.context.context_manager import ContextManager
         from app.logging_config import configure_logger
         
         logger = configure_logger('Task')
         logger.debug(f"Task context before update: {self.context_info}")
         
-        context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
+        context_manager: ContextManager = get_container().context_manager()
         
         # Update and merge context
-        updated_context = await context_manager.update_context(self.session_id, self.context_info.context)
+        updated_context = await context_manager.update_context(f"session:{self.session_id}", self.context_info.context)
         
         from app.services.context.node_context_manager import NodeContextManager
         # Merge with node context based on node name
         
-        node_context_manager: NodeContextManager = ServiceRegistry.instance().get('node_context')
+        node_context_manager: NodeContextManager = get_container().node_context_manager()
         node_context = await node_context_manager.load_node_context(self, 'parent')
-        self.context_info.context = self._deep_merge(updated_context, node_context.context_info.context)
+        
+        # Check if updated_context is not None before merging
+        if updated_context is not None:
+            self.context_info.context = self._deep_merge(updated_context, node_context.context_info.context)
+        else:
+            logger.warning("Updated context is None. Using existing context.")
+            self.context_info.context = self._deep_merge(self.context_info.context, node_context.context_info.context)
         
         logger.debug(f"Task context after update: {self.context_info}")
         
         from app.factories.agent_factory import AgentFactory
         from app.models.agency import Agency
         
+        
+        
         # Prepare agent_data
         agent_data = {
             "name": "UniverseAgent",
             "instructions": f"""
-            
-            Task Description: {self.description}
-            Input Description: {self.context_info.input_description}
-            Action Summary: {self.context_info.action_summary}
-            Outcome Description: {self.context_info.outcome_description}
-            Output: {self.context_info.output}
-                        
             Your process is as follows:
             1.) Call CreateNodes: Use the CreateNodes tool to create a new node that will meet the goals of our workflow/task/step. If a model has a collection, you will only create the parent model node as this model node will be processed individually and the child nodes will be created in the next step. You will not create the child nodes in this step, but they should be present in the model collection.
             
             Your Guidelines:
-            - You must create a new node that meets the goals of the model context to complete your task using the CreateNodes tool.
+            - You must create a new node that meets the goals of the model context to complete your task using the CreateNodes tool. Nodes should be created with the name of the model context that it is associated with.
             - If you forget to call the CreateNodes tool, you have failed your task.
             - Only assign tools that are known. Do not make up tool names.
             - Only introduce changes in the node context if there is relevent feedback for the context of this task.
             - The model node that is responsible for generating the output necessary to fulfill the current context output requirements, should be the only node that is created with this specific output.
+            - Name your node based upon the exact name of the node_template_name
             
             Processing and Feedback Rule:
             - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.
@@ -179,26 +169,33 @@ class Task(BaseModel):
             "tools": ["CreateNodes"],
             "self_assign": False
         }
-        
-        node_templates = self.context_info.context['node_templates']
-        if node_templates:
-            agent_data["instructions"] += f"\nModel Templates: {node_templates}"
-        
-        agent = await AgentFactory.from_name(**agent_data)
+        from app.models.agents.Agent import Agent
+        agent: Agent = await AgentFactory.from_name(**agent_data)
         
         if agent:
             agency_chart = [agent]
             message = f"""
-            Create 1 of more nodes based upon the complexity of the task and the provided model templates.
+            Create 1 of more nodes based upon the complexity of the task and the provided model templates. You should only create the parent model node as this model node will be processed individually and the child nodes will be created in the next step. You will not create the child nodes in this step, but they should be present in the model collection.
             """
             agency = Agency(agency_chart=agency_chart, shared_instructions="", session_id=self.session_id)
+            
             try:
                 response = await agency.get_completion(message, session_id=self.session_id)
+                
+                for agent_list in agency_chart:
+                    if isinstance(agent_list, list):
+                        for agent in agent_list:
+                            await agent.cleanup()
+                    else:
+                        await agent_list.cleanup()
+                        
             except Exception as e:
-                logger.error(f"Error executing task: {e} {traceback.format_exc()}")
+                logger.error(f"Error executing task: {e}", exc_info=True)
                 response = {}
+            
             logger.info(f"Task completed: {self.description}")
-            kafka: KafkaService = ServiceRegistry.instance().get('kafka')
+            from app.services.queue.kafka import KafkaService
+            kafka: KafkaService = get_container().kafka()
             await kafka.send_message('task_completed',
                 {
                     "sessionId": self.session_id, 

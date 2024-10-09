@@ -1,13 +1,11 @@
 import threading
 from typing import Dict, Any, List, Optional
 from dependency_injector.wiring import inject, Provide
-from containers import Container
-
 from app.db.database import Database
 from app.interfaces.service import IService
 from app.config.service_config import ServiceConfig
 from app.logging_config import configure_logger
-from app.config.settings import settings
+from app.config.settings import DatabaseSettings, settings
 
 class DBContextManager(IService):
 	"""
@@ -19,8 +17,8 @@ class DBContextManager(IService):
 	def __init__(
 		self,
 		name: str,
-		config: ServiceConfig = Provide[Container.config.db_context_manager],
-		database: Database = Provide[Container.db]
+		config: DatabaseSettings,
+		database: Database
 	):
 		"""
 		Initialize the DBContextManager.
@@ -30,14 +28,14 @@ class DBContextManager(IService):
 			config (ServiceConfig): Configuration for the DB context manager.
 			database (Database): Database instance for executing queries.
 		"""
-		super().__init__(name=name, config=config)
-		self.config = config
-		self.table_name = config['table_name']
-		self.allowed_operations = config['allowed_operations']
-		self.permissions = config['permissions']
-		self.context_prefix = config['context_prefix']
-		self.fields = config['fields']
-		self.queries = config['queries']
+		super().__init__(name=name, config = config)
+		self.config: DatabaseSettings = config
+		self.table_name = config.table_name
+		self.allowed_operations = config.allowed_operations
+		self.permissions = config.permissions
+		self.context_prefix = config.context_prefix
+		self.fields = config.fields
+		self.queries = config.queries
 		self.db = database
 		self.service_name = name
 		self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")

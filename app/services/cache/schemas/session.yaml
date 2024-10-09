@@ -1,19 +1,11 @@
 version: '0.1.0'
 
 index:
-  name: models
-  prefix: model
+  name: sessions
+  prefix: session
   storage_type: hash
 
 fields:
-- name: key
-  type: tag
-  attrs:
-    weight: 1.0
-- name: id
-  type: tag
-  attrs:
-    weight: 1.0
 - name: type
   type: tag
   attrs:

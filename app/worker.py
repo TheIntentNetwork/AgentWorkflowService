@@ -5,7 +5,7 @@ from app.config.service_config import ServiceConfig
 from app.services.cache.redis import RedisService
 from app.interfaces.service import IService
 from app.logging_config import configure_logger
-from containers import get_container
+from app.services.cache.redis import RedisService
 
 class Worker(IService):
     name = "worker"
@@ -23,7 +23,7 @@ class Worker(IService):
         super().__init__(name=name, config=config, **kwargs)
         self.name = name
         self.worker_uuid = worker_uuid
-        self.redis: RedisService = get_container().redis()
+        self.redis: RedisService = None  # We'll set this later
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         self.logger.info(f"Worker initialized with instance_id: {self.worker_uuid}")
         self.is_active = False
@@ -59,6 +59,9 @@ class Worker(IService):
         await self.leave()
         await self.task_queue.join()
         self.logger.debug("Worker service shut down successfully")
+
+    def set_redis(self, redis: RedisService):
+        self.redis = redis
 
     @classmethod
     def instance(cls, name: str, worker_uuid: str, config: Optional[Dict[str, Any]] = None):

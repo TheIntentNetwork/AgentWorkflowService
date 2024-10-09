@@ -6,13 +6,9 @@ import traceback
 from pydantic import BaseModel, Field
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
 from app.tools.base_tool import BaseTool
-from asyncio import sleep
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from redisvl.query.filter import Tag
-from enum import Enum, auto
-
-from app.services.discovery.service_registry import ServiceRegistry
 from app.logging_config import configure_logger
     
 
@@ -61,13 +57,16 @@ class RetrieveOutputs(BaseTool):
     RetrieveOutputs('A list of medical or psychological conditions reported by the customer from their intake forms.')
     Result Example: "output:7ec48e2d-c379-4b95-9773-2b2d5b562de1" "session_id" "30a493b0-5ac1-401d-b380-857197ba69cb" "context_key" "output:9d5bb7db-131a-4473-ab74-5012673bccab" "output_name" "conditions" "output_description" "A list of medical or psychological conditions reported by the customer from their intake forms." "output" "\"{\\\"conditions\\\": \\\"{conditions}\\\"}\"" 
     """
+    parent_id: str = Field(..., description="The parent ID of the current node.");
     query: str = Field(..., description="The query of the outputs to retrieve. e.g. 'conditions' or 'A list of medical or psychological conditions reported by the customer from their intake forms.")
     
     async def run(self) -> str:
-        from app.services.cache.redis import RedisService        
-        redis_service: RedisService = ServiceRegistry.instance().get('redis')
+        from app.services.cache.redis import RedisService
+        from containers import get_container
+        redis_service: RedisService = get_container().redis()
         try:
             filter = Tag("session_id") == self.caller_agent.session_id
+            filter &= Tag("parent_id") == self.caller_agent.context_info.key
             results_output_vector = await redis_service.async_search_index(self.query, f"output_vector", "context", 3, ["item"], filter)
             results_outcome_description_vector = await redis_service.async_search_index(self.query, f"outcome_description_vector", "context", 3, ["item"], filter)
             

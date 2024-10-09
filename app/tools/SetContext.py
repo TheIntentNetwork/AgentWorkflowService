@@ -4,8 +4,7 @@ import logging
 import threading
 import traceback
 from pydantic import BaseModel, Field
-from app.models.ContextInfo import ContextInfo
-from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 from app.tools.base_tool import BaseTool
 from asyncio import sleep
 from uuid import UUID, uuid4
@@ -20,8 +19,8 @@ class ContextInfo(BaseModel):
     input_description: str = Field(..., description="The input description of the node.")
     outcome_description: str = Field(..., description="The outcome description of the node.")
     action_summary: str = Field(..., description="The action summary of the node.")
-    output: Dict[str, any] = Field(..., description="The output structure of the node.")
-    context: Dict[str, any] = Field(..., description="The context of the node.", json_schema_extra={"example": {"key": "value"}})
+    output: Dict[str, Any] = Field({}, description="The output structure of the node.")
+    context: Dict[str, Any] = Field({}, description="The context of the node.", json_schema_extra={"example": {"key": "value"}})
     
     def get(self, key: str):
         return self.__dict__.get(key)

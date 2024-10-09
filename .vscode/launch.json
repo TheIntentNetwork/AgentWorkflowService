@@ -1,6 +1,28 @@
 {
     "configurations": [
         {
+            "name": "Python: FastAPI with Scalene Profiling",
+            "type": "python",
+            "request": "launch",
+            "module": "scalene",
+            "args": [
+                "--cpu",
+                "--memory",
+                "--cli",
+                "-m",
+                "uvicorn",
+                "main:app",
+                "--host", "0.0.0.0",
+                "--port", "8000"
+            ],
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            },
+            "jinja": true,
+            "justMyCode": false,
+            "pythonArgs": ["-Xfrozen_modules=off"]
+        },
+        {
             "name": "Python: FastAPI",
             "type": "python",
             "request": "launch",
@@ -12,7 +34,8 @@
                 "--port", "8000"
             ],
             "jinja": true,
-            "justMyCode": true
+            "justMyCode": true,
+            "pythonArgs": ["-Xfrozen_modules=off"]
         },
         {
             "name": "Python: FastAPI with Profiling",
@@ -24,7 +47,8 @@
             "justMyCode": true,
             "env": {
                 "PROFILE": "true"
-            }
+            },
+            "pythonArgs": ["-Xfrozen_modules=off"]
         }
     ]
 }

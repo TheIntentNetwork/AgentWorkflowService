@@ -6,8 +6,8 @@ import numpy as np
 from pydantic import Field
 from typing import Dict, Any
 from app.tools.base_tool import BaseTool
-from app.services.discovery.service_registry import ServiceRegistry
 from app.logging_config import configure_logger
+
 
 class SaveOutput(BaseTool):
     """
@@ -26,53 +26,58 @@ class SaveOutput(BaseTool):
     }
     """
     id: str = Field(..., description="The id of the current node.")
+    parent_id: str = Field(..., description="The parent ID of the current node.")
     output_name: str = Field(..., description="The name of the output e.g. research_report")
     output_description: str = Field(..., description="The description of the output.")
     output: Dict[str, Any] = Field(..., description="The output to save in a json formatted dictionary. Field is required. Utilize the existing output structure of the property if there is no final value.")
     
     async def run(self) -> str:
-        configure_logger('SaveOutput').info(f"Running SaveOutput tool")
-        
-        from app.services.cache.redis import RedisService
-        from app.models.agents import Agent
-        from app.services.context.context_manager import ContextManager
-        
-        redis: RedisService = ServiceRegistry.instance().get('redis')
-        context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
-        agent: Agent = self.caller_agent
+        logger = configure_logger('SaveOutput')
+        logger.info("Running SaveOutput tool")
+        from containers import get_container
+        container = get_container()
+        redis = container.redis()
+        context_manager = container.context_manager()
+        agent = self.caller_agent
+
         try:
             context = {
-                "session_id": agent.session_id,
-                "context_key": "node:" + self.id,
+                "session_id": str(agent.session_id),
+                "context_key": f"node:{self.id}",
+                "parent_id": str(self.parent_id),
                 "output_name": self.output_name,
                 "output_description": self.output_description,
                 "output": json.dumps(self.output)
             }
             
-            configure_logger('RegisterOutput').info(f"Generating embeddings for context: {context}")
+            logger.info(f"Generating embeddings for context: {context}")
             
-            embeddings = redis.generate_embeddings(context, ["session_id", "context_key", "output_name", "output_description", "output"])
+            # Convert the entire context dictionary to a string for embedding
+            embeddings = redis.generate_embeddings(context, ["session_id", "context_key", "parent_id", "output_name", "output_description", "output"])
             
-            await context_manager.update_property(self, f"output.{self.output_name}", self.output)
+            if embeddings is None or "metadata_vector" not in embeddings:
+                logger.error("Failed to generate embeddings")
+                return "Error: Failed to generate embeddings"
             
-        except Exception as e:
-            configure_logger('RegisterOutput').error(f"Error generating embeddings: {e}")
-        
-        try:
             # Ensure all values are not None before saving
-            if None not in context.values():
+            if all(context.values()):
                 await redis.client.hset(f"output:{uuid.uuid4()}", mapping={
-                    "session_id": context.get("session_id"),
-                    "context_key": context.get("context_key"),
-                    "output_name": context.get("output_name"),
-                    "output_description": context.get("output_description"),
-                    "output": json.dumps(context.get("output")),
-                    "metadata_vector": np.array(embeddings.get("metadata_vector"), dtype=np.float32).tobytes()
+                    "session_id": context["session_id"],
+                    "context_key": context["context_key"],
+                    "parent_id": context["parent_id"],
+                    "output_name": context["output_name"],
+                    "output_description": context["output_description"],
+                    "output": context["output"],
+                    "metadata_vector": np.array(embeddings["metadata_vector"], dtype=np.float32).tobytes()
                 })
+                logger.info("Successfully saved output to Redis")
             else:
-                configure_logger('RegisterOutput').info(f"One or more required fields are None. {context}")
-                logging.error("One or more required fields are None.")
-        except Exception as e:
-            configure_logger('RegisterOutput').info(f"RegisterOutput failed with error: {e}")
+                logger.error(f"One or more required fields are None. {context}")
+                return "Error: One or more required fields are None"
+            
+            return "Output saved successfully"
         
-        return context
+        except Exception as e:
+            logger.error(f"SaveOutput failed with error: {e}")
+            logger.error(traceback.format_exc())
+            return f"Error: {str(e)}"

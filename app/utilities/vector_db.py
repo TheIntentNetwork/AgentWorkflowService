@@ -5,7 +5,7 @@ import numpy as np
 class VectorDatabase:
     def __init__(self):
         # Load a pre-trained Sentence Transformer model
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.model = SentenceTransformer('all-MiniLM-L6-v2', force_download=True)
         # Assuming self.db_vectors is a dictionary where keys are goal IDs and values are the vector representations of those goals
         # This is a placeholder. In a real application, this data might come from a database or be dynamically generated.
         self.db_vectors = {}
