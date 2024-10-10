@@ -56,6 +56,7 @@ class Node(BaseModel, extra='allow'):
         from di import get_container
         self._context_manager = get_container().context_manager()
         self._logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self._dependency_service = get_container().dependency_service()
 
     @classmethod
     def model_construct(cls, **data):

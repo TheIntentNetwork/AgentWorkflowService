@@ -7,6 +7,7 @@ import traceback
 import uuid
 from typing import List, Dict
 import gc
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -23,14 +24,12 @@ from app.config.settings import settings
 from di import get_container
 from containers import Container, init_resources, resource_tracker, shutdown_resources
 import uvicorn
-from profiler import profiler as app_profiler, profile_async  # Rename the imported profiler
+from profiler import profiler as app_profiler, profile_async
 
 sys.dont_write_bytecode = True
 load_dotenv()
 
 setup_logging()
-
-
 
 # Global dictionary to store completion events for each session
 completion_events = {}
@@ -53,11 +52,21 @@ MONITORED_OBJECT_TYPES: List[Dict[str, str]] = [
     {"name": "DependencyService", "module": "app.services.dependencies.dependency_service"},
 ]
 
-@profile_async
-async def create_app():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    app_profiler.start_profiling()
+    await init_resources()
+    yield
+    # Shutdown
+    await shutdown_resources()
+    app_profiler.stop_profiling()
+
+app = FastAPI(lifespan=lifespan)
+
+def setup_app():
     container = get_container()
 
-    app = FastAPI()
     app.container = container
     app.add_middleware(
         CORSMiddleware,
@@ -69,18 +78,6 @@ async def create_app():
 
     global logger
     logger = configure_logger(__name__)
-
-    @app.on_event("startup")
-    @profile_async
-    async def startup_event():
-        app_profiler.start_profiling()  # Use the renamed imported profiler
-        await init_resources()
-
-    @app.on_event("shutdown")
-    @profile_async
-    async def shutdown_event():
-        await shutdown_resources()
-        app_profiler.stop_profiling()  # Use the renamed imported profiler
 
     @app.middleware("http")
     async def add_process_time_header(request: Request, call_next):
@@ -276,17 +273,8 @@ async def create_app():
     
     return app
 
-async def run_app():
-    app = await create_app()
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
-    server = uvicorn.Server(config)
-    await server.serve()
-
-async def run_app():
-    app = await create_app()
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
-    server = uvicorn.Server(config)
-    await server.serve()
+# Set up the app
+app = setup_app()
 
 if __name__ == "__main__":
-    asyncio.run(run_app())
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="info")

@@ -47,7 +47,7 @@ class KafkaService(IService):
         self.producer = None
         self.consumer_thread = None
         self.consumer_thread_running = False
-        self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self.logger = configure_logger(f"{self.__class__.__name__}")
         self.resource_tracker = resource_tracker
         self.resource_tracker.track(self.__class__.__name__, self)
         # Initialize other necessary attributes
