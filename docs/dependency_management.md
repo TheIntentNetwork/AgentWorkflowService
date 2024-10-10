@@ -1,73 +1,119 @@
-# Dependency Management in Node and Model
+# Comprehensive Guide to Dependency Management
 
-This document outlines the process utilized by Node and Model classes to manage dependencies, create them, and handle notifications for value updates. It's important to note that Model is a subclass of Node, inheriting most of its dependency management functionality.
+This document provides a detailed overview of the dependency management process in our system, including the classes, methods, agents, steps, and tools involved. It covers both the Node and Model classes, with a focus on how dependencies are discovered, registered, managed, and resolved throughout the workflow.
 
-## 1. Node Class: Core Dependency Management
+## 1. Core Components
 
-The Node class serves as the foundation for dependency management in the system. Both Node and its subclass Model use these core functionalities.
+### 1.1 Node Class
 
-### 1.1 Dependency Discovery and Registration
+The Node class is the foundation of our dependency management system. It provides the basic structure and functionality for handling dependencies.
 
-#### Node Initialization
-- During node initialization, the `initialize()` method is called.
-- This method invokes `_set_context()` and then calls `discover_and_register_dependencies()` from the DependencyService.
+#### Key Methods:
+- `initialize()`: Initializes the node and triggers dependency discovery.
+- `execute()`: Executes the node's logic after dependencies are met.
+- `clear_dependencies()`: Removes all dependencies for the node.
+- `on_dependency_update(data: dict)`: Handles updates to the node's dependencies.
 
-#### Dependency Discovery
-- The DependencyService uses a UniverseAgent to analyze the node's input description and context.
-- It uses the RetrieveContext tool to find relevant outputs from other nodes that can satisfy the required dependencies.
+### 1.2 Model Class
 
-#### Dependency Registration
-- Discovered dependencies are registered using the RegisterDependencies tool.
-- Each dependency is added to the node's dependencies list using the `add_dependency()` method.
-- The node subscribes to updates for each dependency using `subscribe_to_dependency()`.
+The Model class extends the Node class, inheriting its core functionality while adding specific behaviors for managing collections of nodes.
 
-### 1.2 Dependency Updates and Notifications
+#### Key Methods:
+- `execute()`: Overrides Node's execute method to handle child nodes.
+- `clear_dependencies()`: Extends Node's method to clear dependencies recursively for child nodes.
 
-#### Handling Dependency Updates
-- The DependencyService's `on_dependency_update()` method is called when a dependency update is received.
-- This method updates the dependency's value and checks if it's now met.
+### 1.3 DependencyService
 
-#### Resolving Dependencies
-- If all dependencies for a node are met, `on_all_dependencies_resolved()` is called.
-- This method updates the node's status to "ready" using the ContextManager.
+The DependencyService is responsible for managing the overall dependency lifecycle.
 
-### 1.3 Executing Nodes with Resolved Dependencies
+#### Key Methods:
+- `discover_and_register_dependencies(node)`: Analyzes and registers dependencies for a node.
+- `add_dependency(node, dependency)`: Adds a dependency to a node.
+- `remove_dependency(node, dependency)`: Removes a dependency from a node.
+- `on_dependency_update(node, data)`: Handles dependency updates and triggers node execution if all dependencies are met.
 
-#### Checking Dependency Status
-- Before a node executes, it checks if all its dependencies are met using `dependencies_met()`.
+## 2. Dependency Management Process
 
-#### Node Execution
-- If all dependencies are met, the node proceeds with its execution.
-- The node can access the values of its dependencies through the ContextManager.
+### 2.1 Dependency Discovery and Registration
 
-### 1.4 Cleaning Up Dependencies
+1. Node Initialization:
+   - The `initialize()` method is called on a Node or Model instance.
+   - It invokes `_set_context()` to prepare the node's context.
+   - Calls `discover_and_register_dependencies()` from the DependencyService.
 
-#### Removing Dependencies
-- Dependencies can be removed using the `remove_dependency()` method.
-- This also unsubscribes the node from updates for that dependency.
+2. Dependency Discovery:
+   - The DependencyService creates a UniverseAgent to analyze the node's requirements.
+   - The UniverseAgent uses the RetrieveContext tool to find relevant outputs from other nodes.
 
-#### Clearing All Dependencies
-- All dependencies for a node can be cleared using the `clear_dependencies()` method.
-- This is useful when reinitializing a node or cleaning up resources.
+3. Dependency Registration:
+   - The UniverseAgent uses the RegisterDependencies tool to register discovered dependencies.
+   - Each dependency is added to the node's dependencies list using `add_dependency()`.
+   - The node subscribes to updates for each dependency using `subscribe_to_dependency()`.
 
-## 2. Model Class: Extending Node Functionality
+### 2.2 Tools Used in Discovery and Registration
 
-The Model class, being a subclass of Node, inherits all the dependency management functionality described above. However, it does have some specific behaviors related to its role in the system.
+#### RetrieveContext Tool
+- Purpose: Finds relevant context (outputs) from other nodes that can satisfy the current node's input requirements.
+- Usage: 
+  ```python
+  context = await RetrieveContext(type="node", query="relevant_output_description", session_id=session_id).run()
+  ```
+- Output: Returns a list of relevant context items that can be used as dependencies.
 
-### 2.1 Model Initialization
-- When a model is initialized, it calls the `_build_agency_chart()` method.
-- This method creates a UniverseAgent with specific instructions to assess the task and find appropriate agents.
+#### RegisterDependencies Tool
+- Purpose: Registers discovered dependencies for a node.
+- Usage:
+  ```python
+  dependencies = [Dependency(context_key="node:uuid", property_name="output_property")]
+  result = await RegisterDependencies(dependencies=dependencies).run()
+  ```
+- Output: Confirms the registration of dependencies and updates the node's context.
 
-### 2.2 Model-Specific Execution
-- The Model class overrides the `execute()` method to include additional steps:
-  - It executes its own logic (inherited from Node).
-  - After its own execution, it iterates through its collection of child nodes and executes them.
+### 2.3 Dependency Updates and Resolution
 
-### 2.3 Dependency Management for Child Nodes
-- When clearing dependencies, the Model class not only clears its own dependencies but also recursively clears dependencies for all its child nodes.
+1. Handling Updates:
+   - The DependencyService's `on_dependency_update()` method is called when a dependency value changes.
+   - It updates the dependency's value and checks if it's now met.
 
-## 3. Conclusion
+2. Resolving Dependencies:
+   - If all dependencies for a node are met, `on_all_dependencies_resolved()` is called.
+   - This method updates the node's status to "ready" using the ContextManager.
 
-The dependency management system is primarily implemented in the Node class, with the Model class inheriting and slightly extending this functionality. This design allows for a consistent approach to dependency handling across different types of nodes in the system, while still allowing for specialized behavior in Models when necessary.
+### 2.4 Node Execution
 
-By following this process, the system ensures that both Nodes and Models have access to the required context from other nodes, and that they are notified of any relevant updates. This allows for efficient and dynamic execution of complex workflows, whether dealing with individual nodes or more complex model structures.
+1. Checking Dependency Status:
+   - Before execution, the node checks if all dependencies are met using `dependencies_met()`.
+
+2. Execution:
+   - If all dependencies are met, the node proceeds with its execution.
+   - For Model instances, child nodes are also executed after the parent node's execution.
+
+### 2.5 Cleaning Up Dependencies
+
+- Dependencies can be removed individually using `remove_dependency()`.
+- All dependencies for a node can be cleared using `clear_dependencies()`.
+- For Model instances, `clear_dependencies()` recursively clears dependencies for all child nodes.
+
+## 3. Advanced Features
+
+### 3.1 Model-Specific Behaviors
+
+- Models can manage dependencies for collections of nodes.
+- The `execute()` method in Model handles the execution of child nodes.
+- Dependency clearing in Models is recursive, affecting all child nodes.
+
+### 3.2 Dynamic Dependency Management
+
+- The system supports adding and removing dependencies at runtime.
+- Nodes can adapt to changing requirements by updating their dependency list.
+
+## 4. Best Practices
+
+1. Minimize Dependencies: Only register essential dependencies to reduce complexity.
+2. Handle Circular Dependencies: Avoid creating circular dependencies between nodes.
+3. Clean Up: Always clear dependencies when reinitializing nodes or cleaning up resources.
+4. Error Handling: Implement robust error handling for cases where dependencies cannot be resolved.
+
+## 5. Conclusion
+
+The dependency management system in our Node and Model classes provides a flexible and powerful way to handle complex workflows. By leveraging tools like RetrieveContext and RegisterDependencies, along with the DependencyService, we ensure that nodes have access to the required context and are executed in the correct order. This system allows for dynamic, efficient execution of workflows, whether dealing with individual nodes or complex model structures.
