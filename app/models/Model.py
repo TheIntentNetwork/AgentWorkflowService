@@ -113,22 +113,26 @@ class Model(Node):
             Outcome Description: {self.context_info.context.get('outcome_description', '')}
             
             Your process is as follows:
-            1.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that represent the nodes within the 'node_templates' of this model context.
+            1.) Use the RetrieveNodeContext tool to search for relevant context from peer nodes or the parent node.
+            2.) Call CreateNodes: Use the CreateNodes tool to create a new set of nodes that represent the nodes within the 'node_templates' of this model context.
             
             Your Guidelines:
+            - First, use RetrieveNodeContext to gather relevant information from peer or parent nodes.
             - You must create a new node that meets the goals of the model context to complete your task using the CreateNodes tool. Nodes should be created with the name of the model context that it is associated with.
             - If you forget to call the CreateNodes tool, you have failed your task.
             - Only assign tools that are known. Do not make up tool names.
-            - Only introduce changes in the node context if there is relevent feedback for the context of this task.
+            - Only introduce changes in the node context if there is relevant feedback for the context of this task.
             - The model node that is responsible for generating the output necessary to fulfill the current context output requirements, should be the only node that is created with this specific output.
+            - Use the context retrieved from RetrieveNodeContext to inform your decisions when creating nodes.
             
             Processing and Feedback Rule:
             - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.
+            - Consider the context from peer and parent nodes when making decisions about node creation and configuration.
             
             """,
             "session_id": self.session_id,
             "context_info": self.context_info,
-            "tools": ["CreateNodes"],
+            "tools": ["RetrieveNodeContext", "CreateNodes"],
             "self_assign": False
         }
                 
