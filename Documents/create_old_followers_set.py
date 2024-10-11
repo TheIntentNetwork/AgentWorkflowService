@@ -9,10 +9,10 @@ def read_followers(file_path):
     return followers
 
 def main():
-    old_followers = read_followers('Documents\\OldFollowers.txt')
-    print(f"Total number of old followers: {len(old_followers)}")
-    print("Set of old followers:")
-    for follower in sorted(old_followers):
+    new_followers = read_followers('Documents\\NewFollowers.txt')
+    print(f"Total number of new followers: {len(new_followers)}")
+    print("Set of new followers:")
+    for follower in sorted(new_followers):
         print(follower)
 
 if __name__ == "__main__":
