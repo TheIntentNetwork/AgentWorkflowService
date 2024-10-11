@@ -1,19 +1,17 @@
+import re
+
 def read_followers(file_path):
-    with open(file_path, 'r') as file:
-        return set(line.strip() for line in file if line.strip())
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return set(re.sub(r'\s.*', '', line.strip()) for line in file if line.strip())
 
 def write_sorted_followers(file_path, followers):
-    with open(file_path, 'w') as file:
+    with open(file_path, 'w', encoding='utf-8') as file:
         for follower in sorted(followers):
             file.write(f"{follower}\n")
 
 def compare_followers(old_followers, new_followers):
-    old_set = set(old_followers)
-    new_set = set(new_followers)
-    
-    gained_followers = new_set - old_set
-    lost_followers = old_set - new_set
-    
+    gained_followers = new_followers - old_followers
+    lost_followers = old_followers - new_followers
     return gained_followers, lost_followers
 
 def main():
@@ -32,6 +30,10 @@ def main():
     print(f"\nLost followers ({len(lost)}):")
     for follower in sorted(lost):
         print(follower)
+
+    print(f"\nTotal old followers: {len(old_followers)}")
+    print(f"Total new followers: {len(new_followers)}")
+    print(f"Net change: {len(new_followers) - len(old_followers)}")
 
 if __name__ == "__main__":
     main()
