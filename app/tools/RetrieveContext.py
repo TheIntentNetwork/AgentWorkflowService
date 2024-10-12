@@ -55,7 +55,7 @@ class RetrieveContext(BaseTool):
     """
     This class represents the RetrieveContext tool which returns seeded data and historical examples that can be used to create new agents, models, steps. Models are saved copies of successfully tested node structures that can be used to create a new set of steps.
     """
-    type: Literal["form", "step", "model", "node"] = Field(..., description="The type of the context to retrieve.")
+    type: Literal["form", "step", "model", "node", "output"] = Field(..., description="The type of the context to retrieve.")
     query: str = Field(..., description="The query of the context to retrieval.")
     session_id: Optional[str] = Field(None, description="The session ID for the context.")
 
@@ -65,7 +65,6 @@ class RetrieveContext(BaseTool):
         redis_service = container.redis()
         context_manager = container.context_manager()
         logger = configure_logger(self.__class__.__name__)
-        user_id = None
         
         filter_expression = None
         
@@ -90,7 +89,8 @@ class RetrieveContext(BaseTool):
                 "step": "context",
                 "model": "models",
                 "node": "context",
-                "agent": "agents"
+                "agent": "agents",
+                "output": "outputs"
             }.get(self.type)
 
             if not index_name:
@@ -100,7 +100,19 @@ class RetrieveContext(BaseTool):
             # Retrieve context
             results = await redis_service.async_search_index(self.query, "metadata_vector", index_name, 3, ["item"], filter_expression)
             context = sorted(results, key=lambda x: x['vector_distance'])[:3]
-            context = [json.loads(item['item']) for item in context]
+            
+            if self.type == "output":
+                # For outputs, we need to fetch the actual output data
+                output_keys = [json.loads(item['item'])['context_key'] for item in context]
+                output_data = []
+                for key in output_keys:
+                    output = await redis_service.client.hgetall(key)
+                    if output:
+                        output_data.append(output)
+                context = output_data
+            else:
+                context = [json.loads(item['item']) for item in context]
+            
             logger.debug(f"RetrieveContext: Retrieved context: {context}")
         except Exception as e:
             logger.error(f"RetrieveContext: Failed to retrieve context: {e}")

@@ -3,7 +3,7 @@ from asyncio import Queue
 import asyncio
 import json
 import traceback
-from typing import Dict, Any, List, Union, Optional
+from typing import Dict, Any, List, Type, Union, Optional
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -456,6 +456,8 @@ class ContextManager(BaseContextManager):
 
         return merged_context
     
-    async def get_context(self, key: str) -> Dict[str, Any]:
+    async def get_context(self, key: str, type: Type) -> Dict[str, Any]:
         results = await self.redis.client.hgetall(key)
+        if type:
+            return type(**results)
         return results

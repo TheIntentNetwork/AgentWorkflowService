@@ -5,6 +5,7 @@ __pycache__
 .venv
 .aider*
 logs/*
+profiling_results/*
 venv
 appmap.log
 

@@ -266,6 +266,7 @@ def setup_app():
                 })
         return JSONResponse(details)
 
+
     @app.get("/")
     @profile_async
     async def read_root():

@@ -5,7 +5,7 @@ import logging
 from attr import dataclass
 from pydantic import BaseModel, Field, PrivateAttr, ConfigDict, Extra, SkipValidation
 import pydantic
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Set, Type, Union
 import uuid
 from aiostream import stream
 from app.services.cache.redis import RedisService
@@ -16,6 +16,7 @@ from app.services.cache.redis import RedisService
 from app.utilities.context_update import ContextUpdate, context_update_manager
 from profiler import profile_async, profile_sync
 from app.logging_config import configure_logger
+from redisvl.query.filter import Tag, FilterExpression
 
 
 class Node(BaseModel, extra='allow'):
@@ -32,11 +33,13 @@ class Node(BaseModel, extra='allow'):
     parent_id: Optional[str] = Field(None, description="The parent ID of the node.")
     type: Literal['step', 'workflow', 'model', 'lifecycle', 'goal'] = Field(..., description="The type of the node.", init=False, init_var=False)
     description: str = Field(..., description="The description of the node.")
-    context_info: Dict[str, Any] = Field(default_factory=dict, description="The context information.")
+    context_info: ContextInfo = Field(default_factory=ContextInfo, description="The context information for the node.")
     session_id: Optional[str] = Field(None, description="The session ID.", init=False, init_var=False)
     dependencies: List[Dependency] = Field(default=[], description="The dependencies of the node.")
     collection: List['Node'] = Field(default=[], description="The collection of nodes.")
     status: NodeStatus = Field(default=NodeStatus.created, description="The status of the node.")
+    subscribed_properties: Set[str] = Field(default_factory=set, description="Set of properties that other nodes are subscribed to.")
+    dependencies: Dict[str, Any] = Field(default_factory=dict, description="Dictionary of dependencies for this node.")
     
     class Config:
         arbitrary_types_allowed = True
@@ -78,6 +81,7 @@ class Node(BaseModel, extra='allow'):
         Initialize the node's services and logger.
         """
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        asyncio.create_task(self.subscribe_to_mailbox())
 
     def dict(self, *args, **kwargs):
         """
@@ -168,95 +172,25 @@ class Node(BaseModel, extra='allow'):
         """
         await self._set_context()
         await self._context_manager.save_context(f'node:{self.id}', NodeStatus.created, "status")
+        
         if self.parent_id is not None:
-            await self._dependency_service.discover_and_register_dependencies(self)
+            # Replace the old dependency discovery with our new method
+            dependencies_result = await self.register_dependencies_step()
+            self._logger.info(f"Dependencies registration result: {dependencies_result}")
             
         await self._context_manager.save_context(f'node:{self.id}', NodeStatus.initialized, "status")
 
-    async def _set_context(self) -> None:
-        """
-        Set the context for the node using the UniverseAgent.
-        """
-        from app.factories.agent_factory import AgentFactory
-        from app.models.agents.Agent import Agent
-        
-        instructions = """
-        Use the RetrieveContext tool to find examples of models and steps that indicate how we have processed similar tasks in the past.
-        
-        Use the SetContext tool to set the context of the node based on the output of similar nodes.
-        
-        Here is an example of a properly formatted SetContext request:
-        {
-            "input_description": "The user context which contains their intake form and any supplemental information related to the conditions they are experiencing.",
-            "outcome_description": "A comprehensive set of information about the user's conditions, including extracted conditions from the intake form and saved user metadata.",
-            "action_summary": "Gather intake conditions and write the user's metadata, ensuring accurate extraction and preparation of conditions for further processing.",
-            "output": {
-                "conditions": [
-                "{condition1}",
-                "{condition2}"
-                ],
-                "user_metadata": {
-                "user_id": "{user_id}",
-                "conditions": [
-                    "{condition1}",
-                    "{condition2}"
-                ],
-                "intake_date": "{intake_date}"
-                }
-            },
-            "context": {
-                "goals": [
-                "Extract conditions from the intake form.",
-                "Save the user's metadata including the extracted conditions.",
-                "Prepare the conditions list for further processing."
-                ],
-                "user_context": {
-                "user_id": "{user_id}"
-                }
-            }
-        }
-        
-        You must include an output property in the SetContext request that contains the output properties of the node. The output property must be a dictionary with clearly defined keys and values.
-        For each output property, you must include a description of the property, the data type of the property, and an example value for the property.
-        
-        Lastly,
-        For each output property, you should save the outputs using the SaveOutput tool which will save the output to the context of the node and make it available for future nodes to create dependencies on.
-        """
-
-        # Update and merge context
-        updated_context = await self._context_manager.update_context(f"session:{self.session_id}", self.context_info['context'])
-        
-        self.context_info['context'] = updated_context
-        
-        if updated_context.get('node_templates', None):
-            self.collection = updated_context['node_templates']
-        
-        self._logger.debug(f"Task context after update: {self.context_info}")
-        
-        # Create the UniverseAgent
-        universe_agent: Agent = await AgentFactory.from_name(
-            name="UniverseAgent",
-            session_id=self.session_id,
-            tools=["RetrieveContext", "SetContext", "SaveOutput"],
-            context_info=self.context_info,
-            instructions=instructions,
-        )
-        
-        agency_chart = [universe_agent]
-        await self.perform_agency_completion(agency_chart, instructions, self.session_id)
-        self.context_info = ContextInfo(**universe_agent.context_info.context['updated_context'])
-        await universe_agent.cleanup()
-        self.context_info.context = self._deep_merge(self.context_info.context, updated_context)
-        await self._context_manager.save_context(f'node:{self.id}', self.model_dump(), update_index=True)
-        print(f"Updated Context After SetContext {self.context_info}")
-
-    @profile_async
     async def execute(self):
         """
         Execute the node and its child nodes.
         """
         self._logger.info(f"Executing node: {self.id}")
         
+        # Check if all dependencies are met
+        if not self._are_dependencies_met():
+            self._logger.info(f"Node {self.id} has unmet dependencies. Exiting execution.")
+            return
+
         await self.PreExecute()
         await self.Executing()
         
@@ -315,19 +249,18 @@ class Node(BaseModel, extra='allow'):
         """
         await self._dependency_service.clear_dependencies(self)
 
-    async def on_dependency_update(self, data: dict):
+    async def on_dependency_update(self, property_name: str, value: Any):
         """
-        Handle updates to the node's dependencies.
-
-        Args:
-            data (dict): The update data for the dependency.
+        Handle updates from dependencies.
         """
-        from containers import get_container
-        container = get_container()
-        dependency_service = container.dependency_service()
-        await dependency_service.on_dependency_update(self, data)
-        if await dependency_service.dependencies_met(self):
-            await self.execute()
+        self._logger.info(f"Received dependency update for node {self.id}: {property_name} = {value}")
+        
+        self.dependencies[property_name] = value
+        
+        # Check if all dependencies are now met
+        if self._are_dependencies_met():
+            self._logger.info(f"All dependencies for node {self.id} are now met. Triggering execution.")
+            asyncio.create_task(self.execute())
 
     async def update_property(self, path: str, value: Any, handler_type: str = 'string'):
         """
@@ -400,6 +333,11 @@ class Node(BaseModel, extra='allow'):
         from app.factories.agent_factory import AgentFactory
         
         instructions = self._create_universe_agent_instructions()
+        
+        # Include dependency information in the instructions
+        dependency_prompt = self._create_dependency_prompt()
+        if dependency_prompt:
+            instructions = f"\n\n{dependency_prompt}" + instructions
          
         universe_agent = await AgentFactory.from_name(
             name='UniverseAgent',
@@ -536,3 +474,254 @@ class Node(BaseModel, extra='allow'):
             await self.execute()
         elif action == 'initialize':
             await self.initialize()
+
+    async def add_subscriber(self, property_name: str):
+        """
+        Add a property to the set of subscribed properties.
+        """
+        self.subscribed_properties.add(property_name)
+        self._logger.info(f"Added subscriber for property: {property_name}")
+
+    async def remove_subscriber(self, property_name: str):
+        """
+        Remove a property from the set of subscribed properties.
+        """
+        self.subscribed_properties.discard(property_name)
+        self._logger.info(f"Removed subscriber for property: {property_name}")
+
+    async def publish_output(self, property_name: str, value: Any):
+        """
+        Publish an output to the node's output stream, but only if it's subscribed to.
+        """
+        if property_name in self.subscribed_properties:
+            from containers import get_container
+            redis: RedisService = get_container().redis()
+            
+            output_stream = f"{self.context_info.key}:output:{property_name}"
+            await redis.client.xadd(output_stream, {'value': json.dumps(value)})
+            self._logger.info(f"Published output to stream: {output_stream}")
+        else:
+            self._logger.debug(f"Skipped publishing output for non-subscribed property: {property_name}")
+
+    async def add_output(self, output_name: str, output_value: Any):
+        """
+        Add an output to the node's context_info output dictionary.
+        """
+        if self.context_info.output is None:
+            self.context_info.output = {}
+        self.context_info.output[output_name] = output_value
+        self._logger.info(f"Added output: {output_name} -> {output_value}")
+
+    async def get_output(self, output_name: str) -> Any:
+        """
+        Get the value of a specific output from the node's context_info.
+        """
+        if self.context_info.output is None:
+            return None
+        return self.context_info.output.get(output_name)
+
+    async def get_node_layer(self) -> List[Dict[str, Any]]:
+        """
+        Retrieve the parent node and all sibling nodes (nodes with the same parent_id as this node).
+        """
+        from containers import get_container
+        redis = get_container().redis()
+        logger = configure_logger(self.__class__.__name__)
+
+        try:
+            filter_expression = (Tag("parent_id") == self.parent_id) | (Tag("id") == self.parent_id)
+            
+            results = await redis.client.ft("context").search(
+                query=f"@key:context:*",
+                filter_expr=filter_expression,
+                limit=1000  # Adjust this limit as needed
+            )
+
+            node_layer = []
+            for doc in results.docs:
+                if doc.id != f"context:{self.id}":  # Exclude the current node
+                    node_data = {k: v for k, v in doc.__dict__.items() if not k.startswith('__')}
+                    node_layer.append(node_data)
+
+            logger.info(f"Retrieved {len(node_layer)} nodes in the layer for node {self.id}")
+            return node_layer
+        except Exception as e:
+            logger.error(f"Error retrieving node layer: {str(e)}")
+            return []
+
+    async def register_dependencies_step(self):
+        """
+        Execute the RegisterDependencies step after SetContext.
+        This method retrieves the node layer and provides it to the UniverseAgent.
+        """
+        logger = configure_logger(self.__class__.__name__)
+        logger.info(f"Starting RegisterDependencies step for node {self.id}")
+
+        # Get the node layer
+        node_layer = await self.get_node_layer()
+
+        # Prepare the prompt for the UniverseAgent
+        prompt = self._create_register_dependencies_prompt(node_layer)
+
+        # Execute the UniverseAgent with the RegisterDependencies tool
+        from app.models.agency import Agency
+        from app.factories.agent_factory import AgentFactory
+
+        universe_agent = await AgentFactory.from_name(
+            name='UniverseAgent',
+            session_id=self.context_info.context['session_id'],
+            context_info=self.context_info,
+            instructions=prompt,
+            tools=['RegisterDependencies'],
+            self_assign=False
+        )
+
+        agency = Agency(agency_chart=[universe_agent], shared_instructions="", session_id=self.context_info.context['session_id'])
+        result = await agency.get_completion("Register dependencies for the current node.")
+
+        logger.info(f"RegisterDependencies step completed for node {self.id}")
+        return result
+
+    def _create_register_dependencies_prompt(self, node_layer: List[Dict[str, Any]]) -> str:
+        """
+        Create the prompt for the UniverseAgent to register dependencies.
+        """
+        prompt = f"""
+        You are tasked with registering dependencies for the current node (ID: {self.id}).
+        Analyze the outputs of the nodes in the current node layer and determine which outputs
+        this node depends on to complete its task.
+
+        Current node information:
+        - ID: {self.id}
+        - Description: {self.description}
+        - Input Description: {self.context_info.input_description}
+        - Action Summary: {self.context_info.action_summary}
+        - Outcome Description: {self.context_info.outcome_description}
+
+        Node Layer Information:
+        """
+
+        for node in node_layer:
+            prompt += f"""
+            Node ID: {node.get('id')}
+            Outputs:
+            """
+            outputs = node.get('context_info', {}).get('output', {})
+            for output_name, output_value in outputs.items():
+                prompt += f"- {output_name}: {output_value}\n"
+
+        prompt += """
+        Based on the current node's task and the available outputs in the node layer,
+        determine which outputs are necessary dependencies for this node.
+
+        Use the RegisterDependencies tool to register these dependencies. The tool expects
+        a list of dependencies in the following format:
+        [
+            {
+                "context_key": "node:<node_id>",
+                "property_name": "<output_name>"
+            },
+            ...
+        ]
+
+        Ensure that you only register dependencies that are absolutely necessary for this
+        node to complete its task. Avoid over-dependency by carefully considering which
+        outputs are truly required.
+        """
+
+        return prompt
+
+    async def _set_context(self) -> None:
+        """
+        Set the context for the node using the UniverseAgent.
+        """
+        from app.factories.agent_factory import AgentFactory
+        from app.models.agents.Agent import Agent
+        
+        instructions = """
+        Use the RetrieveContext tool to find examples of models and steps that indicate how we have processed similar tasks in the past.
+        
+        Use the SetContext tool to set the context of the node based on the output of similar nodes.
+        
+        Here is an example of a properly formatted SetContext request:
+        {
+            "input_description": "The user context which contains their intake form and any supplemental information related to the conditions they are experiencing.",
+            "outcome_description": "A comprehensive set of information about the user's conditions, including extracted conditions from the intake form and saved user metadata.",
+            "action_summary": "Gather intake conditions and write the user's metadata, ensuring accurate extraction and preparation of conditions for further processing.",
+            "output": {
+                "conditions": [
+                "{condition1}",
+                "{condition2}"
+                ],
+                "user_metadata": {
+                "user_id": "{user_id}",
+                "conditions": [
+                    "{condition1}",
+                    "{condition2}"
+                ],
+                "intake_date": "{intake_date}"
+                }
+            },
+            "context": {
+                "goals": [
+                "Extract conditions from the intake form.",
+                "Save the user's metadata including the extracted conditions.",
+                "Prepare the conditions list for further processing."
+                ],
+                "user_context": {
+                "user_id": "{user_id}"
+                }
+            }
+        }
+        
+        You must include an output property in the SetContext request that contains the output properties of the node. The output property must be a dictionary with clearly defined keys and values.
+        For each output property, you must include a description of the property, the data type of the property, and an example value for the property.
+        
+        Lastly,
+        For each output property, you should save the outputs using the SaveOutput tool which will save the output to the context of the node and make it available for future nodes to create dependencies on.
+        """
+
+        # Update and merge context
+        updated_context = await self._context_manager.update_context(f"session:{self.session_id}", self.context_info.context)
+        
+        self.context_info.context = updated_context
+        
+        if updated_context.get('node_templates', None):
+            self.collection = updated_context['node_templates']
+        
+        self._logger.debug(f"Task context after update: {self.context_info}")
+        
+        # Create the UniverseAgent
+        universe_agent: Agent = await AgentFactory.from_name(
+            name="UniverseAgent",
+            session_id=self.session_id,
+            tools=["RetrieveContext", "SetContext", "RegisterOutput"],
+            context_info=self.context_info,
+            instructions=instructions,
+        )
+        
+        agency_chart = [universe_agent]
+        await self.perform_agency_completion(agency_chart, instructions, self.session_id)
+        self.context_info = ContextInfo(**universe_agent.context_info.context['updated_context'])
+        await universe_agent.cleanup()
+        self.context_info.context = self._deep_merge(self.context_info.context, updated_context)
+        await self._context_manager.save_context(f'node:{self.id}', self.model_dump(), update_index=True)
+        print(f"Updated Context After SetContext {self.context_info}")
+
+    def _are_dependencies_met(self) -> bool:
+        """
+        Check if all dependencies for this node are met.
+        """
+        return all(value is not None for value in self.dependencies.values())
+
+    def _create_dependency_prompt(self) -> str:
+        """
+        Create a prompt string with the dependency information.
+        """
+        if not self.dependencies:
+            return ""
+        
+        prompt = "Dependencies:\n"
+        for key, value in self.dependencies.items():
+            prompt += f"{key}: {value}\n"
+        return prompt

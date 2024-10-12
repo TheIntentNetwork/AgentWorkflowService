@@ -1,8 +1,6 @@
 import json
 import logging
 import traceback
-import uuid
-import numpy as np
 from pydantic import Field
 from typing import Dict, Any
 from app.tools.base_tool import BaseTool
@@ -29,7 +27,7 @@ class RegisterOutput(BaseTool):
     id: str = Field(..., description="The id of the current node.")
     output_name: str = Field(..., description="The name of the output e.g. research_report")
     output_description: str = Field(..., description="The description of the output.")
-    output: Dict[str, Any] = Field(..., description="The output or structure of the output to save in a json formatted dictionary. Field is required. Utilize the existing output structure of the property if there is no final value.")
+    output: Dict[str, Any] = Field(..., description="The output or structure of the output to save in a json formatted dictionary.")
     
     async def run(self) -> str:
         from containers import get_container
@@ -38,32 +36,42 @@ class RegisterOutput(BaseTool):
         
         container = get_container()
         redis = container.redis()
+        context_manager = container.context_manager()
         
         try:
+            node = await context_manager.get_context(f"node:{self.id}")
+            
+            # Add the output to the node's context_info
+            await node.add_output(self.output_name, self.output)
+            
+            # Update the node's context_info in Redis
             context = {
                 "session_id": self.caller_agent.session_id,
-                "context_key": f"output:{self.id}",
+                "context_key": f"node:{self.id}",
                 "output_name": self.output_name,
                 "output_description": self.output_description,
-                "output": json.dumps(self.output)
+                "output": json.dumps(node.context_info.output)
             }
             
             logger.info(f"Generating embeddings for context: {context}")
             
             embeddings = redis.generate_embeddings(context, ["session_id", "context_key", "output_name", "output_description", "output"])
 
-            # Ensure all values are not None before saving
-            if all(context.values()):
-                await redis.client.hset(f"output:{uuid.uuid4()}", mapping={
-                    **context,
-                    "output": json.dumps(context["output"]),
-                    "metadata_vector": np.array(embeddings.get("metadata_vector"), dtype=np.float32).tobytes()
-                })
-            else:
-                logger.error(f"One or more required fields are None: {context}")
+            if embeddings is None or "metadata_vector" not in embeddings:
+                logger.error("Failed to generate embeddings")
+                return "Error: Failed to generate embeddings"
+
+            # Update the node's context in Redis
+            await redis.client.hset(f"node:{self.id}", mapping={
+                **context,
+                "metadata_vector": embeddings["metadata_vector"].tobytes()
+            })
             
+            logger.info(f"Successfully registered output for node: {self.id}")
+            
+            return f"Output registered successfully for node: {self.id}"
+        
         except Exception as e:
             logger.error(f"RegisterOutput failed with error: {e}")
             logger.error(traceback.format_exc())
-        
-        return context
+            return f"Error: {str(e)}"

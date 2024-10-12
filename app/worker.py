@@ -9,6 +9,7 @@ from app.services.cache.redis import RedisService
 
 class Worker(IService):
     name = "worker"
+    
 
     async def start(self):
         """

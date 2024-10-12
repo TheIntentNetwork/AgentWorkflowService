@@ -1,8 +1,4 @@
-import asyncio
 import json
-import logging
-import threading
-import traceback
 from pydantic import BaseModel, Field
 from typing import List
 from app.tools.base_tool import BaseTool
@@ -19,21 +15,28 @@ class RegisterDependencies(BaseTool):
     If two agents are assigned, each agent should be necessary to produce the output of the node including all parameters listed in the output structure.
     """
     dependencies: List[Dependency] = Field(..., description="The list of dependencies of the node. e.g. [{'context_key': 'node:9d5bb7db-131a-4473-ab74-5012673bccab', 'property_name': 'conditions'}]")
+
     async def run(self) -> str:
         from containers import get_container
         from app.services.cache.redis import RedisService
-        configure_logger(self.__class__.__name__).info(f"Registering dependencies {self.dependencies} for node {self.caller_agent.context_info.key}")
-        
-        if not self.caller_agent.context_info.context.get('dependencies'):
-            self.caller_agent.context_info.context["dependencies"] = []
-        
+        logger = configure_logger(self.__class__.__name__)
+        logger.info(f"Registering dependencies {self.dependencies} for node {self.caller_agent.context_info.key}")
         
         redis: RedisService = get_container().redis()
-        await redis.client.sadd(f"{self.caller_agent.context_info.key}:dependencies", json.dumps([dep.model_dump() for dep in self.dependencies]))
+        context_manager = get_container().context_manager()
         
-        # Broadcast the dependencies to all nodes that are subscribed to the current node
+        # Publish the dependencies to the node's dependency stream
+        stream_key = f"{self.caller_agent.context_info.key}:dependencies"
         for dependency in self.dependencies:
-            await redis.client.publish(f"{dependency.context_key}:dependencies", json.dumps([dep.model_dump() for dep in self.dependencies]))
-        
-        return ", ".join([f"{dep.context_key}:{dep.property_name}" for dep in self.caller_agent.context_info.context['dependencies']]) + " have been registered as dependencies of this node."
-
+            await redis.client.xadd(stream_key, {
+                'context_key': dependency.context_key,
+                'property_name': dependency.property_name
+            })
+            
+            # Inform the dependency node about the new subscriber
+            dependency_node = await context_manager.get_context(dependency.context_key)
+            await dependency_node.add_subscriber(dependency.property_name)
+        result = f"{len(self.dependencies)} dependencies have been registered for node {self.caller_agent.context_info.key} and published to stream {stream_key}."
+        logger.info(result)
+        logger.debug(f"Dependencies: {self.dependencies}")
+        return result
