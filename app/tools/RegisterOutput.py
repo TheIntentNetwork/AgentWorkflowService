@@ -31,6 +31,7 @@ class RegisterOutput(BaseTool):
     
     async def run(self) -> str:
         from containers import get_container
+        from app.models.Node import Node
         logger = configure_logger('RegisterOutput')
         logger.info("Running RegisterOutput tool")
         
@@ -39,7 +40,7 @@ class RegisterOutput(BaseTool):
         context_manager = container.context_manager()
         
         try:
-            node = await context_manager.get_context(f"node:{self.id}")
+            node = await context_manager.get_context(f"node:{self.id}",Node)
             
             # Add the output to the node's context_info
             await node.add_output(self.output_name, self.output)

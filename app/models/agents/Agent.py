@@ -323,7 +323,7 @@ class Agent:
         self.queue_listener_task = asyncio.create_task(self.listen_to_queue())
         self.track_resource(self.queue_listener_task)
         
-        system_context = ["workflow_id", "object_contexts", "agent_context", "node_templates"]
+        system_context = ["workflow_id", "object_contexts", "agent_context", "node_templates", "node_template"]
         if not self.context_info:
             logger.info(f"Existing context_info not found, creating context info for agent: {self.name}")
             self.context_info = {}

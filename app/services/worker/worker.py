@@ -20,12 +20,11 @@ class Worker(IService):
 
     def __init__(self, name: str, worker_uuid: str, config: ServiceConfig, **kwargs):
         super().__init__(name=name, config=config, **kwargs)
-        from containers import get_container
         self.name = name
-        self.worker_uuid = worker_uuid
-        self.redis: RedisService = get_container().redis()
+        self.worker_uuid = str(worker_uuid)  # Convert to string here
+        self.redis: RedisService = None  # We'll set this later
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
-        self.logger.info(f"Worker initialized with instance_id: {str(self.worker_uuid)}")
+        self.logger.info(f"Worker initialized with instance_id: {self.worker_uuid}")
         self.is_active = False
         self.task_queue = asyncio.Queue()
 
@@ -77,17 +76,21 @@ class Worker(IService):
     # Function to register the worker UUID in Redis
     async def join(self):
         try:
-            await self.redis.client.sadd("workers", self.worker_uuid)
-            self.logger.debug(f"Worker {str(self.worker_uuid)} joined the pool")
+            # Convert UUID to string
+            worker_uuid_str = str(self.worker_uuid)
+            await self.redis.client.sadd("workers", worker_uuid_str)
+            self.logger.debug(f"Worker {worker_uuid_str} joined the pool")
         except Exception as e:
-            self.logger.error(f"Failed to join worker {str(self.worker_uuid)} to the pool: {str(e)}")
+            self.logger.error(f"Failed to join worker {self.worker_uuid} to the pool: {str(e)}")
             raise
 
     async def leave(self):
         try:
-            await self.redis.client.srem("workers", self.worker_uuid)
-            self.logger.debug(f"Worker {str(self.worker_uuid)} left the pool")
+            # Convert UUID to string
+            worker_uuid_str = str(self.worker_uuid)
+            await self.redis.client.srem("workers", worker_uuid_str)
+            self.logger.debug(f"Worker {worker_uuid_str} left the pool")
         except Exception as e:
-            self.logger.error(f"Failed to remove worker {str(self.worker_uuid)} from the pool: {str(e)}")
+            self.logger.error(f"Failed to remove worker {self.worker_uuid} from the pool: {str(e)}")
             raise
 

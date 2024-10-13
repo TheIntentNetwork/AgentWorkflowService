@@ -83,6 +83,16 @@ class Node(BaseModel, extra='allow'):
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         asyncio.create_task(self.subscribe_to_mailbox())
 
+    def _to_prompt(self) -> str:
+        return f"""
+        Current node information:
+            - ID: {self.id}
+            - Description: {self.description}
+            - Input Description: {self.context_info.input_description}
+            - Action Summary: {self.context_info.action_summary}
+            - Outcome Description: {self.context_info.outcome_description}
+        """
+
     def dict(self, *args, **kwargs):
         """
         Override the dict method to exclude non-serializable fields like logger.
@@ -620,12 +630,7 @@ class Node(BaseModel, extra='allow'):
         Analyze the outputs of the nodes in the current node layer and determine which outputs
         this node depends on to complete its task.
 
-        Current node information:
-        - ID: {self.id}
-        - Description: {self.description}
-        - Input Description: {self.context_info.input_description}
-        - Action Summary: {self.context_info.action_summary}
-        - Outcome Description: {self.context_info.outcome_description}
+        {self._to_prompt()}
 
         Node Layer Information:
         """
@@ -708,6 +713,8 @@ class Node(BaseModel, extra='allow'):
         
         Lastly,
         For each output property, you should save the outputs using the SaveOutput tool which will save the output to the context of the node and make it available for future nodes to create dependencies on.
+
+        {self._to_prompt()}
         """
 
         # Update and merge context
