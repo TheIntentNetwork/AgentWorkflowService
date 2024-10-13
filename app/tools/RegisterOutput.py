@@ -2,9 +2,10 @@ import json
 import logging
 import traceback
 from pydantic import Field
-from typing import Dict, Any
+from typing import Dict, Any, List, Set
 from app.tools.base_tool import BaseTool
 from app.logging_config import configure_logger
+from app.models.Node import NodeStatus, ContextInfo
 
 
 class RegisterOutput(BaseTool):
@@ -40,8 +41,26 @@ class RegisterOutput(BaseTool):
         context_manager = container.context_manager()
         
         try:
-            node = await context_manager.get_context(f"node:{self.id}", Node)
+            # Fetch the existing node data
+            node_data = await redis.client.hgetall(f"node:{self.id}")
             
+            # Parse and validate the data
+            context_info = json.loads(node_data.get('context_info', '{}'))
+            dependencies = json.loads(node_data.get('dependencies', '{}'))
+            collection = json.loads(node_data.get('collection', '[]'))
+            status = NodeStatus(node_data.get('status', 'pending'))
+            subscribed_properties = set(json.loads(node_data.get('subscribed_properties', '[]')))
+
+            # Create or update the Node object
+            node = Node(
+                id=self.id,
+                context_info=ContextInfo(**context_info),
+                dependencies=dependencies,
+                collection=collection,
+                status=status,
+                subscribed_properties=subscribed_properties
+            )
+
             # Add the output to the node's context_info
             await node.add_output(self.output_name, self.output)
             

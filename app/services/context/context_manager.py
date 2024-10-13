@@ -6,7 +6,7 @@ import traceback
 from typing import Dict, Any, List, Type, Union, Optional
 from collections import defaultdict
 from datetime import datetime, timedelta
-
+from app.models.ContextInfo import ContextInfo
 from dependency_injector.wiring import inject, Provide
 
 from app.interfaces.service import IService

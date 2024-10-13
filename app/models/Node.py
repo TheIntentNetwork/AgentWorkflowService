@@ -87,10 +87,7 @@ class Node(BaseModel, extra='allow'):
         return f"""
         Current node information:
             - ID: {self.id}
-<<<<<<< HEAD
             - Name: {self.name}
-=======
->>>>>>> 01d2fc2c7f5dc1c4238231e9987f1f6ba9e6e6b2
             - Description: {self.description}
             - Input Description: {self.context_info.input_description}
             - Action Summary: {self.context_info.action_summary}
@@ -118,14 +115,18 @@ class Node(BaseModel, extra='allow'):
         context_manager = get_container().context_manager()
         session_id = node_data.get('session_id')
         
-        # Ensure context_info is a ContextInfo object with a valid context dictionary
         if 'context_info' not in node_data:
-            node_data['context_info'] = {}
+            node_data['context_info'] = {'context': {}}
+        elif 'context' not in node_data['context_info']:
+            node_data['context_info']['context'] = {}
         
         node_data['context_info']['context']['session_id'] = session_id
 
         if node_data.get('type') == 'model':
             from app.models.Model import Model
+            if 'collection' in node_data:
+                for child in node_data['collection']:
+                    child['session_id'] = session_id
             node = Model(**node_data)
         else:
             node = cls(**node_data)
