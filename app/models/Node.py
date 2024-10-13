@@ -676,54 +676,6 @@ class Node(BaseModel, extra='allow'):
         from app.factories.agent_factory import AgentFactory
         from app.models.agents.Agent import Agent
         
-<<<<<<< HEAD
-=======
-        instructions = """
-        Use the RetrieveContext tool to find examples of models and steps that indicate how we have processed similar tasks in the past.
-        
-        Use the SetContext tool to set the context of the node based on the output of similar nodes.
-        
-        Here is an example of a properly formatted SetContext request:
-        {
-            "input_description": "The user context which contains their intake form and any supplemental information related to the conditions they are experiencing.",
-            "outcome_description": "A comprehensive set of information about the user's conditions, including extracted conditions from the intake form and saved user metadata.",
-            "action_summary": "Gather intake conditions and write the user's metadata, ensuring accurate extraction and preparation of conditions for further processing.",
-            "output": {
-                "conditions": [
-                "{condition1}",
-                "{condition2}"
-                ],
-                "user_metadata": {
-                "user_id": "{user_id}",
-                "conditions": [
-                    "{condition1}",
-                    "{condition2}"
-                ],
-                "intake_date": "{intake_date}"
-                }
-            },
-            "context": {
-                "goals": [
-                "Extract conditions from the intake form.",
-                "Save the user's metadata including the extracted conditions.",
-                "Prepare the conditions list for further processing."
-                ],
-                "user_context": {
-                "user_id": "{user_id}"
-                }
-            }
-        }
-        
-        You must include an output property in the SetContext request that contains the output properties of the node. The output property must be a dictionary with clearly defined keys and values.
-        For each output property, you must include a description of the property, the data type of the property, and an example value for the property.
-        
-        Lastly,
-        For each output property, you should save the outputs using the SaveOutput tool which will save the output to the context of the node and make it available for future nodes to create dependencies on.
-
-        {self._to_prompt()}
-        """
-
->>>>>>> 01d2fc2c7f5dc1c4238231e9987f1f6ba9e6e6b2
         # Update and merge context
         updated_context = await self._context_manager.update_context(f"session:{self.session_id}", self.context_info.context)
         

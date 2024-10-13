@@ -465,10 +465,6 @@ class ContextManager(BaseContextManager):
             if type:
                 return type(**results)
             else:
-<<<<<<< HEAD
                 return results
         else:
             return results
-=======
-                return results
->>>>>>> 01d2fc2c7f5dc1c4238231e9987f1f6ba9e6e6b2
