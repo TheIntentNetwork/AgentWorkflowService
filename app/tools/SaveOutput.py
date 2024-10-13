@@ -29,7 +29,7 @@ class SaveOutput(BaseTool):
     parent_id: str = Field(..., description="The parent ID of the current node.")
     output_name: str = Field(..., description="The name of the output e.g. research_report")
     output_description: str = Field(..., description="The description of the output.")
-    output: Dict[str, Any] = Field(..., description="The output to save in a json formatted dictionary. Field is required. Utilize the existing output structure of the property if there is no final value.")
+    output: Dict[str, Any] = Field(..., description="The output to save in a json formatted dictionary.")
     
     async def run(self) -> str:
         logger = configure_logger('SaveOutput')
@@ -38,11 +38,10 @@ class SaveOutput(BaseTool):
         container = get_container()
         redis = container.redis()
         context_manager = container.context_manager()
-        agent = self.caller_agent
 
         try:
             context = {
-                "session_id": str(agent.session_id),
+                "session_id": str(self.caller_agent.session_id),
                 "context_key": f"node:{self.id}",
                 "parent_id": str(self.parent_id),
                 "output_name": self.output_name,
@@ -75,7 +74,19 @@ class SaveOutput(BaseTool):
                 logger.error(f"One or more required fields are None. {context}")
                 return "Error: One or more required fields are None"
             
-            return "Output saved successfully"
+            # Publish the output to subscribers
+            subscribers = await redis.client.smembers(f"node:{self.id}:subscribers")
+            for subscriber in subscribers:
+                await redis.client.publish(subscriber, json.dumps({
+                    "type": "output_update",
+                    "source_node": self.id,
+                    "output_name": self.output_name,
+                    "value": self.output[self.output_name]
+                }))
+            
+            logger.info(f"Output published to {len(subscribers)} subscribers")
+            
+            return "Output saved and published successfully"
         
         except Exception as e:
             logger.error(f"SaveOutput failed with error: {e}")

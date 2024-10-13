@@ -25,18 +25,15 @@ class RegisterDependencies(BaseTool):
         redis: RedisService = get_container().redis()
         context_manager = get_container().context_manager()
         
-        # Publish the dependencies to the node's dependency stream
-        stream_key = f"{self.caller_agent.context_info.key}:dependencies"
         for dependency in self.dependencies:
-            await redis.client.xadd(stream_key, {
-                'context_key': dependency.context_key,
-                'property_name': dependency.property_name
-            })
+            # Add this node as a subscriber to the dependency node
+            await redis.client.sadd(f"{dependency.context_key}:subscribers", self.caller_agent.context_info.key)
             
-            # Inform the dependency node about the new subscriber
-            dependency_node = await context_manager.get_context(dependency.context_key)
-            await dependency_node.add_subscriber(dependency.property_name)
-        result = f"{len(self.dependencies)} dependencies have been registered for node {self.caller_agent.context_info.key} and published to stream {stream_key}."
+            # Add the dependency to this node's dependencies list
+            await redis.client.sadd(f"{self.caller_agent.context_info.key}:dependencies", 
+                                    f"{dependency.context_key}:{dependency.property_name}")
+
+        result = f"{len(self.dependencies)} dependencies have been registered for node {self.caller_agent.context_info.key}."
         logger.info(result)
         logger.debug(f"Dependencies: {self.dependencies}")
         return result

@@ -1,206 +1,134 @@
 # Comprehensive Guide to Dependency Management
 
-This document provides a detailed overview of the dependency management process in our system, including the classes, methods, agents, steps, and tools involved. It covers both the Node and Model classes, with a focus on how dependencies are discovered, registered, managed, and resolved throughout the workflow.
+This document provides a detailed overview of the dependency management process in our system, including the classes, methods, and tools involved. It covers both the registration of outputs and dependencies, as well as the update flow for resolving dependencies.
 
 ## 1. Core Components
 
 ### 1.1 Node Class
 
-The Node class is the foundation of our dependency management system. It provides the basic structure and functionality for handling dependencies.
+The Node class is the foundation of our dependency management system. It provides the basic structure and functionality for handling dependencies and outputs.
 
 #### Key Methods:
 - `initialize()`: Initializes the node and triggers dependency discovery.
 - `execute()`: Executes the node's logic after dependencies are met.
-- `clear_dependencies()`: Removes all dependencies for the node.
-- `on_dependency_update(data: dict)`: Handles updates to the node's dependencies.
+- `subscribe_to_mailbox()`: Subscribes to updates for this node's dependencies.
+- `on_dependency_update(property_name: str, value: Any)`: Handles updates to the node's dependencies.
 
-### 1.2 Model Class
+### 1.2 Tools
 
-The Model class extends the Node class, inheriting its core functionality while adding specific behaviors for managing collections of nodes.
+#### RegisterOutput Tool
+Registers an output that will be produced by the node.
 
-#### Key Methods:
-- `execute()`: Overrides Node's execute method to handle child nodes.
-- `clear_dependencies()`: Extends Node's method to clear dependencies recursively for child nodes.
+#### RegisterDependencies Tool
+Registers the dependencies required by the node.
 
-### 1.3 DependencyService2
-
-The DependencyService2 is responsible for managing the overall dependency lifecycle.
-
-#### Key Methods:
-- `discover_and_register_dependencies(node)`: Analyzes and registers dependencies for a node.
-- `add_dependency(node, dependency)`: Adds a dependency to a node.
-- `remove_dependency(node, dependency)`: Removes a dependency from a node.
-- `on_dependency_update(node, data)`: Handles dependency updates and triggers node execution if all dependencies are met.
+#### SaveOutput Tool
+Saves the actual output produced by the node and publishes it to subscribers.
 
 ## 2. Dependency Management Process
 
-### 2.1 Dependency Discovery and Registration
+### 2.1 Registration Flow
 
-1. Node Initialization:
-   - The `initialize()` method is called on a Node or Model instance.
-   - It invokes `_set_context()` to prepare the node's context.
-   - Calls `discover_and_register_dependencies()` from the DependencyService2.
+1. Output Registration:
+   - The `RegisterOutput` tool is used to register potential outputs of a node.
+   - It adds the output to the node's context_info and updates it in Redis.
 
    ```python
-   async def initialize(self) -> None:
-       await self._set_context()
-       await self._context_manager.save_context(f'node:{self.id}', NodeStatus.created, "status")
-       if self.parent_id is not None:
-           await self._dependency_service.discover_and_register_dependencies(self)
-       await self._context_manager.save_context(f'node:{self.id}', NodeStatus.initialized, "status")
+   async def run(self) -> str:
+       # ... (initialization code)
+       
+       node = await context_manager.get_context(f"node:{self.id}")
+       await node.add_output(self.output_name, self.output)
+       
+       # Update the node's context_info in Redis
+       context = {
+           "session_id": self.caller_agent.session_id,
+           "context_key": f"node:{self.id}",
+           "output_name": self.output_name,
+           "output_description": self.output_description,
+           "output": json.dumps(node.context_info.output)
+       }
+       
+       # Generate embeddings and save to Redis
+       # ...
    ```
 
 2. Dependency Discovery:
-   - The DependencyService2 uses the `find_relevant_layer_node_info()` method to find potential dependencies.
-   - It performs a multi-vector search using the node's input description and output description.
-
-   ```python
-   async def find_relevant_layer_node_info(self, node: Node) -> List[Dict[str, Any]]:
-       index_name = "context"
-       vector_fields = ["output_vector", "output_description_vector"]
-       filter_expression = self._create_layer_filter_expression(node)
-       results = await self._perform_multi_vector_search(node, vector_fields, index_name, filter_expression)
-       return self._process_search_results(results)
-   ```
+   - The system uses the node layer to find potential dependencies based on registered outputs.
+   - This typically involves searching for relevant outputs within the same workflow or parent context.
 
 3. Dependency Registration:
-   - The DependencyService2 uses an agent to finalize the dependencies.
-   - Each dependency is added to the node's dependencies list using `add_dependency()`.
-   - The node subscribes to updates for each dependency using `subscribe_to_dependency()`.
+   - The `RegisterDependencies` tool is used to register dependencies for a node.
+   - It adds the current node as a subscriber to each dependency node and adds each dependency to the current node's dependencies list.
 
    ```python
-   async def register_dependencies(self, node: Node, dependencies: List[Dependency]):
-       for dep in dependencies:
-           await self.add_dependency(node, dep)
-
-   async def add_dependency(self, node: Node, dependency: Dependency):
-       if dependency not in node.dependencies:
-           node.dependencies.append(dependency)
-           await self.subscribe_to_dependency(node, dependency)
-       self.logger.info(f"Added dependency {dependency.context_key} to node {node.id}")
-   ```
-
-### 2.2 Tools Used in Discovery and Registration
-
-#### RetrieveNodeContext Tool
-- Purpose: Finds relevant context (outputs) from other nodes that can satisfy the current node's input requirements.
-- Usage: 
-  ```python
-  node_contexts = await RetrieveNodeContext(query="relevant_output_description", current_node_id=node.id, parent_node_id=node.parent_id).run()
-  ```
-- Output: Returns a list of NodeContext objects containing relevant context items that can be used as dependencies.
-
-### 2.3 Dependency Updates and Resolution
-
-1. Handling Updates:
-   - The DependencyService2's `on_dependency_update()` method is called when a dependency value changes.
-   - It updates the dependency's value and checks if it's now met.
-
-   ```python
-   async def on_dependency_update(self, node: Node, data: Dict[str, Any]):
-       dependency_id = data['context_key'].split(':')[1]
-       property_path = data['property_path']
-       new_value = data['new_value']
-
-       for dependency in node.dependencies:
-           if dependency.context_key == dependency_id and self._match_property_path(dependency.property_path, property_path):
-               dependency.value = self._resolve_property_path(new_value, dependency.property_path)
-               dependency.is_met = True
-               self.logger.info(f"Updated dependency {dependency.context_key} for node {node.id}")
-               break
-
-       if await self.dependencies_met(node):
-           await self.on_all_dependencies_resolved(node)
-   ```
-
-2. Resolving Dependencies:
-   - If all dependencies for a node are met, `on_all_dependencies_resolved()` is called.
-   - This method updates the node's status to "ready" using the ContextManager.
-
-   ```python
-   async def on_all_dependencies_resolved(self, node: Node):
-       await self.context_manager.save_context(node, NodeStatus.ready, "status")
-       self.logger.info(f"All dependencies resolved for node {node.id}")
-   ```
-
-### 2.4 Node Execution
-
-1. Checking Dependency Status:
-   - Before execution, the node checks if all dependencies are met using `dependencies_met()`.
-
-   ```python
-   async def dependencies_met(self, node: Node) -> bool:
-       return all(dep.is_met for dep in node.dependencies)
-   ```
-
-2. Execution:
-   - If all dependencies are met, the node proceeds with its execution.
-   - For Model instances, child nodes are also executed after the parent node's execution.
-
-   ```python
-   async def execute(self):
-       self._logger.info(f"Executing node: {self.id}")
+   async def run(self) -> str:
+       # ... (initialization code)
        
-       await self.PreExecute()
-       await self.Executing()
-       
-       # Execute child nodes
-       if self.collection:
-           for child in self.collection:
-               child_node = await Node.create(**child, session_id=self.session_id)
-               await child_node.execute()
-       
-       await self.Executed()
+       for dependency in self.dependencies:
+           # Add this node as a subscriber to the dependency node
+           await redis.client.sadd(f"{dependency.context_key}:subscribers", self.caller_agent.context_info.key)
+           
+           # Add the dependency to this node's dependencies list
+           await redis.client.sadd(f"{self.caller_agent.context_info.key}:dependencies", 
+                                   f"{dependency.context_key}:{dependency.property_name}")
    ```
 
-### 2.5 Cleaning Up Dependencies
+### 2.2 Update Flow
 
-- Dependencies can be removed individually using `remove_dependency()`.
-- All dependencies for a node can be cleared using `clear_dependencies()`.
-- For Model instances, `clear_dependencies()` recursively clears dependencies for all child nodes.
+1. Output Saving and Publishing:
+   - When a node produces an output, the `SaveOutput` tool is used to save and publish it.
+   - It saves the output to Redis and publishes it to all subscribers.
 
-```python
-async def clear_dependencies(self, node: Node):
-    for dependency in node.dependencies:
-        await self.unsubscribe_from_dependency(node, dependency)
-    node.dependencies.clear()
-    self.logger.info(f"Cleared all dependencies for node {node.id}")
-```
+   ```python
+   async def run(self) -> str:
+       # ... (save output to Redis)
+       
+       # Publish the output to subscribers
+       subscribers = await redis.client.smembers(f"node:{self.id}:subscribers")
+       for subscriber in subscribers:
+           await redis.client.publish(subscriber, json.dumps({
+               "type": "output_update",
+               "source_node": self.id,
+               "output_name": self.output_name,
+               "value": self.output[self.output_name]
+           }))
+   ```
 
-## 3. Advanced Features
+2. Dependency Update Handling:
+   - The `subscribe_to_mailbox` method in the Node class listens for dependency updates.
+   - When an update is received, it calls `on_dependency_update`.
 
-### 3.1 Model-Specific Behaviors
+   ```python
+   async def subscribe_to_mailbox(self):
+       # ... (subscription setup)
+       
+       async for message in pubsub.listen():
+           if message['type'] == 'message':
+               data = json.loads(message['data'])
+               if data['type'] == 'output_update':
+                   await self.on_dependency_update(data['output_name'], data['value'])
+   ```
 
-- Models can manage dependencies for collections of nodes.
-- The `execute()` method in Model handles the execution of child nodes.
-- Dependency clearing in Models is recursive, affecting all child nodes.
+3. Dependency Resolution:
+   - The `on_dependency_update` method updates the dependency value and checks if all dependencies are met.
+   - If all dependencies are met, it triggers the node's execution.
 
-```python
-async def clear_dependencies(self):
-    logger = configure_logger('Model')
-    logger.info(f"Clearing dependencies for model: {self.name}")
-    
-    # Clear dependencies for the model itself
-    await super().clear_dependencies()
-    
-    # Clear dependencies for child nodes
-    for node_data in self.collection:
-        node = await Node.create(**node_data, session_id=self.session_id)
-        await node.clear_dependencies()
-```
+   ```python
+   async def on_dependency_update(self, property_name: str, value: Any):
+       self.dependencies[property_name] = value
+       
+       if self._are_dependencies_met():
+           asyncio.create_task(self.execute())
+   ```
 
-### 3.2 Dynamic Dependency Management
+## 3. Best Practices
 
-- The system supports adding and removing dependencies at runtime.
-- Nodes can adapt to changing requirements by updating their dependency list.
+1. Efficient Output Registration: Only register outputs that are essential for other nodes.
+2. Precise Dependency Definition: Clearly define dependencies to avoid unnecessary waiting or circular dependencies.
+3. Error Handling: Implement robust error handling for cases where dependencies cannot be resolved or outputs fail to save.
+4. Performance Optimization: Use efficient Redis operations and consider caching strategies for frequently accessed data.
 
-## 4. Best Practices
+## 4. Conclusion
 
-1. Minimize Dependencies: Only register essential dependencies to reduce complexity.
-2. Handle Circular Dependencies: Avoid creating circular dependencies between nodes.
-3. Clean Up: Always clear dependencies when reinitializing nodes or cleaning up resources.
-4. Error Handling: Implement robust error handling for cases where dependencies cannot be resolved.
-
-## 5. Conclusion
-
-The dependency management system in our Node and Model classes provides a flexible and powerful way to handle complex workflows. By leveraging tools like RetrieveNodeContext and the DependencyService2, we ensure that nodes have access to the required context and are executed in the correct order. This system allows for dynamic, efficient execution of workflows, whether dealing with individual nodes or complex model structures.
+Our dependency management system provides a flexible and efficient way to handle complex workflows. By separating the registration and update flows, we ensure that nodes have access to the required outputs and are executed in the correct order. This system allows for dynamic, efficient execution of workflows, adapting to the needs of various node types and structures.

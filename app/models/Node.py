@@ -224,12 +224,58 @@ class Node(BaseModel, extra='allow'):
         from containers import get_container
         await self._context_manager.save_context(f'node:{self.id}', NodeStatus.completed, "status")
         self._logger.info(f"Node {self.id} Executed: status 'completed'")
-        redis: RedisService = get_container().redis()
-        # Look up subscribers to this node
-        subscribers = await redis.client.lrange(f"node:{self.id}:subscribers", 0, -1)
-        for subscriber in subscribers:
-            # Send the output to the subscriber
-            await redis.client.publish(subscriber, f"node:{self.id}:event->dependency_met")
+        
+        # No need to manually publish to subscribers here, as SaveOutput tool handles this
+
+    async def subscribe_to_mailbox(self):
+        """
+        Subscribe to all events for this node using a pattern-based subscription.
+        """
+        from containers import get_container
+        redis = get_container().redis()
+        logger = configure_logger(self.__class__.__name__)
+
+        pubsub = redis.client.pubsub()
+        await pubsub.subscribe(self.id)
+
+        try:
+            async for message in pubsub.listen():
+                if message['type'] == 'message':
+                    data = json.loads(message['data'])
+                    if data['type'] == 'output_update':
+                        await self.on_dependency_update(data['output_name'], data['value'])
+        except Exception as e:
+            logger.error(f"Error in subscribe_to_mailbox for node {self.id}: {str(e)}")
+        finally:
+            await pubsub.unsubscribe(self.id)
+
+    async def on_dependency_update(self, property_name: str, value: Any):
+        """
+        Handle updates from dependencies.
+        """
+        self._logger.info(f"Received dependency update for node {self.id}: {property_name} = {value}")
+        
+        self.dependencies[property_name] = value
+        
+        if self._are_dependencies_met():
+            self._logger.info(f"All dependencies for node {self.id} are now met. Triggering execution.")
+            asyncio.create_task(self.execute())
+
+    async def publish_output(self, property_name: str, value: Any):
+        """
+        Publish an output update for subscribers.
+        """
+        from containers import get_container
+        redis = get_container().redis()
+        logger = configure_logger(self.__class__.__name__)
+
+        channel = f"node:{self.id}:output"
+        message = json.dumps({
+            'property_name': property_name,
+            'value': value
+        })
+        await redis.client.publish(channel, message)
+        logger.info(f"Published output update: {property_name} = {value}")
 
     async def execute_child_nodes(self):
         """
@@ -248,19 +294,6 @@ class Node(BaseModel, extra='allow'):
         Clear all dependencies for this node.
         """
         await self._dependency_service.clear_dependencies(self)
-
-    async def on_dependency_update(self, property_name: str, value: Any):
-        """
-        Handle updates from dependencies.
-        """
-        self._logger.info(f"Received dependency update for node {self.id}: {property_name} = {value}")
-        
-        self.dependencies[property_name] = value
-        
-        # Check if all dependencies are now met
-        if self._are_dependencies_met():
-            self._logger.info(f"All dependencies for node {self.id} are now met. Triggering execution.")
-            asyncio.create_task(self.execute())
 
     async def update_property(self, path: str, value: Any, handler_type: str = 'string'):
         """
@@ -308,7 +341,7 @@ class Node(BaseModel, extra='allow'):
             for agent_list in agency_chart:
                 for agent in agent_list:
                     agent.cleanup()
-                    
+            
             self._logger.info(f"Agency completion performed for node: {self.id}")
             await self._context_manager.save_context(f'node:{self.id}', NodeStatus.completed, "status")
             await self._context_manager.save_context(f'node:{self.id}', self, update_index=True)
@@ -489,20 +522,6 @@ class Node(BaseModel, extra='allow'):
         self.subscribed_properties.discard(property_name)
         self._logger.info(f"Removed subscriber for property: {property_name}")
 
-    async def publish_output(self, property_name: str, value: Any):
-        """
-        Publish an output to the node's output stream, but only if it's subscribed to.
-        """
-        if property_name in self.subscribed_properties:
-            from containers import get_container
-            redis: RedisService = get_container().redis()
-            
-            output_stream = f"{self.context_info.key}:output:{property_name}"
-            await redis.client.xadd(output_stream, {'value': json.dumps(value)})
-            self._logger.info(f"Published output to stream: {output_stream}")
-        else:
-            self._logger.debug(f"Skipped publishing output for non-subscribed property: {property_name}")
-
     async def add_output(self, output_name: str, output_value: Any):
         """
         Add an output to the node's context_info output dictionary.
@@ -578,6 +597,16 @@ class Node(BaseModel, extra='allow'):
 
         agency = Agency(agency_chart=[universe_agent], shared_instructions="", session_id=self.context_info.context['session_id'])
         result = await agency.get_completion("Register dependencies for the current node.")
+
+        # After getting the result from the UniverseAgent, publish the dependencies
+        from containers import get_container
+        redis = get_container().redis()
+        
+        channel = f"node:{self.id}:dependencies"
+        message = json.dumps({
+            'dependencies': result  # Assuming the result is the list of dependencies
+        })
+        await redis.client.publish(channel, message)
 
         logger.info(f"RegisterDependencies step completed for node {self.id}")
         return result
