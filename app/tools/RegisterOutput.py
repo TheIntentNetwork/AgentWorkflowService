@@ -40,7 +40,11 @@ class RegisterOutput(BaseTool):
         context_manager = container.context_manager()
         
         try:
+<<<<<<< HEAD
             node = await context_manager.get_context(f"node:{self.id}", Node)
+=======
+            node = await context_manager.get_context(f"node:{self.id}",Node)
+>>>>>>> 01d2fc2c7f5dc1c4238231e9987f1f6ba9e6e6b2
             
             # Add the output to the node's context_info
             await node.add_output(self.output_name, self.output)
