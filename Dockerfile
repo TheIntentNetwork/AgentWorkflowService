@@ -1,5 +1,5 @@
 # Start from the Selenium Chrome image
-FROM selenium/standalone-chrome:latest
+FROM selenium/standalone-chrome:4.10.0-20230607
 
 # Switch to root user for installations
 USER root

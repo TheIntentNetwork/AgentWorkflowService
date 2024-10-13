@@ -16,9 +16,9 @@ class ContextInfo(BaseModel):
     """
     This class represents the context information.
     """
-    input_description: str = Field(..., description="The input description of the node.")
-    outcome_description: str = Field(..., description="The outcome description of the node.")
-    action_summary: str = Field(..., description="The action summary of the node.")
+    input_description: Optional[str] = Field('', description="The input description of the node.")
+    outcome_description: Optional[str] = Field('', description="The outcome description of the node.")
+    action_summary: Optional[str] = Field('', description="The action summary of the node.")
     output: Dict[str, Any] = Field({}, description="The output structure of the node.")
     context: Dict[str, Any] = Field({}, description="The context of the node.", json_schema_extra={"example": {"key": "value"}})
     
@@ -54,10 +54,20 @@ class SetContext(BaseTool):
         configure_logger(self.__class__.__name__).info(f"Setting context_info {self.updated_context} for agent {self.caller_agent.name}")
         
         try:
+            # Check if context_info is a dictionary and convert it to ContextInfo if necessary
+            if isinstance(self.caller_agent.context_info, dict):
+                # Provide default values for required fields if they're missing or None
+                context_info_data = self.caller_agent.context_info.copy()
+                context_info_data.setdefault('input_description', '')
+                context_info_data.setdefault('outcome_description', '')
+                context_info_data.setdefault('action_summary', '')
+                
+                self.caller_agent.context_info = ContextInfo(**context_info_data)
+            
             if not self.caller_agent.context_info.context:
                 self.caller_agent.context_info.context = {}
             
-            if not self.caller_agent.context_info.context.get('updated_context'):
+            if 'updated_context' not in self.caller_agent.context_info.context:
                 self.caller_agent.context_info.context['updated_context'] = {}
                 
             self.caller_agent.context_info.context['updated_context'] = self.updated_context.model_dump()

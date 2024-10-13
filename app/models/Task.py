@@ -163,6 +163,8 @@ class Task(BaseModel, extra='allow'):
             Processing and Feedback Rule:
             - Pay special attention to feedback and make sure to incorporate feedback into your nodes if it is not already done so which includes when and when to not create nodes.
             
+            {str(node_context.context_info.context.get('node_template', ''))}
+            
             """,
             "session_id": self.session_id,
             "context_info": self.context_info,

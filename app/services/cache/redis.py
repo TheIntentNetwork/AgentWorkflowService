@@ -1,4 +1,3 @@
-# app/services/communication.py
 from datetime import datetime
 import time
 import traceback
@@ -21,7 +20,7 @@ import numpy as np
 from app.interfaces.service import IService
 from app.logging_config import configure_logger
 from dependency_injector.wiring import inject, Provide
-from redis.asyncio import Redis
+from redis.asyncio import Redis, ConnectionPool
 from redis.exceptions import ConnectionError, TimeoutError
 
 def get_container():
@@ -29,11 +28,20 @@ def get_container():
     return Container
 
 class RedisService(IService):
+    """
+    Redis Service for handling Redis operations including caching, pub/sub, and vector search.
+    """
     _instance = None
     _model = None
     
     @classmethod
     def get_model(cls):
+        """
+        Get or initialize the text vectorization model.
+
+        Returns:
+            HFTextVectorizer: The text vectorization model.
+        """
         if cls._model is None:
             cls._model = HFTextVectorizer('sentence-transformers/all-MiniLM-L6-v2')
         return cls._model
@@ -53,6 +61,7 @@ class RedisService(IService):
             name (str): The name of the service.
             config (dict): Configuration dictionary.
             redis_url (str): URL for connecting to Redis.
+            resource_tracker (Any): Resource tracker object.
         """
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         super().__init__(name=name, config=config)
@@ -68,38 +77,79 @@ class RedisService(IService):
         self.initialized = False
         self.event_loop = asyncio.get_event_loop()
         self.model = self.get_model()
+        self.pool = None
+        self.connection_lock = asyncio.Lock()
 
-    async def connect(self):
-        if self.client is None:
+    async def get_connection(self):
+        """
+        Get a Redis connection, creating a new pool if necessary.
+
+        Returns:
+            Redis: A Redis client instance.
+        """
+        async with self.connection_lock:
+            if self.pool is None or self.client is None:
+                await self.create_pool()
             try:
-                self.client = Redis.from_url(self.redis_url, decode_responses=True)
                 await self.client.ping()
-                self.pubsub = self.client.pubsub()
-                self.logger.info("Successfully connected to Redis")
-            except (ConnectionError, TimeoutError) as e:
-                self.logger.error(f"Failed to connect to Redis: {str(e)}")
-                self.client = None
-                raise
+            except (ConnectionError, TimeoutError):
+                await self.create_pool()
+        return self.client
 
-    async def ensure_connection(self):
+    async def create_pool(self):
+        """
+        Create a new Redis connection pool.
+        """
         max_retries = 3
         retry_delay = 1
 
         for attempt in range(max_retries):
             try:
-                if self.client is None or not await self.client.ping():
-                    await self.connect()
+                self.pool = ConnectionPool.from_url(self.redis_url, decode_responses=True)
+                self.client = Redis(connection_pool=self.pool)
+                await self.client.ping()
+                self.pubsub = self.client.pubsub()
+                self.logger.info("Successfully created Redis connection pool")
                 return
             except (ConnectionError, TimeoutError) as e:
                 if attempt < max_retries - 1:
                     self.logger.warning(f"Connection attempt {attempt + 1} failed. Retrying in {retry_delay} seconds...")
                     await asyncio.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay *= 2
                 else:
-                    self.logger.error("Failed to connect to Redis after multiple attempts.")
+                    self.logger.error(f"Failed to create Redis connection pool after {max_retries} attempts: {str(e)}")
                     raise
 
+    async def ensure_connection(self):
+        """
+        Ensure that a valid Redis connection exists.
+        """
+        await self.get_connection()
+
+    async def connect(self):
+        """
+        Establish a connection to Redis.
+        """
+        try:
+            await self.create_pool()
+            self.logger.info("Successfully connected to Redis")
+        except Exception as e:
+            self.logger.error(f"Failed to connect to Redis: {str(e)}")
+            raise
+
     async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
+        """
+        Subscribe to a Redis channel.
+
+        Args:
+            channel (str): The channel to subscribe to.
+            queue (asyncio.Queue, optional): Queue to store messages.
+            callback (Callable, optional): Callback function for messages.
+            filter_func (Callable, optional): Function to filter messages.
+
+        Returns:
+            asyncio.Queue: The queue for the subscription.
+        """
         await self.ensure_connection()
         if queue is None:
             queue = asyncio.Queue()
@@ -112,9 +162,16 @@ class RedisService(IService):
         return queue
 
     async def unsubscribe(self, channel, queue):
+        """
+        Unsubscribe from a Redis channel.
+
+        Args:
+            channel (str): The channel to unsubscribe from.
+            queue (asyncio.Queue): The queue associated with the subscription.
+        """
         await self.ensure_connection()
         if channel in self.subscriptions:
-            self.subscriptions[channel] = [(q, f) for q, f in self.subscriptions[channel] if q != queue]
+            self.subscriptions[channel] = [(q, c, f) for q, c, f in self.subscriptions[channel] if q != queue]
             self.logger.debug(f"Removed subscription for channel {channel}")
             if not self.subscriptions[channel]:
                 del self.subscriptions[channel]
@@ -122,10 +179,13 @@ class RedisService(IService):
                 self.logger.info(f"Unsubscribed from channel: {channel}")
 
     async def run_listener(self):
-        await self.ensure_connection()
+        """
+        Run the listener for Redis pub/sub messages.
+        """
         while True:
             try:
-                message = await self.pubsub.get_message(ignore_subscribe_messages=True)
+                client = await self.get_connection()
+                message = await client.pubsub().get_message(ignore_subscribe_messages=True)
                 if message is not None:
                     channel = message['channel'].decode('utf-8')
                     data = message['data']
@@ -141,6 +201,13 @@ class RedisService(IService):
             await asyncio.sleep(0.1)  # Prevent busy-waiting
 
     async def publish(self, channel: str, message: Any):
+        """
+        Publish a message to a Redis channel.
+
+        Args:
+            channel (str): The channel to publish to.
+            message (Any): The message to publish.
+        """
         await self.ensure_connection()
         try:
             await self.client.publish(channel, json.dumps(message))
@@ -150,6 +217,20 @@ class RedisService(IService):
             raise
 
     async def async_search_index(self, query_data: str, vector_field: str, index_name: str, top_k: int, return_fields: Optional[List[str]] = None, filter_expression: Optional[FilterExpression] = None):
+        """
+        Perform an asynchronous vector search on a Redis index.
+
+        Args:
+            query_data (str): The query string.
+            vector_field (str): The vector field to search.
+            index_name (str): The name of the index.
+            top_k (int): Number of top results to return.
+            return_fields (List[str], optional): Fields to return in the results.
+            filter_expression (FilterExpression, optional): Filter expression for the search.
+
+        Returns:
+            List: Sorted search results.
+        """
         max_retries = 3
         retry_delay = 1
 
@@ -190,6 +271,15 @@ class RedisService(IService):
                     raise
 
     async def get_index(self, index_name: str) -> AsyncSearchIndex:
+        """
+        Get a Redis search index.
+
+        Args:
+            index_name (str): The name of the index.
+
+        Returns:
+            AsyncSearchIndex: The Redis search index.
+        """
         await self.ensure_connection()
         index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", index_name + ".yaml")
         if not os.path.exists(index_schema_file):
@@ -201,6 +291,15 @@ class RedisService(IService):
         return index
 
     async def index_exists(self, index_name: str) -> bool:
+        """
+        Check if a Redis search index exists.
+
+        Args:
+            index_name (str): The name of the index.
+
+        Returns:
+            bool: True if the index exists, False otherwise.
+        """
         await self.ensure_connection()
         try:
             await self.client.ft(index_name).info()
@@ -212,16 +311,11 @@ class RedisService(IService):
         """
         Start the RedisService by initializing the client and pubsub,
         then starting the listener thread.
-
-        This method initializes the Redis client and pubsub,
-        and starts the background listener thread that listens
-        for messages on subscribed channels.
         """
         self.logger.info("Starting RedisService")
         await self.connect()  # Ensure connection is established
         if not self.client:
             raise RuntimeError("Failed to connect to Redis")
-        self.pubsub = self.client.pubsub()
         self.initialized = True
         self.logger.info("RedisService started successfully")
         # Start the listener thread after pubsub is initialized
@@ -234,12 +328,28 @@ class RedisService(IService):
         Shutdown the RedisService.
         """
         self.logger.info("Shutting down RedisService")
-        await self.disconnect()
-        # Clear any large resources
+        if self.pool:
+            await self.pool.disconnect()
+        self.client = None
+        self.pubsub = None
+        self.pool = None
+        self.initialized = False
         self.model = None
         self.logger.info("RedisService shut down successfully")
 
     async def subscribe_pattern(self, pattern: str, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
+        """
+        Subscribe to a Redis channel pattern.
+
+        Args:
+            pattern (str): The channel pattern to subscribe to.
+            queue (asyncio.Queue, optional): Queue to store messages.
+            callback (Callable, optional): Callback function for messages.
+            filter_func (Callable, optional): Function to filter messages.
+
+        Returns:
+            asyncio.Queue: The queue for the subscription.
+        """
         if queue is None:
             queue = asyncio.Queue()
         
@@ -254,6 +364,13 @@ class RedisService(IService):
         return queue
 
     async def unsubscribe_pattern(self, pattern: str, queue):
+        """
+        Unsubscribe from a Redis channel pattern.
+
+        Args:
+            pattern (str): The channel pattern to unsubscribe from.
+            queue (asyncio.Queue): The queue associated with the subscription.
+        """
         try:
             if pattern in self.subscriptions:
                 self.subscriptions[pattern] = [(q, f) for q, f in self.subscriptions[pattern] if q != queue]
@@ -267,9 +384,21 @@ class RedisService(IService):
             raise
 
     def preprocess_text(self, text: str, process_config: Optional[Dict[str, Any]] = None, redact_config: Optional[Dict[str, Any]] = None, func: Optional[Callable[[str], str]] = None, **kwargs) -> str:
+        """
+        Preprocess text for vectorization.
+
+        Args:
+            text (str): The text to preprocess.
+            process_config (Dict[str, Any], optional): Configuration for text processing.
+            redact_config (Dict[str, Any], optional): Configuration for text redaction.
+            func (Callable, optional): Custom preprocessing function.
+            **kwargs: Additional keyword arguments for custom processing.
+
+        Returns:
+            str: The preprocessed text.
+        """
         try:
             if redact_config is not None:
-                
                 from presidio_analyzer import AnalyzerEngine, RecognizerResult
                 analyzer = AnalyzerEngine()
                 
@@ -326,6 +455,18 @@ class RedisService(IService):
         return text.strip()
 
     def generate_embeddings(self, record: dict, fields: List[str], embedding_config: Optional[Dict[str, Any]] = None, key: Optional[str] = None) -> Dict[str, np.ndarray]:
+        """
+        Generate embeddings for specified fields in a record.
+
+        Args:
+            record (dict): The record containing the fields to embed.
+            fields (List[str]): The fields to generate embeddings for.
+            embedding_config (Dict[str, Any], optional): Configuration for embedding generation.
+            key (str, optional): Key for encryption (not implemented).
+
+        Returns:
+            Dict[str, np.ndarray]: A dictionary of field names to their embeddings.
+        """
         embeddings = {}
         all_texts = []
         
@@ -359,25 +500,60 @@ class RedisService(IService):
         return embeddings
 
     async def get_vector_record(self, index_name: str, record_id: str):
+        """
+        Get a vector record from Redis.
+
+        Args:
+            index_name (str): The name of the index.
+            record_id (str): The ID of the record.
+
+        Returns:
+            Any: The vector data if found, None otherwise.
+        """
         record_key = f"{index_name}:{record_id}"
         vector_data = await self.client.hget(record_key, 'vector')
         return vector_data if vector_data else None
 
     async def save_context(self, key: str, value: Union[Dict[Any, Any], Any], property: str = None):
         """
-        Save a context to the redis cache. Saves dictionaries into individual redis hashes. We want to format the data appropriately for the redis search index.
-        
-        Rules for the context:
-        - If the value is a dictionary, we will save it as a json string.
-        - If the value is a list, we will save it as a space separated string of json strings.
-        - If the value is a string, we will save it as is.
-        - If the value is a number, we will save it as is.
-        - If the value is a boolean, we will save it as is.
-        - If the value is a datetime, we will save it as a string.
+        Save a context to the Redis cache.
 
         Args:
-            key (str): The key to save the context to which is the first part of the key in the redis hash. We will append the keys of the provided context.
-            context (dict): The context to save.
+            key (str): The key to save the context to.
+            value (Union[Dict[Any, Any], Any]): The context to save.
+            property (str, optional): Specific property to save.
+        """
+        max_retries = 3
+        retry_delay = 1
+
+        for attempt in range(max_retries):
+            try:
+                serialized_context = self._serialize_context(value)
+                client = await self.get_connection()
+                await client.hset(key, mapping=serialized_context)
+                await self.publish(key, serialized_context)
+                return
+            except (ConnectionError, TimeoutError) as e:
+                if attempt < max_retries - 1:
+                    self.logger.warning(f"Attempt {attempt + 1} failed. Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    self.logger.error(f"Failed to save context after {max_retries} attempts: {str(e)}")
+                    raise
+            except Exception as e:
+                self.logger.error(f"Unexpected error saving context for key {key}: {str(e)}")
+                raise
+
+    def _serialize_context(self, value):
+        """
+        Serialize context data for Redis storage.
+
+        Args:
+            value (Any): The value to serialize.
+
+        Returns:
+            Dict[str, str]: Serialized context data.
         """
         serialized_context = {}
         for k, v in value.items():
@@ -389,42 +565,58 @@ class RedisService(IService):
                 serialized_context[k] = v.isoformat()
             else:
                 serialized_context[k] = str(v)
-        await self.client.hset(key, mapping=serialized_context)
-        await self.publish(key, serialized_context)
+        return serialized_context
 
     async def get_context(self, key: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve context data for a given key, deserializing JSON strings.
+        Get a context from the Redis cache.
 
         Args:
-            key (str): The context key.
+            key (str): The key to retrieve the context from.
 
         Returns:
-            Optional[Dict[str, Any]]: The context data if found, None otherwise.
+            Optional[Dict[str, Any]]: The retrieved context, or None if not found.
         """
         try:
-            redis_client = await self.get_client()
-            serialized_context = await redis_client.hgetall(key)
+            client = await self.get_connection()
+            serialized_context = await client.hgetall(key)
             
             if not serialized_context:
                 return None
             
-            deserialized_context = {}
-            for k, v in serialized_context.items():
-                try:
-                    # Attempt to deserialize JSON strings
-                    deserialized_context[k] = json.loads(v)
-                except json.JSONDecodeError:
-                    # If it's not a valid JSON string, keep the original value
-                    deserialized_context[k] = v
-            
-            return deserialized_context
+            return self._deserialize_context(serialized_context)
         except Exception as e:
             self.logger.error(f"Error getting context for key {key}: {str(e)}")
             raise
-    
+
+    def _deserialize_context(self, serialized_context):
+        """
+        Deserialize context data from Redis storage.
+
+        Args:
+            serialized_context (Dict[str, str]): Serialized context data.
+
+        Returns:
+            Dict[str, Any]: Deserialized context data.
+        """
+        deserialized_context = {}
+        for k, v in serialized_context.items():
+            try:
+                deserialized_context[k] = json.loads(v)
+            except json.JSONDecodeError:
+                deserialized_context[k] = v
+        return deserialized_context
+
     async def create_index(self, index_name: str) -> AsyncSearchIndex:
-        
+        """
+        Create a new Redis search index.
+
+        Args:
+            index_name (str): The name of the index to create.
+
+        Returns:
+            AsyncSearchIndex: The created search index.
+        """
         index_schema_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "schemas", index_name + ".yaml")
         if not os.path.exists(index_schema_file):
             raise FileNotFoundError(f"Index schema file {index_schema_file} not found.")
@@ -432,7 +624,6 @@ class RedisService(IService):
         index = None
         try:
             if not await self.index_exists(index_name):
-                #self.client.ft(index_name).create_index(index_schema, definition=IndexDefinition(prefix=[f"{prefix}:"], index_type=IndexType.HASH))
                 index = AsyncSearchIndex.from_yaml(index_schema_file)
                 index = await index.connect(self.redis_url)
                 await index.create(False, False)
@@ -442,6 +633,21 @@ class RedisService(IService):
         return index
 
     async def load_records(self, objects_list, index_name: str, fields_vectorization, overwrite=False, prefix: str = "context", id_column: str = 'id', batch_size: int = 100) -> List[str]:
+        """
+        Load records into a Redis search index.
+
+        Args:
+            objects_list (List): List of objects to load.
+            index_name (str): Name of the index to load into.
+            fields_vectorization (Dict[str, bool]): Fields to vectorize.
+            overwrite (bool): Whether to overwrite existing records.
+            prefix (str): Prefix for record keys.
+            id_column (str): Column to use as ID.
+            batch_size (int): Number of records to process in each batch.
+
+        Returns:
+            List[str]: List of keys for the loaded records.
+        """
         keys = []
         for i in range(0, len(objects_list), batch_size):
             batch = objects_list[i:i+batch_size]
@@ -509,12 +715,18 @@ class RedisService(IService):
         return keys
             
     async def close(self):
+        """
+        Close the Redis connection.
+        """
         if hasattr(self, 'client') and self.client:
             await self.client.close()
     
     async def delete_index(self, index_name: str):
         """
         Delete a specified index.
+
+        Args:
+            index_name (str): The name of the index to delete.
         """
         try:
             await self.client.ft(index_name).dropindex(delete_documents=True)
@@ -545,23 +757,41 @@ class RedisService(IService):
             raise
 
     async def async_set(self, key: str, value: str):
+        """
+        Asynchronously set a key-value pair in Redis.
+
+        Args:
+            key (str): The key to set.
+            value (str): The value to set.
+        """
         await self.client.set(key, value)
 
     async def get_client(self):
+        """
+        Get the Redis client, connecting if necessary.
+
+        Returns:
+            Redis: The Redis client.
+        """
         if not self.client:
             await self.connect()
         return self.client
 
     async def disconnect(self):
+        """
+        Disconnect from Redis.
+        """
         if self.client:
             await self.client.close()
             self.client = None
         self.pubsub = None
         self.initialized = False
         self.logger.info("Disconnected from Redis")
-        self.logger.info("Disconnected from Redis")
 
     async def reset_connection(self):
+        """
+        Reset the Redis connection.
+        """
         if self.client:
             await self.client.close()
         self.client = None

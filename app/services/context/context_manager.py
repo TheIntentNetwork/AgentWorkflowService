@@ -372,6 +372,9 @@ class ContextManager(BaseContextManager):
             else:
                 raise ValueError(f"Unsupported node type: {type(node)}")
 
+            if(isinstance(node.context_info, ContextInfo)):
+                node_data['context_info'] = node.context_info.model_dump()
+
             if node_id is None:
                 raise ValueError("Node ID is missing")
 
@@ -456,8 +459,12 @@ class ContextManager(BaseContextManager):
 
         return merged_context
     
-    async def get_context(self, key: str, type: Type) -> Dict[str, Any]:
+    async def get_context(self, key: str, type: Type = None) -> Dict[str, Any]:
         results = await self.redis.client.hgetall(key)
-        if type:
-            return type(**results)
-        return results
+        if len(results) > 0:
+            if type:
+                return type(**results)
+            else:
+                return results
+        else:
+            return results
