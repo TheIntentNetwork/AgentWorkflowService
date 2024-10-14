@@ -66,30 +66,32 @@ class NodeContextManager(IService):
         
         if not templates:
             return node
-
-        await self._index_node_templates(templates)
+        
+        if len(templates) > 0:
+            await self._index_node_templates(templates)
         
         if len(templates) > 0:
             if isinstance(node, (Node, Task)):
                 if templates[0].get('collection'):
-                    if 'collection' not in templates[0]:
-                        node.collection = templates[0]['collection']
+                    if 'collection' in templates[0]:
+                        node.collection = json.loads(json.dumps(templates[0]['collection']))
                         node.name = templates[0]['name']
-                        templates[0]['collection'] = None
-                if isinstance(node.context_info, dict):
-                    node.context_info['context']['node_template'] = templates[0]
-                    node.collection = templates[0].get('collection', [])
-                    node.name = templates[0]['name']
-                else:
-                    node.name = templates[0]['name']
-                    node.context_info.context['node_template'] = templates[0]
-                    node.context_info.context['node_templates'] = templates
+                        if isinstance(node.context_info, dict):
+                            node.context_info['context']['node_template'] = templates[0]
+                            node.context_info['context']['node_templates'] = templates
+                        else:
+                            node.context_info.context['node_template'] = templates[0]
+                            node.context_info.context['node_templates'] = templates[0].get('collection', [])
+                    else:
+                        node.context_info.context['node_template'] = templates[0]
+                        node.context_info.context['node_templates'] = templates
 
-        # Load dynamic context
-        if isinstance(node.context_info, dict):
-            node.context_info['context'].update(await self._load_dynamic_context(node))
-        else:
-            node.context_info.context.update(await self._load_dynamic_context(node))
+        if isinstance(node, Node):
+            # Load dynamic context
+            if isinstance(node.context_info, dict):
+                node.context_info['context'].update(await self._load_dynamic_context(node))
+            else:
+                node.context_info.context.update(await self._load_dynamic_context(node))
 
         return node
 
@@ -118,7 +120,7 @@ class NodeContextManager(IService):
                     'item': json.dumps(template, default=self._json_serializer),
                 }
                 objects_list.append(template_data)
-                if 'collection' in template:
+                if 'collection' in template and template['collection']:
                     for template in template['collection']:
                         template_data = {
                             'key': f"{prefix}:{template['id']}",

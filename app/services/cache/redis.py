@@ -1,8 +1,13 @@
+import base64
 from datetime import datetime
+from logging import Logger
+import pickle
+import struct
 import time
 import traceback
 from typing import Any, Callable, Dict, List, Optional, Union
 from pydantic import BaseModel
+import redis
 from redisvl.index import AsyncSearchIndex
 from redisvl.query import VectorQuery
 from redisvl.query.filter import FilterExpression
@@ -514,98 +519,110 @@ class RedisService(IService):
         vector_data = await self.client.hget(record_key, 'vector')
         return vector_data if vector_data else None
 
-    async def save_context(self, key: str, value: Union[Dict[Any, Any], Any], property: str = None):
-        """
-        Save a context to the Redis cache.
+    def _serialize_context(self, value, path=''):
+        # Check for non-serializable types
+        if isinstance(value, Logger):
+            return "<<LOGGER>>"  # or return None, depending on your preference
+        
+        if callable(value):
+            return "<<FUNCTION>>"  # or return None for functions/methods
 
-        Args:
-            key (str): The key to save the context to.
-            value (Union[Dict[Any, Any], Any]): The context to save.
-            property (str, optional): Specific property to save.
-        """
-        max_retries = 3
-        retry_delay = 1
-
-        for attempt in range(max_retries):
+        if isinstance(value, str):
             try:
-                serialized_context = self._serialize_context(value)
-                client = await self.get_connection()
-                await client.hset(key, mapping=serialized_context)
-                await self.publish(key, serialized_context)
-                return
-            except (ConnectionError, TimeoutError) as e:
-                if attempt < max_retries - 1:
-                    self.logger.warning(f"Attempt {attempt + 1} failed. Retrying in {retry_delay} seconds...")
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 2
-                else:
-                    self.logger.error(f"Failed to save context after {max_retries} attempts: {str(e)}")
-                    raise
-            except Exception as e:
-                self.logger.error(f"Unexpected error saving context for key {key}: {str(e)}")
-                raise
-
-    def _serialize_context(self, value):
-        """
-        Serialize context data for Redis storage.
-
-        Args:
-            value (Any): The value to serialize.
-
-        Returns:
-            Dict[str, str]: Serialized context data.
-        """
-        serialized_context = {}
-        for k, v in value.items():
-            if isinstance(v, dict):
-                serialized_context[k] = json.dumps(v)
-            elif isinstance(v, list):
-                serialized_context[k] = " ".join([json.dumps(item) for item in v])
-            elif isinstance(v, datetime):
-                serialized_context[k] = v.isoformat()
-            else:
-                serialized_context[k] = str(v)
-        return serialized_context
-
-    async def get_context(self, key: str) -> Optional[Dict[str, Any]]:
-        """
-        Get a context from the Redis cache.
-
-        Args:
-            key (str): The key to retrieve the context from.
-
-        Returns:
-            Optional[Dict[str, Any]]: The retrieved context, or None if not found.
-        """
-        try:
-            client = await self.get_connection()
-            serialized_context = await client.hgetall(key)
-            
-            if not serialized_context:
-                return None
-            
-            return self._deserialize_context(serialized_context)
-        except Exception as e:
-            self.logger.error(f"Error getting context for key {key}: {str(e)}")
-            raise
-
-    def _deserialize_context(self, serialized_context):
-        """
-        Deserialize context data from Redis storage.
-
-        Args:
-            serialized_context (Dict[str, str]): Serialized context data.
-
-        Returns:
-            Dict[str, Any]: Deserialized context data.
-        """
-        deserialized_context = {}
-        for k, v in serialized_context.items():
-            try:
-                deserialized_context[k] = json.loads(v)
+                # Try to parse the string as JSON
+                json.loads(value)
+                # If successful, return the original string as it's already JSON
+                return value
             except json.JSONDecodeError:
-                deserialized_context[k] = v
-        return deserialized_context
+                # If it's not JSON, encode it
+                return json.dumps(value)
+        
+        if isinstance(value, dict):
+            serialized_context = {}
+            for k, v in value.items():
+                # Skip logger and other non-serializable keys
+                if k == 'logger' or isinstance(v, Logger):
+                    continue
+                
+                current_path = f"{path}.{k}" if path else k
+                try:
+                    if isinstance(v, dict):
+                        serialized_context[k] = self._serialize_context(v, current_path)
+                    elif isinstance(v, list):
+                        serialized_context[k] = json.dumps([
+                            self._serialize_context(item, f"{current_path}[{i}]")
+                            for i, item in enumerate(v)
+                        ])
+                    elif isinstance(v, set):
+                        serialized_context[k] = json.dumps(list(v))
+                    elif isinstance(v, datetime):
+                        serialized_context[k] = v.isoformat()
+                    else:
+                        serialized_context[k] = self._serialize_context(v, current_path)
+                except TypeError as e:
+                    self.logger.error(f"Error serializing key '{current_path}' with value type {type(v)}: {str(e)}")
+                    self.logger.error(f"Problematic value: {v}")
+                    raise TypeError(f"Unable to serialize {current_path}: {str(e)}")
+            return json.dumps(serialized_context)
+        
+        # For other types, try to JSON encode directly
+        try:
+            return json.dumps(value)
+        except TypeError:
+            return str(value)
+
+    async def get_context(self, key: str) -> dict:
+        client = await self.get_connection()
+        try:
+            result = await client.hgetall(key)
+            if result:
+                deserialized = {}
+                for k, v in result.items():
+                    k = k.decode('utf-8')
+                    try:
+                        # Try to decode as base64 first
+                        deserialized[k] = base64.b64decode(v)
+                    except:
+                        # If not base64, decode as utf-8
+                        deserialized[k] = v.decode('utf-8')
+                return deserialized
+            else:
+                self.logger.warning(f"No data found for key: {key}")
+        except Exception as e:
+            self.logger.error(f"Error retrieving context for key {key}: {str(e)}")
+            self.logger.error(traceback.format_exc())
+        
+        return {}
+
+    async def save_context(self, key: str, value: Dict[str, Any]) -> None:
+        client = await self.get_connection()
+        try:
+            serialized = {}
+            for k, v in value.items():
+                if v:
+                    if isinstance(v, (bytes, bytearray)):
+                        # Encode binary data as base64
+                        serialized[k] = base64.b64encode(v).decode('ascii')
+                    else:
+                        serialized[k] = v
+            await client.hmset(key, serialized)
+        except Exception as e:
+            self.logger.error(f"Failed to save context for key {key}: {str(e)}")
+            self.logger.error(traceback.format_exc())
+
+    def _serialize_value(self, value: Any) -> bytes:
+        if isinstance(value, (dict, list, str, int, float, bool, type(None))):
+            return json.dumps(value).encode()
+        elif isinstance(value, np.ndarray):
+            return value.tobytes()
+        else:
+            return pickle.dumps(value)
+
+    def _deserialize_value(self, value: str) -> Any:
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
 
     async def create_index(self, index_name: str) -> AsyncSearchIndex:
         """
@@ -720,7 +737,7 @@ class RedisService(IService):
         """
         if hasattr(self, 'client') and self.client:
             await self.client.close()
-    
+
     async def delete_index(self, index_name: str):
         """
         Delete a specified index.
@@ -797,3 +814,32 @@ class RedisService(IService):
         self.client = None
         self.pubsub = None
         await self.connect()
+
+    def _serialize_value(self, value: Any) -> str:
+        if isinstance(value, (dict, list, str, int, float, bool, type(None))):
+            return json.dumps(value)
+        elif isinstance(value, np.ndarray):
+            return json.dumps(value.tolist())
+        else:
+            return json.dumps(str(value))
+
+    def _deserialize_value(self, value: bytes) -> Any:
+        try:
+            # Try to decode as JSON
+            return json.loads(value.decode())
+        except UnicodeDecodeError:
+            # If it's not UTF-8 encoded, it might be binary data
+            try:
+                # Try to unpickle
+                return pickle.loads(value)
+            except pickle.UnpicklingError:
+                # If it's not pickled, it might be a numpy array or other binary format
+                try:
+                    # Assuming it's a numpy array of floats
+                    return struct.unpack('f' * (len(value) // 4), value)
+                except struct.error:
+                    # If all else fails, return the raw bytes
+                    return value
+        except json.JSONDecodeError:
+            # If it's not JSON, return the decoded string
+            return value.decode(errors='replace')

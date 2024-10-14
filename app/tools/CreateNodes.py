@@ -71,7 +71,7 @@ class CreateNodes(BaseTool):
 
             # Normalize and copy context
             normalized_context = self.get_normalized_context()
-            node.context_info.context.update(normalized_context)
+            node.context_info = ContextInfo(**normalized_context)
         
         payload = {
             "session_id": self.caller_agent.session_id,

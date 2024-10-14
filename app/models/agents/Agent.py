@@ -335,11 +335,14 @@ class Agent:
         context_dict: Dict = self.context_info
         for key, value in context_dict.items():
             if key == 'context':
-                for sub_key, sub_value in value.items():
-                    if sub_key not in system_context:
-                        self._contexts[sub_key] = sub_value
-                    else:
-                        print(f"Skipping system context: {sub_key}")
+                if value is not None and isinstance(value, dict):
+                    for sub_key, sub_value in value.items():
+                        if sub_key not in system_context:
+                            self._contexts[sub_key] = sub_value
+                        else:
+                            print(f"Skipping system context: {sub_key}")
+                else:
+                    print(f"Skipping context: {value}. Context is null.")
             else:
                 self._contexts[key] = value
         if self._contexts.get('output') is None:

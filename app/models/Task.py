@@ -85,7 +85,7 @@ class Task(BaseModel, extra='allow'):
         
         await task.process_action(action)
         
-        await context_manager.save_context(f'task:{task.id}', task.model_dump())
+        #await context_manager.save_context(f'task:{task.id}', task.model_dump())
     
     async def process_action(self, action):
         if action == 'initialize':
@@ -123,7 +123,7 @@ class Task(BaseModel, extra='allow'):
         context_manager: ContextManager = get_container().context_manager()
         
         # Update and merge context
-        updated_context = await context_manager.update_context(f"session:{self.session_id}", self.context_info.context)
+        #updated_context = await context_manager.update_context(f"session:{self.session_id}", self.context_info.context)
         
         from app.services.context.node_context_manager import NodeContextManager
         # Merge with node context based on node name
@@ -131,12 +131,7 @@ class Task(BaseModel, extra='allow'):
         node_context_manager: NodeContextManager = get_container().node_context_manager()
         node_context = await node_context_manager.load_node_context(self, 'parent')
         
-        # Check if updated_context is not None before merging
-        if updated_context is not None:
-            self.context_info.context = self._deep_merge(updated_context, node_context.context_info.context)
-        else:
-            logger.warning("Updated context is None. Using existing context.")
-            self.context_info.context = self._deep_merge(self.context_info.context, node_context.context_info.context)
+        self.context_info.context = self._deep_merge(self.context_info.context, node_context.context_info.context)
         
         logger.debug(f"Task context after update: {self.context_info}")
         

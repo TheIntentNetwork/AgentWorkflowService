@@ -35,11 +35,11 @@ class Node(BaseModel, extra='allow'):
     description: str = Field(..., description="The description of the node.")
     context_info: ContextInfo = Field(default_factory=ContextInfo, description="The context information for the node.")
     session_id: Optional[str] = Field(None, description="The session ID.", init=False, init_var=False)
-    dependencies: List[Dependency] = Field(default=[], description="The dependencies of the node.")
+    dependencies: List[Dependency] = Field(default=None, description="The dependencies of the node.")
     collection: List['Node'] = Field(default=[], description="The collection of nodes.")
     status: NodeStatus = Field(default=NodeStatus.created, description="The status of the node.")
     subscribed_properties: Set[str] = Field(default_factory=set, description="Set of properties that other nodes are subscribed to.")
-    dependencies: Dict[str, Any] = Field(default_factory=dict, description="Dictionary of dependencies for this node.")
+    order_sequence: Optional[int] = Field(None, description="The order sequence of the node.")
     
     class Config:
         arbitrary_types_allowed = True
@@ -80,7 +80,6 @@ class Node(BaseModel, extra='allow'):
         """
         Initialize the node's services and logger.
         """
-        self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         asyncio.create_task(self.subscribe_to_mailbox())
 
     def _to_prompt(self) -> str:
@@ -124,16 +123,12 @@ class Node(BaseModel, extra='allow'):
 
         if node_data.get('type') == 'model':
             from app.models.Model import Model
-            if 'collection' in node_data:
-                for child in node_data['collection']:
-                    child['session_id'] = session_id
             node = Model(**node_data)
         else:
             node = cls(**node_data)
-        
+            
         node_context_manager = get_container().node_context_manager()
         node = await node_context_manager.load_node_context(node, 'parent')
-        await context_manager.save_context(f'node:{node.id}', node.model_dump())
         
         return node
 
@@ -165,11 +160,25 @@ class Node(BaseModel, extra='allow'):
         await node.process_action(action)
         
         if node.collection and len(node.collection) > 0:
+            i = 0
             for child in node.collection:
                 child['id'] = str(uuid.uuid4())
+                child['session_id'] = node.session_id
                 child['parent_id'] = node.id
                 child_node = await cls.create(**child)
-                await child_node.process_action('initialize')
+                node.collection[i] = child_node
+                kafka_service = get_container().kafka()
+                kafka_service.send_message_sync("agency_action", {
+                    "key": f"node:{child_node.id}",
+                    "action": "initialize",
+                    "object": child_node.model_dump(),
+                    "context": {
+                        "user_context": node.context_info.context.get('user_context', {}),
+                        "object_contexts": node.context_info.context.get('object_contexts', []),
+                        "session_id": node.session_id
+                    }
+                })
+                i += 1
         
         await context_manager.save_context(f'node:{node.id}', node.model_dump(), update_index=True)
         kafka_service = get_container().kafka()
@@ -359,7 +368,7 @@ class Node(BaseModel, extra='allow'):
             
             self._logger.info(f"Agency completion performed for node: {self.id}")
             await self._context_manager.save_context(f'node:{self.id}', NodeStatus.completed, "status")
-            await self._context_manager.save_context(f'node:{self.id}', self, update_index=True)
+            await self._context_manager.save_context(f'node:{self.id}', self.model_dump(), update_index=True)
             self._logger.info(f"Node {self.id} execution completed successfully")
         except Exception as e:
             self._logger.error(f"Error during execution of node {self.id}: {str(e)}")
@@ -680,10 +689,13 @@ class Node(BaseModel, extra='allow'):
         # Update and merge context
         updated_context = await self._context_manager.update_context(f"session:{self.session_id}", self.context_info.context)
         
-        self.context_info.context = updated_context
+        context_data = {
+            "key": f"node:{self.id}",
+            "context": updated_context,
+            **self.context_info.dict()
+        }
         
-        if updated_context.get('node_templates', None):
-            self.collection = updated_context['node_templates']
+        self.context_info = ContextInfo(**context_data)
         
         instructions = f"""
         Use the RetrieveContext tool to find examples of models and steps that indicate how we have processed similar tasks in the past.
@@ -746,7 +758,8 @@ class Node(BaseModel, extra='allow'):
         self.context_info = ContextInfo(**universe_agent.context_info.context['updated_context'])
         await universe_agent.cleanup()
         self.context_info.context = self._deep_merge(self.context_info.context, updated_context)
-        await self._context_manager.save_context(f'node:{self.id}', self.model_dump(), update_index=True)
+        node = Node(**self.model_dump(exclude={'collection'}))
+        await self._context_manager.save_context(f'node:{self.id}', node.model_dump(), update_index=True)
         print(f"Updated Context After SetContext {self.context_info}")
 
     def _are_dependencies_met(self) -> bool:

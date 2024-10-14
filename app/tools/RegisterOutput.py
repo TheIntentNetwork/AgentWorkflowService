@@ -41,52 +41,50 @@ class RegisterOutput(BaseTool):
         context_manager = container.context_manager()
         
         try:
-            # Fetch the existing node data
-            node_data = await redis.client.hgetall(f"node:{self.id}")
-            
-            # Parse and validate the data
-            context_info = json.loads(node_data.get('context_info', '{}'))
-            dependencies = json.loads(node_data.get('dependencies', '{}'))
-            collection = json.loads(node_data.get('collection', '[]'))
-            status = NodeStatus(node_data.get('status', 'pending'))
-            subscribed_properties = set(json.loads(node_data.get('subscribed_properties', '[]')))
-
-            # Create or update the Node object
-            node = Node(
-                id=self.id,
-                context_info=ContextInfo(**context_info),
-                dependencies=dependencies,
-                collection=collection,
-                status=status,
-                subscribed_properties=subscribed_properties
-            )
-
-            # Add the output to the node's context_info
-            await node.add_output(self.output_name, self.output)
-            
+            # Fetch the existing node data            
             # Update the node's context_info in Redis
             context = {
                 "session_id": self.caller_agent.session_id,
                 "context_key": f"node:{self.id}",
                 "output_name": self.output_name,
                 "output_description": self.output_description,
-                "output": json.dumps(node.context_info.output)
+                "output": json.dumps(self.output)
             }
             
             logger.info(f"Generating embeddings for context: {context}")
             
-            embeddings = redis.generate_embeddings(context, ["session_id", "context_key", "output_name", "output_description", "output"])
+            try:
+                context_data = {
+                    'key': f"node:{self.id}",
+                    'id': str(self.id),
+                    'session_id': self.caller_agent.session_id,
+                    'output_name': self.output_name,
+                    'output_description': self.output_description,
+                    'output': json.dumps(self.output)
+                }
 
-            if embeddings is None or "metadata_vector" not in embeddings:
-                logger.error("Failed to generate embeddings")
-                return "Error: Failed to generate embeddings"
+                fields_vectorization = {
+                    'key': False,
+                    'id': False,
+                    'session_id': False,
+                    'output_name': True,
+                    'output_description': True,
+                    'output': False,
+                    'metadata_vector': False
+                }
 
-            # Update the node's context in Redis
-            await redis.client.hset(f"node:{self.id}", mapping={
-                **context,
-                "metadata_vector": embeddings["metadata_vector"].tobytes()
-            })
-            
+                await redis.load_records(
+                    [context_data],
+                    index_name="outputs",
+                    fields_vectorization=fields_vectorization,
+                    overwrite=True,
+                    prefix="node",
+                    id_column='id'
+                )
+
+            except Exception as e:
+                logger.error(f"Error processing context data for node {self.id}: {str(e)}")
+                return f"Error: {str(e)}"
             logger.info(f"Successfully registered output for node: {self.id}")
             
             return f"Output registered successfully for node: {self.id}"

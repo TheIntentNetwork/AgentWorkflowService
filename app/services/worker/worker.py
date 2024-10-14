@@ -20,9 +20,10 @@ class Worker(IService):
 
     def __init__(self, name: str, worker_uuid: str, config: ServiceConfig, **kwargs):
         super().__init__(name=name, config=config, **kwargs)
+        from containers import get_container
         self.name = name
         self.worker_uuid = str(worker_uuid)  # Convert to string here
-        self.redis: RedisService = None  # We'll set this later
+        self.redis: RedisService = get_container().redis()
         self.logger = configure_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         self.logger.info(f"Worker initialized with instance_id: {self.worker_uuid}")
         self.is_active = False

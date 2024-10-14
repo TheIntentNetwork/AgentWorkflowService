@@ -1,11 +1,15 @@
 # app/services/context/context_manager.py
 from asyncio import Queue
 import asyncio
+from enum import Enum
 import json
 import traceback
 from typing import Dict, Any, List, Type, Union, Optional
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+
+import redis
+import redis.exceptions
 from app.models.ContextInfo import ContextInfo
 from dependency_injector.wiring import inject, Provide
 
@@ -71,19 +75,7 @@ class ContextManager(BaseContextManager):
         self.logger.info(f"Shutting down ContextManager service: {self.name}")
         self.logger.debug("ContextManager service shut down successfully")
 
-    @profile_async
-    async def update_context(self, key: str, value: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Update context data for a given key.
-        
-        Args:
-            key (str): The context key.
-            value (Dict[str, Any]): The context data to update.
-        """
-        existing_context = await self.redis.get_context(key) or {}
-        updated_context = self._deep_merge(existing_context, value)
-        await self.redis.save_context(key, updated_context)
-        return updated_context
+    
 
     async def delete_context(self, key: str) -> None:
         """
@@ -143,12 +135,13 @@ class ContextManager(BaseContextManager):
         Returns:
             Dict[str, Any]: The merged dictionary.
         """
+        result = target.copy()
         for key, value in source.items():
-            if isinstance(value, dict):
-                target[key] = self._deep_merge(target.get(key, {}), value)
+            if isinstance(value, dict) and key in result and isinstance(result[key], dict):
+                result[key] = self._deep_merge(result[key], value)
             else:
-                target[key] = value
-        return target
+                result[key] = value
+        return result
 
     # Session and Global Context Management
     # -------------------------------------
@@ -324,6 +317,7 @@ class ContextManager(BaseContextManager):
             value (Union[Dict[str, Any], Any]): The context data to save. If property is None, this should be a dictionary
                                                 representing the entire context. Otherwise, it's the value for the specific property.
             property (str, optional): The specific property to update. If None, update the entire context.
+            update_index (bool, optional): Whether to update the search index. Defaults to False.
 
         Raises:
             ValueError: If the key doesn't exist when trying to update a specific property.
@@ -331,18 +325,19 @@ class ContextManager(BaseContextManager):
         try:
             if property is None:
                 # Update the entire context
-                if not isinstance(value, dict):
-                    raise ValueError("When updating the entire context, value must be a dictionary.")
-                await self.redis.save_context(key, value)
+                if isinstance(value, dict):
+                    serialized = {k: json.dumps(v, default=self._json_serializer) for k, v in value.items()}
+                    await self.redis.client.hmset(key, serialized)
+                else:
+                    await self.redis.client.set(key, json.dumps(value, default=self._json_serializer))
                 self.logger.debug(f"Entire context saved for key {key}")
             else:
                 # Update a specific property
-                existing_context = await self.redis.get_context(key)
+                existing_context = await self.get_context(key)
                 if existing_context is None:
                     raise ValueError(f"Cannot update property '{property}' for non-existent key '{key}'")
                 
-                existing_context[property] = value
-                await self.redis.save_context(key, existing_context)
+                await self.redis.client.hset(key, property, json.dumps(value, default=self._json_serializer))
                 self.logger.debug(f"Property '{property}' updated for key {key}")
                 
             if update_index:
@@ -372,50 +367,69 @@ class ContextManager(BaseContextManager):
             else:
                 raise ValueError(f"Unsupported node type: {type(node)}")
 
-            if(isinstance(node.context_info, ContextInfo)):
-                node_data['context_info'] = node.context_info.model_dump()
-
             if node_id is None:
                 raise ValueError("Node ID is missing")
-
-            # Prepare the data for embedding
-            fields = ['id', 'name', 'parent_id', 'session_id', 'description', 'type', 'input_description', 'action_summary', 'outcome_description', 'output', 'feedback']
-            
-            # Generate embeddings
-            embeddings = self.redis.generate_embeddings(node_data, fields, {'description': True, 'input_description': True, 'action_summary': True, 'outcome_description': True, 'output': True, 'feedback': True})
-            
-            # Merge embeddings with node data
-            node_data.update(embeddings)
 
             # Prepare the record for Redis
             record = {
                 'key': f"node:{node_id}",
+                'id': str(node_id),
                 'session_id': node_data.get('session_id', ''),
                 'name': node_data.get('name', ''),
                 'parent_id': node_data.get('parent_id', ''),
                 'type': node_data.get('type', ''),
                 'status': node_data.get('status', ''),
                 'description': node_data.get('description', ''),
+                'collection': json.dumps(node_data.get('collection', []), default=self._json_serializer),
                 'input_description': node_data.get('input_description', ''),
                 'action_summary': node_data.get('action_summary', ''),
                 'outcome_description': node_data.get('outcome_description', ''),
-                'context': json.dumps(node_data.get('context', {})),
-                'metadata': json.dumps(node_data),
-                'name_vector': embeddings.get('name_vector', []),
-                'description_vector': embeddings.get('description_vector', []),
-                'input_vector': embeddings.get('input_description_vector', []),
-                'action_vector': embeddings.get('action_summary_vector', []),
-                'output_vector': embeddings.get('outcome_description_vector', []),
-                'metadata_vector': embeddings.get('metadata_vector', []),
+                'context': json.dumps(node_data.get('context', {}), default=self._json_serializer),
+                'item': json.dumps(node_data, default=self._json_serializer),
             }
 
-            # Use the RedisService to save the record
-            await self.redis.save_context(f"node:{node_id}", record)
+            # Define fields for vectorization
+            fields_vectorization = {
+                'key': False,
+                'id': False,
+                'session_id': False,
+                'name': True,
+                'parent_id': False,
+                'type': False,
+                'status': False,
+                'description': True,
+                'collection': False,
+                'input_description': True,
+                'action_summary': True,
+                'outcome_description': True,
+                'context': False,
+                'item': False,
+            }
+
+            # Use the RedisService to save the record and generate embeddings
+            keys = await self.redis.load_records(
+                [record],
+                "context",
+                fields_vectorization,
+                overwrite=True,
+                prefix="node",
+                id_column='id'
+            )
 
             self.logger.info(f"Node state and embeddings updated for node ID: {node_id}")
         except Exception as e:
             self.logger.error(f"Error saving node state and updating embeddings: {str(e)}")
             self.logger.error(traceback.format_exc())
+
+    def _json_serializer(self, obj):
+        """Custom JSON serializer for objects not serializable by default json code"""
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        elif isinstance(obj, set):
+            return list(obj)
+        elif isinstance(obj, Enum):
+            return obj.value
+        raise TypeError(f"Type {type(obj)} not serializable")
 
     async def get_merged_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -459,12 +473,38 @@ class ContextManager(BaseContextManager):
 
         return merged_context
     
-    async def get_context(self, key: str, type: Type = None) -> Dict[str, Any]:
-        results = await self.redis.client.hgetall(key)
-        if len(results) > 0:
-            if type:
-                return type(**results)
+    async def get_context(self, key: str) -> Dict[str, Any]:
+        try:
+            return await self.redis.get_context(key)
+        except redis.exceptions.ResponseError as e:
+            if "WRONGTYPE" in str(e):
+                self.logger.warning(f"Incorrect data type for key {key}. Attempting to retrieve as hash...")
+                return await self.redis.client.hgetall(key)
+            raise
+
+    async def update_context(self, key: str, value: Dict[str, Any], property_name: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            existing_context = await self.get_context(key)
+            
+            if property_name:
+                if isinstance(existing_context, dict) and property_name in existing_context and isinstance(existing_context[property_name], dict):
+                    updated_value = self._deep_merge(existing_context[property_name], value)
+                else:
+                    updated_value = value
+                await self.save_context(key, updated_value, property_name)
+                if isinstance(existing_context, dict):
+                    existing_context[property_name] = updated_value
+                else:
+                    existing_context = {property_name: updated_value}
             else:
-                return results
-        else:
-            return results
+                if isinstance(existing_context, dict):
+                    updated_context = self._deep_merge(existing_context, value)
+                else:
+                    updated_context = value
+                await self.save_context(key, updated_context)
+                existing_context = updated_context
+
+            return existing_context
+        except Exception as e:
+            self.logger.error(f"Error updating context for key {key}: {str(e)}")
+            raise
