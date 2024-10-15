@@ -1072,7 +1072,7 @@ class Agency:
             
             class ToolConfig:
                 strict = False
-                one_call_at_a_time = outer_self.async_mode != 'threading'
+                one_call_at_a_time = False
 
             @model_validator(mode='after')
             def validate_files(self):
