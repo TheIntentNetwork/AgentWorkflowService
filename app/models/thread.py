@@ -92,7 +92,7 @@ class Thread:
                        yield_messages: bool = False,
                        verbose: bool = False,
                        response_format: Optional[dict] = None
-                       ):
+                       ) -> str:
         if not recipient_agent:
             recipient_agent = self.recipient_agent
         

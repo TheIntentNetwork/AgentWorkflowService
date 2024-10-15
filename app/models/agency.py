@@ -1087,11 +1087,11 @@ class Agency:
                     raise ValueError(f"Recipient {value} is not valid. Valid recipients are: {recipient_names}")
                 return value
 
-            def run(self):
+            async def run(self):
                 thread: Thread = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
 
                 if not outer_self.async_mode == 'threading':
-                    message = thread.get_completion(message=self.message,
+                    message = await thread.get_completion(message=self.message,
                                                     message_files=self.message_files,
                                                     event_handler=self._event_handler,
                                                     yield_messages=not self._event_handler,
@@ -1100,7 +1100,7 @@ class Agency:
                                                     tool_choice=AssistantToolChoice(type="function", function={"name": "SendMessage"})
                                                     )
                 else:
-                    message = thread.get_completion_stream(message=self.message,
+                    message = await thread.get_completion_stream(message=self.message,
                                                           message_files=self.message_files,
                                                           additional_instructions=self.additional_instructions,
                                                           event_handler=self._event_handler,
@@ -1108,6 +1108,11 @@ class Agency:
                                                           tool_choice=AssistantToolChoice(type="function", function={"name": "SendMessage"})
                                                           )
 
+                if isinstance(message, AsyncGenerator):
+                    full_message = ""
+                    async for chunk in message:
+                        full_message += chunk
+                    return full_message
                 return message or ""
 
         SendMessage._caller_agent = agent
