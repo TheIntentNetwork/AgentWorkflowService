@@ -1072,7 +1072,7 @@ class Agency:
             
             class ToolConfig:
                 strict = False
-                one_call_at_a_time = False
+                one_call_at_a_time = True
 
             @model_validator(mode='after')
             def validate_files(self):
@@ -1088,7 +1088,7 @@ class Agency:
                 return value
 
             def run(self):
-                thread = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
+                thread: Thread = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
 
                 if not outer_self.async_mode == 'threading':
                     message = thread.get_completion(message=self.message,
@@ -1096,11 +1096,17 @@ class Agency:
                                                     event_handler=self._event_handler,
                                                     yield_messages=not self._event_handler,
                                                     additional_instructions=self.additional_instructions,
+                                                    recipient_agent=self.recipient.value,
+                                                    tool_choice=AssistantToolChoice(type="function", function={"name": "SendMessage"})
                                                     )
                 else:
-                    message = thread.get_completion_async(message=self.message,
+                    message = thread.get_completion_stream(message=self.message,
                                                           message_files=self.message_files,
-                                                          additional_instructions=self.additional_instructions)
+                                                          additional_instructions=self.additional_instructions,
+                                                          event_handler=self._event_handler,
+                                                          recipient_agent=self.recipient.value,
+                                                          tool_choice=AssistantToolChoice(type="function", function={"name": "SendMessage"})
+                                                          )
 
                 return message or ""
 

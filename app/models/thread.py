@@ -4,9 +4,11 @@ import json
 import os
 import time
 import traceback
-from typing import List, Optional, Type, Union
+from typing import List, Optional, Type, Union, TypeVar
 
 from openai import APIError, BadRequestError
+from openai.lib._parsing._completions import type_to_response_format_param
+from openai.lib._parsing._completions import type_to_response_format_param
 from openai.types.beta import AssistantToolChoice
 from openai.types.beta.threads.message import Attachment
 from openai.types.beta.threads.run import TruncationStrategy
@@ -14,7 +16,7 @@ from openai.types.beta.threads.run import TruncationStrategy
 from app.tools.oai import FileSearch, CodeInterpreter
 from app.utilities.streaming import AgencyEventHandler
 from app.models.agents.Agent import Agent
-from app.models.message_output import MessageOutput
+from app.models.message_output import MessageOutput, MessageOutputLive
 from app.models.User import User
 from app.utilities.llm_client import get_openai_client
 
@@ -66,7 +68,8 @@ class Thread:
                               recipient_agent:Agent=None,
                               additional_instructions: str = None,
                               tool_choice: AssistantToolChoice = None,
-                              response_format: Optional[dict] = None):
+                              response_format: Optional[dict] = None,
+                              verbose: bool = False):
 
         return self.get_completion(message,
                                    message_files,
@@ -87,6 +90,7 @@ class Thread:
                        event_handler: type(AgencyEventHandler) = None,
                        tool_choice: AssistantToolChoice = None,
                        yield_messages: bool = False,
+                       verbose: bool = False,
                        response_format: Optional[dict] = None
                        ):
         if not recipient_agent:
@@ -173,7 +177,7 @@ class Thread:
                         for future in as_completed(futures):
                             tool_call = futures[future]
                             output = future.result()
-                            #yield from handle_output(tool_call, output)
+                            yield handle_output(tool_call, output)
                 else:
                     sync_tool_calls += async_tool_calls
 
@@ -183,7 +187,7 @@ class Thread:
                         yield MessageOutput("function", recipient_agent.name, self.agent.name, str(tool_call.function), tool_call)
                     output = self.execute_tool(tool_call, recipient_agent, event_handler, tool_outputs_and_names)
                     tool_outputs_and_names.append((tool_call.function.name, {"tool_call_id": tool_call.id, "output": output}))
-                    #yield from handle_output(tool_call, output)
+                    yield handle_output(tool_call, output)
                 
                 # split names and outputs
                 tool_outputs = [tool_output for _, tool_output in tool_outputs_and_names]
