@@ -92,6 +92,7 @@ class Agency(BaseModel):
                  max_completion_tokens: int = None,
                  truncation_strategy: dict = None,
                  session_id: str = None,
+                 one_call_at_a_time: bool = True,
                  ):
         """
         Initializes the Agency object, setting up agents, threads, and core functionalities.
@@ -128,6 +129,7 @@ class Agency(BaseModel):
             session_id=session_id,
             logger=configure_logger("Agency")
         )
+        self.one_call_at_a_time = one_call_at_a_time
         if self.async_mode == "threading":
             from app.models.thread_async import ThreadAsync
             self.ThreadType = ThreadAsync
@@ -820,11 +822,11 @@ class Agency(BaseModel):
             if len(recipient_agents) == 0:
                 continue
             agent = self._get_agent_by_name(agent_name)
-            agent.add_tool(self._create_send_message_tool(agent, recipient_agents))
+            agent.add_tool(self._create_send_message_tool(agent, recipient_agents, self.one_call_at_a_time))
             if self.async_mode:
                 agent.add_tool(self._create_get_response_tool(agent, recipient_agents))
 
-    def _create_send_message_tool(self, agent: Agent, recipient_agents: List[Agent]):
+    def _create_send_message_tool(self, agent: Agent, recipient_agents: List[Agent], one_call_at_a_time: bool):
         """
         Creates a SendMessage tool to enable an agent to send messages to specified recipient agents.
 
@@ -850,6 +852,8 @@ class Agency(BaseModel):
         from app.tools.base_tool import BaseTool as BaseTool
         
         class SendMessage(BaseTool):
+            _lock = Lock()
+            
             my_primary_instructions: str = Field(...,
                                                  description="Please repeat your primary instructions step-by-step, including both completed "
                                                              "and the following next steps that you need to perform. For multi-step, complex tasks, first break them down "
@@ -871,7 +875,7 @@ class Agency(BaseModel):
             
             class ToolConfig:
                 strict = False
-                one_call_at_a_time = outer_self.async_mode != 'threading'
+                one_call_at_a_time = one_call_at_a_time
 
             @model_validator(mode='after')
             def validate_files(self):
@@ -887,12 +891,11 @@ class Agency(BaseModel):
                 return value
 
             async def run(self):
+                if not SendMessage._lock.acquire(blocking=False):
+                    return "Error: SendMessage is already in progress. Please wait for the previous call to finish before calling it again."
+                
                 thread: Thread = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
                 
-                if thread.send_message_in_progress:
-                    return "Error: A message is already being sent. Please wait for the previous message to complete before sending another."
-                
-                thread.send_message_in_progress = True
                 try:
                     if not outer_self.async_mode == 'threading':
                         message = await thread.get_completion(message=self.message,
@@ -908,7 +911,7 @@ class Agency(BaseModel):
 
                     return message or ""
                 finally:
-                    thread.send_message_in_progress = False
+                    SendMessage._lock.release()
 
         SendMessage._caller_agent = agent
         if self.async_mode == 'threading':
