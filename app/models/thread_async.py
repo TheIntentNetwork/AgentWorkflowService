@@ -27,14 +27,17 @@ class ThreadAsync(Thread):
                additional_instructions: str = None,
                tool_choice: AssistantToolChoice = None
                ):
-        output = super().get_completion(message=message,
-                                        message_files=message_files,
-                                        attachments=attachments,
-                                        recipient_agent=recipient_agent,
-                                        additional_instructions=additional_instructions,
-                                        tool_choice=tool_choice)
+        try:
+            output = super().get_completion(message=message,
+                                            message_files=message_files,
+                                            attachments=attachments,
+                                            recipient_agent=recipient_agent,
+                                            additional_instructions=additional_instructions,
+                                            tool_choice=tool_choice)
 
-        self.response = f"""{self.recipient_agent.name}'s Response: '{output}'"""
+            self.response = f"""{self.recipient_agent.name}'s Response: '{output}'"""
+        finally:
+            self.send_message_in_progress = False
 
         return
 
@@ -46,18 +49,15 @@ class ThreadAsync(Thread):
                              additional_instructions: str = None,
                              tool_choice: AssistantToolChoice = None,
                              ):
-        if self.pythread and self.pythread.is_alive():
+        if self.send_message_in_progress:
             return "System Notification: 'Agent is busy, so your message was not received. Please always use 'GetResponse' tool to check for status first, before using 'SendMessage' tool again for the same agent.'"
-        elif self.pythread and not self.pythread.is_alive():
-            self.pythread.join()
-            self.pythread = None
-            self.response = None
 
         run = self.get_last_run()
 
         if run and run.status in ['queued', 'in_progress', 'requires_action']:
             return "System Notification: 'Agent is busy, so your message was not received. Please always use 'GetResponse' tool to check for status first, before using 'SendMessage' tool again for the same agent.'"
 
+        self.send_message_in_progress = True
         self.pythread = threading.Thread(target=self.worker,
                                          args=(message, message_files, attachments, recipient_agent, additional_instructions, tool_choice))
 

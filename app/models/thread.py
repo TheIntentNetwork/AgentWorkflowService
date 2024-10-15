@@ -42,6 +42,7 @@ class Thread:
         self.stream = None
 
         self.num_run_retries = 0
+        self.send_message_in_progress = False
 
     def init_thread(self):
         if self.id:

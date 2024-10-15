@@ -888,20 +888,27 @@ class Agency(BaseModel):
 
             async def run(self):
                 thread: Thread = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
+                
+                if thread.send_message_in_progress:
+                    return "Error: A message is already being sent. Please wait for the previous message to complete before sending another."
+                
+                thread.send_message_in_progress = True
+                try:
+                    if not outer_self.async_mode == 'threading':
+                        message = await thread.get_completion(message=self.message,
+                                                        message_files=self.message_files,
+                                                        event_handler=self._event_handler,
+                                                        yield_messages=not self._event_handler,
+                                                        additional_instructions=self.additional_instructions,
+                                                        )
+                    else:
+                        message = await thread.get_completion_stream(message=self.message,
+                                                              message_files=self.message_files,
+                                                              additional_instructions=self.additional_instructions)
 
-                if not outer_self.async_mode == 'threading':
-                    message = await thread.get_completion(message=self.message,
-                                                    message_files=self.message_files,
-                                                    event_handler=self._event_handler,
-                                                    yield_messages=not self._event_handler,
-                                                    additional_instructions=self.additional_instructions,
-                                                    )
-                else:
-                    message = await thread.get_completion_stream(message=self.message,
-                                                          message_files=self.message_files,
-                                                          additional_instructions=self.additional_instructions)
-
-                return message or ""
+                    return message or ""
+                finally:
+                    thread.send_message_in_progress = False
 
         SendMessage._caller_agent = agent
         if self.async_mode == 'threading':
