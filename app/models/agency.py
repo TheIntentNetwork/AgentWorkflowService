@@ -37,9 +37,8 @@ from app.utilities.shared_state import SharedState
 from profiler import profile_async
 from .message_output import MessageOutput
 from .message_output import MessageOutputLive
-from .thread import Thread
-
-
+from app.models.thread import Thread
+from app.models.thread_async import ThreadAsync
 from app.models.User import User
 
 from app.utilities.streaming import AgencyEventHandler
@@ -714,7 +713,7 @@ class Agency:
                     if snapshot["type"] == "function":
                         snapshot = FunctionToolCall(**snapshot)
                     elif snapshot["type"] == "code_interpreter":
-                        snapshot = CodeInterpreterToolCall(**snapshot)
+                        snapshot =CodeInterpreterToolCall(**snapshot)
                     elif snapshot["type"] == "file_search":
                         snapshot = FileSearchToolCall(**snapshot)
                     else:
