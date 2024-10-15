@@ -7,6 +7,7 @@ import threading
 import uuid
 from enum import Enum
 from typing import AsyncGenerator, List, Callable, Any, Dict, Literal, Union, Optional, ClassVar, Type
+from threading import Lock
 from typing_extensions import TypedDict
 
 from openai.types.beta import AssistantToolChoice
