@@ -1088,39 +1088,15 @@ class Agency:
                 return value
 
             async def run(self):
-                thread: Thread = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
+                thread: ThreadAsync = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
 
-                if thread.send_message_in_progress:
-                    return "Error: SendMessage is already in progress. Please wait for the previous call to finish before calling it again."
-
-                thread.send_message_in_progress = True
-                try:
-                    if not outer_self.async_mode == 'threading':
-                        message = await thread.get_completion(message=self.message,
-                                                        message_files=self.message_files,
-                                                        event_handler=self._event_handler,
-                                                        yield_messages=not self._event_handler,
-                                                        additional_instructions=self.additional_instructions,
-                                                        recipient_agent=self.recipient.value,
-                                                        tool_choice=AssistantToolChoice(type="function", function={"name": "SendMessage"})
-                                                        )
-                    else:
-                        message = await thread.get_completion_stream(message=self.message,
-                                                              message_files=self.message_files,
-                                                              additional_instructions=self.additional_instructions,
-                                                              event_handler=self._event_handler,
-                                                              recipient_agent=self.recipient.value,
-                                                              tool_choice=AssistantToolChoice(type="function", function={"name": "SendMessage"})
-                                                              )
-
-                    if isinstance(message, AsyncGenerator):
-                        full_message = ""
-                        async for chunk in message:
-                            full_message += chunk
-                        return full_message
-                    return message or ""
-                finally:
-                    thread.send_message_in_progress = False
+                return await thread.get_completion_async(
+                    message=self.message,
+                    message_files=self.message_files,
+                    additional_instructions=self.additional_instructions,
+                    recipient_agent=self.recipient.value,
+                    tool_choice=AssistantToolChoice(type="function", function={"name": "SendMessage"})
+                )
 
         SendMessage._caller_agent = agent
         if self.async_mode == 'threading':
