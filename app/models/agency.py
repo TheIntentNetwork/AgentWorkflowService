@@ -18,8 +18,6 @@ from rich.console import Console
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from typing_extensions import override
 
-
-
 from app.models.agents.Agent import Agent
 from profiler import profile_async
 from .message_output import MessageOutput
@@ -177,7 +175,7 @@ class Agency(BaseModel):
 
         completion = ""
         try:
-            async for chunk in self.main_thread.get_completion_stream(
+            async for chunk in await self.main_thread.get_completion_stream(
                 message=message,
                 message_files=message_files,
                 event_handler=event_handler,
@@ -189,7 +187,7 @@ class Agency(BaseModel):
                 if isinstance(chunk, str):
                     completion += chunk
                 elif isinstance(chunk, MessageOutput):
-                    # Handle MessageOutput objects if needed
+                    print(chunk.get_formatted_content())
                     pass
         except Exception as e:
             self.logger.error(f"Error in get_completion: {str(e)}")
@@ -827,7 +825,6 @@ class Agency(BaseModel):
                 agent.add_tool(self._create_get_response_tool(agent, recipient_agents))
 
     def _create_send_message_tool(self, agent: Agent, recipient_agents: List[Agent]):
-        from app.tools.base_tool import BaseTool as BaseTool
         """
         Creates a SendMessage tool to enable an agent to send messages to specified recipient agents.
 
@@ -850,11 +847,12 @@ class Agency(BaseModel):
             agent_descriptions += recipient_agent.description + "\n"
 
         outer_self = self
-
+        from app.tools.base_tool import BaseTool as BaseTool
+        
         class SendMessage(BaseTool):
             my_primary_instructions: str = Field(...,
                                                  description="Please repeat your primary instructions step-by-step, including both completed "
-                                                             "and the following next steps that you need to perfrom. For multi-step, complex tasks, first break them down "
+                                                             "and the following next steps that you need to perform. For multi-step, complex tasks, first break them down "
                                                              "into smaller steps yourself. Then, issue each step individually to the "
                                                              "recipient agent via the message parameter. Each identified step should be "
                                                              "sent in separate message. Keep in mind, that the recipient agent does not have access "
@@ -868,9 +866,12 @@ class Agency(BaseModel):
             message_files: Optional[List[str]] = Field(default=None,
                                                        description="A list of file ids to be sent as attachments to this message. Only use this if you have the file id that starts with 'file-'.",
                                                        examples=["file-1234", "file-5678"])
-            additional_instructions: str = Field(default=None,
+            additional_instructions: Optional[List[str]] = Field(default=None,
                                                  description="Any additional instructions or clarifications that you would like to provide to the recipient agent.")
-            one_call_at_a_time: bool = True
+            
+            class ToolConfig:
+                strict = False
+                one_call_at_a_time = outer_self.async_mode != 'threading'
 
             @model_validator(mode='after')
             def validate_files(self):
@@ -886,22 +887,24 @@ class Agency(BaseModel):
                 return value
 
             async def run(self):
-                thread = outer_self.agents_and_threads[self.caller_agent.name][self.recipient.value]
+                thread: Thread = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
 
-                if not outer_self.async_mode:
+                if not outer_self.async_mode == 'threading':
                     message = await thread.get_completion(message=self.message,
                                                     message_files=self.message_files,
-                                                    event_handler=self.event_handler,
-                                                    additional_instructions=self.additional_instructions)
+                                                    event_handler=self._event_handler,
+                                                    yield_messages=not self._event_handler,
+                                                    additional_instructions=self.additional_instructions,
+                                                    )
                 else:
-                    message = await thread.get_completion_async(message=self.message,
+                    message = await thread.get_completion_stream(message=self.message,
                                                           message_files=self.message_files,
                                                           additional_instructions=self.additional_instructions)
 
                 return message or ""
 
-        SendMessage.caller_agent = agent
-        if self.async_mode:
+        SendMessage._caller_agent = agent
+        if self.async_mode == 'threading':
             SendMessage.__doc__ = self.send_message_tool_description_async
         else:
             SendMessage.__doc__ = self.send_message_tool_description
@@ -910,29 +913,41 @@ class Agency(BaseModel):
 
     def _create_get_response_tool(self, agent: Agent, recipient_agents: List[Agent]):
         from app.tools.base_tool import BaseTool as BaseTool
+        from typing import Literal
         """
         Creates a CheckStatus tool to enable an agent to check the status of a task with a specified recipient agent.
         """
         recipient_names = [agent.name for agent in recipient_agents]
-        recipients = Enum("recipient", {name: name for name in recipient_names})
 
         outer_self = self
 
         class GetResponse(BaseTool):
             """This tool allows you to check the status of a task or get a response from a specified recipient agent, if the task has been completed. You must always use 'SendMessage' tool with the designated agent first."""
-            recipient: recipients = Field(...,
-                                          description=f"Recipient agent that you want to check the status of. Valid recipients are: {recipient_names}")
+            recipient: str = Field(
+                ...,
+                description=f"Recipient agent that you want to check the status of. Valid recipients are: {recipient_names}"
+            )
 
             @field_validator('recipient')
             def check_recipient(cls, value):
-                if value.value not in recipient_names:
+                if value not in recipient_names:
                     raise ValueError(f"Recipient {value} is not valid. Valid recipients are: {recipient_names}")
                 return value
 
             def run(self):
-                thread = outer_self.agents_and_threads[self.caller_agent.name][self.recipient.value]
-
-                return thread.check_status()
+                try:
+                    if self.caller_agent.name not in outer_self.agents_and_threads:
+                        raise KeyError(f"Caller agent '{self.caller_agent.name}' not found in agents_and_threads")
+                    
+                    if self.recipient not in outer_self.agents_and_threads[self.caller_agent.name]:
+                        raise KeyError(f"Recipient '{self.recipient}' not found for caller agent '{self.caller_agent.name}'")
+                    
+                    thread = outer_self.agents_and_threads[self.caller_agent.name][self.recipient]
+                    return thread.check_status()
+                except Exception as e:
+                    error_msg = f"Error in GetResponse tool: {str(e)}"
+                    outer_self.logger.error(error_msg)
+                    return error_msg
 
         GetResponse.caller_agent = agent
 
