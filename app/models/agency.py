@@ -1088,7 +1088,7 @@ class Agency:
                 return value
 
             async def run(self):
-                thread: ThreadAsync = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
+                thread: Agency.ThreadType = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]
 
                 return await thread.get_completion_async(
                     message=self.message,
