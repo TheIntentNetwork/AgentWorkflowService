@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from openai.types.beta import AssistantToolChoice
 from app.models.agents.Agent import Agent
 from app.models.thread import Thread
-from app.models.thread_async import ThreadAsync
 from app.models.User import User
 
 class ThreadAsync(Thread):
