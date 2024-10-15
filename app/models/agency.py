@@ -43,6 +43,11 @@ class ThreadsCallbacks(TypedDict):
     save: Callable[[Dict], Any]
 
 
+class RefusalError(Exception):
+    pass
+
+T = TypeVar('T')
+
 class Agency(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
