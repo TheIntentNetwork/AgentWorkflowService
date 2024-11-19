@@ -10,8 +10,9 @@ import uuid
 from aiostream import stream
 from app.services.cache.redis import RedisService
 from app.models.Dependency import Dependency
+from app.models.base_node import NodeStatus, BaseNode
+from app.models.base_context import BaseContextInfo
 from app.models.ContextInfo import ContextInfo
-from app.models.NodeStatus import NodeStatus
 from app.services.cache.redis import RedisService
 from app.utilities.context_update import ContextUpdate, context_update_manager
 from profiler import profile_async, profile_sync
@@ -19,27 +20,16 @@ from app.logging_config import configure_logger
 from redisvl.query.filter import Tag, FilterExpression
 
 
-class Node(BaseModel, extra='allow'):
+class Node(BaseNode):
     """
     Represents a node in the workflow system.
-    
-    This class encapsulates the properties and behaviors of a node, including its
-    execution, context management, and dependency handling.
     """
-
-    # Basic attributes
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="The ID of the node.", init=False, init_var=False, type=pydantic.SkipValidation())
-    name: str = Field(..., description="The name of the node.")
-    parent_id: Optional[str] = Field(None, description="The parent ID of the node.")
-    type: Literal['step', 'workflow', 'model', 'lifecycle', 'goal'] = Field(..., description="The type of the node.", init=False, init_var=False)
-    description: str = Field(..., description="The description of the node.")
-    context_info: ContextInfo = Field(default_factory=ContextInfo, description="The context information for the node.")
-    session_id: Optional[str] = Field(None, description="The session ID.", init=False, init_var=False)
-    dependencies: List[Dependency] = Field(default=None, description="The dependencies of the node.")
-    collection: List['Node'] = Field(default=[], description="The collection of nodes.")
-    status: NodeStatus = Field(default=NodeStatus.created, description="The status of the node.")
-    subscribed_properties: Set[str] = Field(default_factory=set, description="Set of properties that other nodes are subscribed to.")
-    order_sequence: Optional[int] = Field(None, description="The order sequence of the node.")
+    context_info: BaseContextInfo = Field(default_factory=BaseContextInfo)
+    session_id: Optional[str] = Field(None)
+    dependencies: List[Dependency] = Field(default_factory=list)
+    collection: List['Node'] = Field(default_factory=list)
+    status: NodeStatus = Field(default=NodeStatus.CREATED)
+    subscribed_properties: List[str] = Field(default_factory=list)
     
     class Config:
         arbitrary_types_allowed = True
@@ -123,6 +113,8 @@ class Node(BaseModel, extra='allow'):
 
         if node_data.get('type') == 'model':
             from app.models.Model import Model
+            node_data['collection'] = []
+            node_data['order_sequence'] = str(node_data.get('order_sequence', None))
             node = Model(**node_data)
         else:
             node = cls(**node_data)
@@ -164,7 +156,7 @@ class Node(BaseModel, extra='allow'):
             for child in node.collection:
                 child['id'] = str(uuid.uuid4())
                 child['session_id'] = node.session_id
-                child['parent_id'] = node.id
+                child['parent_id'] = str(node.id)
                 child_node = await cls.create(**child)
                 node.collection[i] = child_node
                 kafka_service = get_container().kafka()
@@ -576,12 +568,13 @@ class Node(BaseModel, extra='allow'):
             
             results = await redis.client.ft("context").search(
                 query=f"@key:context:*",
-                filter_expr=filter_expression,
                 limit=1000  # Adjust this limit as needed
             )
+            
+            filtered_results = results.filter(filter_expression)
 
             node_layer = []
-            for doc in results.docs:
+            for doc in filtered_results.docs:
                 if doc.id != f"context:{self.id}":  # Exclude the current node
                     node_data = {k: v for k, v in doc.__dict__.items() if not k.startswith('__')}
                     node_layer.append(node_data)
@@ -696,6 +689,7 @@ class Node(BaseModel, extra='allow'):
         }
         
         self.context_info = ContextInfo(**context_data)
+        self.context_info.key = f"node:{self.id}"
         
         instructions = f"""
         Use the RetrieveContext tool to find examples of models and steps that indicate how we have processed similar tasks in the past.
@@ -779,3 +773,33 @@ class Node(BaseModel, extra='allow'):
         for key, value in self.dependencies.items():
             prompt += f"{key}: {value}\n"
         return prompt
+
+import asyncio
+from enum import Enum
+import json
+import logging
+from attr import dataclass
+from pydantic import BaseModel, Field, PrivateAttr, ConfigDict, Extra, SkipValidation
+import pydantic
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Set, Type, Union
+import uuid
+from aiostream import stream
+from app.services.cache.redis import RedisService
+from app.models.Dependency import Dependency
+from app.models.base_node import NodeStatus, BaseNode
+from app.models.base_context import BaseContextInfo
+from app.services.cache.redis import RedisService
+from app.utilities.context_update import ContextUpdate, context_update_manager
+from profiler import profile_async, profile_sync
+from app.logging_config import configure_logger
+from redisvl.query.filter import Tag, FilterExpression
+
+class Node(BaseNode):
+    """
+    Represents a node in the workflow system.
+    
+    This class encapsulates the properties and behaviors of a node, including its
+    execution, context management, and dependency handling.
+    """
+    context_info: BaseContextInfo
+    # Add any additional Node-specific fields here

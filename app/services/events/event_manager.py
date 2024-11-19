@@ -8,11 +8,14 @@ from kafka.consumer.fetcher import ConsumerRecord
 from app.interfaces import IService
 from app.logging_config import configure_logger
 from dependency_injector.wiring import inject, Provide
+from app.models.AgencyTaskGroup import AgencyTaskGroup
 from app.services.cache.redis import RedisService
 from app.services.queue.kafka import KafkaService
 from app.services.worker.worker import Worker
 from contextlib import asynccontextmanager
 from app.utilities.resource_tracker import ResourceTracker
+from app.models.CleanupTask import CleanupTask
+from app.models.TaskGroup import TaskGroup
 
 class EventManager(IService):
     @inject
@@ -98,7 +101,6 @@ class EventManager(IService):
     async def setup_event_loop_and_tasks(self):
         self.logger.info("Setting up event loop and tasks")
         self.event_loop = asyncio.new_event_loop()
-        self.event_loop.create_task(self.process_queue())
         self.logger.info("Event loop and tasks set up")
 
     async def process_queue(self):
@@ -119,10 +121,73 @@ class EventManager(IService):
         """
         Subscribes to the given redis channels.
         """
-        self.logger.info(f"Subscribing to channels: {channels}")
+        self.logger.info(f"""
+        Subscribing to channels:
+        - Channels: {channels}
+        - Callback: {callback.__qualname__ if hasattr(callback, '__qualname__') else str(callback)}
+        - Filter: {filter_func.__qualname__ if filter_func and hasattr(filter_func, '__qualname__') else str(filter_func)}
+        """)
+        
         for channel in channels:
-            await self.redis.subscribe(channel, self.queue, callback, filter_func)
-            self.logger.info(f"Subscribed to channel: {channel}")
+            queue = asyncio.Queue()
+            await self.redis.subscribe(channel, queue, callback)
+            # Start a task to process messages from this queue
+            process_task = asyncio.create_task(
+                self._process_channel_queue(channel, queue, callback),
+                name=f"process_{channel}"
+            )
+            self.logger.info(f"""
+            Subscribed to channel:
+            - Channel: {channel}
+            - Queue ID: {id(queue)}
+            - Process task: {process_task.get_name()}
+            """)
+
+    async def _process_channel_queue(self, channel: str, queue: asyncio.Queue, callback: callable):
+        """Process messages from a channel queue and invoke the callback"""
+        task_name = asyncio.current_task().get_name()
+        self.logger.info(f"""
+        Starting queue processor:
+        - Task: {task_name}
+        - Channel: {channel}
+        - Queue ID: {id(queue)}
+        - Callback: {callback.__qualname__ if hasattr(callback, '__qualname__') else str(callback)}
+        """)
+        
+        while True:
+            try:
+                # Use await with asyncio.sleep to properly yield control
+                await asyncio.sleep(0.1)
+                #self.logger.debug(f"Checking for messages in queue: {id(queue)}")
+                
+                # Use wait_for to add timeout to queue.get()
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    self.logger.debug(f"""
+                    Processing queue message:
+                    - Task: {task_name}
+                    - Queue ID: {id(queue)}
+                    - Message length: {len(str(message))} chars
+                    - Message preview: {str(message)[:200]}... (truncated)
+                    """)
+                    
+                    if callback:
+                        await callback(channel, message)
+                        self.logger.debug(f"Callback completed for task: {task_name}")
+                    queue.task_done()
+                except asyncio.TimeoutError:
+                    continue  # No message available, continue checking
+                
+            except asyncio.CancelledError:
+                self.logger.info(f"Queue processor cancelled: {task_name}")
+                break
+            except Exception as e:
+                self.logger.error(f"""
+                Error processing channel message:
+                - Task: {task_name}
+                - Error: {str(e)}
+                - Traceback: {traceback.format_exc()}
+                """)
     
     async def subscribe_to_patterns(self, patterns, callback, filter_func=None):
         """
@@ -238,13 +303,35 @@ class EventManager(IService):
         else:
             self.logger.warning(f"Unhandled action: {action}")
 
+    async def validate_dependencies(self, object_data: dict) -> bool:
+        """Validate that all required dependencies are present before processing"""
+        if 'tasks' not in object_data:
+            return True
+            
+        for task in object_data['tasks']:
+            dependencies = task.get('dependencies', [])
+            context = object_data.get('context_info', {}).get('context', {})
+            
+            for dep in dependencies:
+                if not any(dep in result_keys for t in object_data['tasks'] for result_keys in t.get('result_keys', [])):
+                    self.logger.warning(f"Dependency '{dep}' not found in any task result_keys")
+                    return False
+                    
+        return True
+
     async def __event_listener(self, message: Any):
         from app.models.Node import Node
         from app.models.Task import Task
-        
+        from app.models.AgencyTask import AgencyTask
+        from app.models.CleanupTask import CleanupTask
+
         event_mapping = {
+            'agency': AgencyTask,
             'task': Task,
-            'node': Node
+            'node': Node,
+            'cleanup': CleanupTask,
+            'task_group': AgencyTaskGroup,
+            'task_group_execute': TaskGroup,
         }
         
         try:
@@ -269,13 +356,20 @@ class EventManager(IService):
                 self.logger.error(f"Unhandled event type for key: {key}")
                 return
             
+            # Create a new task for handling the event
             self.logger.info(f"Handling event with type: {type_class.__name__}")
-            await type_class.handle(key, action, object_data, context)
-            self.logger.info(f"Event handled for key: {key}")
+            asyncio.create_task(self.handle_event_task(type_class, key, action, object_data, context))
         except Exception as e:
             self.logger.error(f"Error in __event_listener: {e}")
             self.logger.error(traceback.format_exc())
-            #await self.save_error_to_redis(message_data, str(e), traceback.format_exc())
+
+    async def handle_event_task(self, type_class, key, action, object_data, context):
+        try:
+            await type_class.handle(key, action, object_data, context)
+            self.logger.info(f"Event handled for key: {key}")
+        except Exception as e:
+            self.logger.error(f"Error handling event for key: {key}: {e}")
+            self.logger.error(traceback.format_exc())
 
     async def save_error_to_redis(self, event_data: dict, error_message: str, traceback_str: str):
         """Save error information to Redis for later processing."""

@@ -1,5 +1,5 @@
 # Start from the Selenium Chrome image
-FROM selenium/standalone-chrome:4.10.0-20230607
+FROM selenium/standalone-chrome:latest
 
 # Switch to root user for installations
 USER root
@@ -11,7 +11,7 @@ RUN apt-get update && \
     apt-get update && \
     apt-get install -y python3.11 python3.11-venv python3.11-dev python3-pip python3.11-distutils iproute2 && \
     rm -rf /var/lib/apt/lists/* && \
-    ln -s /usr/bin/python3.11 /usr/bin/python
+    ln -s /usr/bin/python3.11 /usr/bin/python && apt-get install -y google-chrome-stable
 
 # Set TCP keepalive settings
 RUN sysctl -w net.ipv4.tcp_keepalive_time=360 && \
@@ -48,5 +48,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Set the Python import path to include /app
 ENV PYTHONPATH=/app:$PYTHONPATH
 
-# The CMD is now in docker-compose.yml for easier overriding during development
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--timeout-keep-alive", "120", "--ws-ping-interval", "60", "--ws-ping-timeout", "360", "--loop", "asyncio"]
+RUN pip freeze | grep openai
+
+# Install debugpy
+RUN pip install openai
+
+# Set the working directory
+WORKDIR /app
+
+# Copy your application code
+COPY . /app
+
+# The CMD will be overridden by docker-compose
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

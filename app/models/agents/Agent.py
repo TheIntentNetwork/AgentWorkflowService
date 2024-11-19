@@ -19,6 +19,7 @@ from openai import NotFoundError
 from openai import AsyncOpenAI
 from app.services.cache.redis import RedisService
 from app.logging_config import configure_logger
+from app.tools.oai import FileSearch
 from app.utilities.openapi import validate_openapi_spec
 from colorama import init, Fore, Back, Style
 
@@ -34,6 +35,7 @@ from colorama import init, Fore, Back, Style
 from app.tools.oai import Retrieval, CodeInterpreter
 from typing import List, Optional
 from app.models.ContextInfo import ContextInfo
+from app.utilities.shared_state import SharedState
 
 if TYPE_CHECKING:
     from app.tools.base_tool import BaseTool
@@ -51,6 +53,8 @@ class ExampleMessage(TypedDict):
     metadata: Optional[Dict[str, str]]
     
 class Agent:
+    _shared_state: SharedState = None
+    
     def __enter__(self):
         return self
 
@@ -66,7 +70,7 @@ class Agent:
         
     @property
     def assistant(self):
-        if self._assistant is None:
+        if not hasattr(self, '_assistant') or self._assistant is None:
             raise Exception("Assistant is not initialized. Please run init_oai() first.")
         return self._assistant
 
@@ -76,15 +80,25 @@ class Agent:
 
     @property
     def functions(self):
-        
-        try:
-            return [tool for tool in self.tools]
-        except Exception as e:
-            print(f"Functions called from {traceback.format_stack()}: {self.tools}")
-            print(f"Failed to get functions: {e} with traceback: {traceback.format_exc()}")
-            return []
+        from app.tools.base_tool import BaseTool
+        return [tool for tool in self.tools if issubclass(tool, BaseTool)]
+    
+    @property
+    def shared_state(self):
+        return self._shared_state
 
-    def response_validator(self, message: str) -> str:
+    @shared_state.setter
+    def shared_state(self, value):
+        self._shared_state = value
+        for i, tool in enumerate(self.tools):
+            from app.tools.base_tool import BaseTool
+            if isinstance(tool, str):
+                tool = self.add_tool_by_name(tool)
+                self.tools[i] = tool  # Update the tool in the list with the class reference
+            if issubclass(tool, BaseTool):
+                tool._shared_state = value
+
+    def response_validator(self, message: str | list) -> str:
         """
         Validates the response from the agent. If the response is invalid, it must raise an exception with instructions
         for the caller agent on how to proceed.
@@ -175,7 +189,7 @@ class Agent:
         self.top_p = top_p
         self.response_format = response_format
         self.tools_folder = tools_folder
-        self.files_folder = files_folder if files_folder else []
+        self.files_folder = files_folder if files_folder else [f"./app/Agents/{self.__class__.__name__}/"]
         self.schemas_folder = schemas_folder if schemas_folder else []
         self.api_headers = api_headers if api_headers else {}
         self.api_params = api_params if api_params else {}
@@ -215,6 +229,9 @@ class Agent:
         self.redis_service = None
         self.queue_listener_task = None
 
+        self.is_running: bool = False
+        self.message_queue: Optional[asyncio.Queue] = None
+
     # --- OpenAI Assistant Methods ---
     
     @classmethod
@@ -227,7 +244,7 @@ class Agent:
     
     async def listen_to_queue(self):
         try:
-            while True:
+            while self.is_running:
                 try:
                     message = await asyncio.wait_for(self.message_queue.get(), timeout=1.0)
                     if message is None:
@@ -235,9 +252,7 @@ class Agent:
                     self.messages.append(message)
                     await self.save_message_to_redis(message)
                 except asyncio.TimeoutError:
-                    if not self.is_running:
-                        break
-                    await asyncio.sleep(0.1)
+                    continue  # This allows checking self.is_running periodically
         except asyncio.CancelledError:
             self.logger.info("Queue listener task cancelled")
         finally:
@@ -320,6 +335,8 @@ class Agent:
         self.redis_service = get_container().redis()
         self.track_resource(self.redis_service)
 
+        self.is_running = True
+        self.message_queue = asyncio.Queue()
         self.queue_listener_task = asyncio.create_task(self.listen_to_queue())
         self.track_resource(self.queue_listener_task)
         
@@ -358,8 +375,9 @@ class Agent:
         
         self.instructions = f"{self.instructions}\n\n{' '.join(additional_instructions)}"
         
-        #if self.self_assign == True:
-            #await self.assign()
+        # Ensure tools are initialized
+        if not self.tools:
+            self.set_tools()
         
         # Start the listen_to_queue task and store it
         self.queue_listener_task = asyncio.create_task(self.listen_to_queue())
@@ -666,11 +684,17 @@ class Agent:
         
         logger.debug(f"Get OAI Tools Init: {self.tools}")
         
+        # If tools are empty, try to set them
+        if not self.tools:
+            self.set_tools()
+        
         current_tools = self.tools.copy()
         
         for tool in current_tools:
             if isinstance(tool, str):
-                self.add_tool_by_name(tool)
+                tool = self.add_tool_by_name(tool)
+                if tool:
+                    self.tools[self.tools.index(tool.__name__)] = tool
         
         for tool in self.tools:
             if inspect.isclass(tool) and tool.__name__ not in processed_tools:
@@ -986,12 +1010,6 @@ class Agent:
         self._delete_assistant()
         self._delete_files()
         self._delete_settings()
-        self.cancel_queue_listener()
-
-    def cancel_queue_listener(self):
-        """Cancels the queue listener task."""
-        if hasattr(self, 'queue_listener_task'):
-            self.queue_listener_task.cancel()
 
     def _delete_files(self):
         if not self.tool_resources:
@@ -1030,4 +1048,3 @@ class Agent:
                         break
             with open(path, 'w') as f:
                 json.dump(settings, f, indent=4)
-

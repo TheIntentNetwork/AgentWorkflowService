@@ -20,20 +20,20 @@ class RegisterDependencies(BaseTool):
         from containers import get_container
         from app.services.cache.redis import RedisService
         logger = configure_logger(self.__class__.__name__)
-        logger.info(f"Registering dependencies {self.dependencies} for node {self.caller_agent.context_info.key}")
+        logger.info(f"Registering dependencies {self.dependencies} for node {self.caller_agent.context_info['key']}")
         
         redis: RedisService = get_container().redis()
         context_manager = get_container().context_manager()
         
         for dependency in self.dependencies:
             # Add this node as a subscriber to the dependency node
-            await redis.client.sadd(f"{dependency.context_key}:subscribers", self.caller_agent.context_info.key)
+            await redis.client.sadd(f"{dependency.context_key}:subscribers", self.caller_agent.context_info['key'])
             
             # Add the dependency to this node's dependencies list
-            await redis.client.sadd(f"{self.caller_agent.context_info.key}:dependencies", 
+            await redis.client.sadd(f"{self.caller_agent.context_info['key']}:dependencies", 
                                     f"{dependency.context_key}:{dependency.property_name}")
 
-        result = f"{len(self.dependencies)} dependencies have been registered for node {self.caller_agent.context_info.key}."
+        result = f"{len(self.dependencies)} dependencies have been registered for node {self.caller_agent.context_info['key']}."
         logger.info(result)
         logger.debug(f"Dependencies: {self.dependencies}")
         return result

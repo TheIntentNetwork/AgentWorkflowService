@@ -40,9 +40,11 @@ class LifecycleNode(Node):
         return status == self.status_filter
 
     async def subscribe_to_status(self):
-        from app.services.discovery.service_registry import ServiceRegistry
         from app.services.events.event_manager import EventManager
-        event_manager: EventManager = ServiceRegistry.instance().get('event_manager')
+        from app.logging_config import configure_logger
+        from di import get_container
+        
+        event_manager: EventManager = get_container().event_manager()
         await event_manager.subscribe_to_patterns([f"node:*:status"], self.on_status_update, self._status_equals_filter)
         
         async def listen_for_status():
@@ -59,9 +61,9 @@ class LifecycleNode(Node):
             node_id = message_data['node_id']
             status = message_data['status']
             
-            from app.services.discovery.service_registry import ServiceRegistry
             from app.services.context.context_manager import ContextManager
-            context_manager: ContextManager = ServiceRegistry.instance().get('context_manager')
+            from di import get_container
+            context_manager: ContextManager = get_container().context_manager()
             
             key = f"node:{node_id}"
             node_data = await context_manager.get_context(key)

@@ -25,8 +25,6 @@ from pydantic import Field, field_validator, model_validator
 from rich.console import Console
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from typing_extensions import override
-from openai.lib._parsing._completions import type_to_response_format_param
-
 from app.models.agents.Agent import Agent
 from app.tools.base_tool import BaseTool
 from app.tools.oai import FileSearch
@@ -101,6 +99,7 @@ class Agency:
         self.user = User()
         self.agents = []
         self.agents_and_threads = {}
+        self.agents_and_threads[self.user.name] = {}
         self.main_recipients = []
         self.main_thread = None
         self.recipient_agents = None  # for autocomplete
@@ -139,56 +138,71 @@ class Agency:
         self._init_agents()
         self._init_threads()
 
-    async def get_completion(self, message: str,
-                       message_files: List[str] = None,
-                       yield_messages: bool = False,
-                       recipient_agent: Agent = None,
-                       additional_instructions: str = None,
-                       attachments: List[dict] = None,
-                       tool_choice: dict = None,
-                       verbose: bool = False,
-                       response_format: dict = None,
-                       session_id: str = None):
+    def _get_thread(self, recipient_agent):
         """
-        Retrieves the completion for a given message from the main thread.
+        Retrieves or creates a thread for communication with the specified recipient agent.
 
         Parameters:
-            message (str): The message for which completion is to be retrieved.
-            message_files (list, optional): A list of file ids to be sent as attachments with the message. When using this parameter, files will be assigned both to file_search and code_interpreter tools if available. It is recommended to assign files to the most sutiable tool manually, using the attachments parameter.  Defaults to None.
-            yield_messages (bool, optional): Flag to determine if intermediate messages should be yielded. Defaults to True.
-            recipient_agent (Agent, optional): The agent to which the message should be sent. Defaults to the first agent in the agency chart.
-            additional_instructions (str, optional): Additional instructions to be sent with the message. Defaults to None.
-            attachments (List[dict], optional): A list of attachments to be sent with the message, following openai format. Defaults to None.
-            tool_choice (dict, optional): The tool choice for the recipient agent to use. Defaults to None.
-            parallel_tool_calls (bool, optional): Whether to enable parallel function calling during tool use. Defaults to True.
-            verbose (bool, optional): Whether to print the intermediary messages in console. Defaults to False.
-            response_format (dict, optional): The response format to use for the completion.
+            recipient_agent (Agent): The agent for which to get or create a thread.
 
         Returns:
-            Generator or final response: Depending on the 'yield_messages' flag, this method returns either a generator yielding intermediate messages or the final response from the main thread.
+            Thread: The thread object for communication with the specified agent.
         """
+        if recipient_agent == self.ceo:
+            return self.main_thread
+        
+        for agent_name, threads in self.agents_and_threads.items():
+            if recipient_agent.name in threads:
+                return threads[recipient_agent.name]
+        
+        # If no existing thread is found, create a new one
+        new_thread = self.ThreadType(self.user, recipient_agent)
+        new_thread.init_thread()
+        self.agents_and_threads[self.user.name][recipient_agent.name] = new_thread
+        return new_thread
+
+    async def get_completion(self, 
+                             message: str,
+                             message_files: List[str] = None,
+                             yield_messages: bool = False,
+                             recipient_agent: Agent = None,
+                             additional_instructions: str = None,
+                             attachments: List[dict] = None,
+                             tool_choice: dict = None,
+                             verbose: bool = False,
+                             response_format: dict = None,
+                             session_id: str = None):
         if verbose and yield_messages:
             raise Exception("Verbose mode is not compatible with yield_messages=True")
-    
-        res = self.main_thread.get_completion(message=message,
-                                            message_files=message_files,
-                                            attachments=attachments,
-                                            recipient_agent=recipient_agent,
-                                            additional_instructions=additional_instructions,
-                                            tool_choice=tool_choice,
-                                            yield_messages=yield_messages or verbose,
-                                            response_format=response_format)
-        
-        
-        if not yield_messages or verbose:
+
+        if not recipient_agent:
+            recipient_agent = self.ceo
+
+        thread = self._get_thread(recipient_agent)
+
+        res = thread.get_completion(
+            message=message,
+            message_files=message_files,
+            attachments=attachments,
+            recipient_agent=recipient_agent,
+            additional_instructions=additional_instructions,
+            tool_choice=tool_choice,
+            yield_messages=yield_messages or verbose,
+            response_format=response_format
+        )
+
+        if yield_messages:
+            return res
+        else:
             full_response = ""
             async for message in res:
                 if verbose:
-                    message.cprint()
+                    if isinstance(message, MessageOutput):
+                        message.cprint()
+                    else:
+                        print(message)
                 full_response += str(message) + "\n"
-            return full_response
-
-        return res
+            return full_response.strip()
 
 
     def get_completion_stream(self,
@@ -235,6 +249,17 @@ class Agency:
                 event_handler.on_all_streams_end()
 
                 return e.value
+    
+    def type_to_response_format_param(model: Type[BaseModel]) -> Dict[str, Any]:
+       """
+       Convert a Pydantic model to a response format parameter for OpenAI API.
+       """
+       schema = model.model_json_schema()
+       return {
+           "type": "object",
+           "properties": schema.get("properties", {}),
+           "required": schema.get("required", [])
+       }
                 
     def get_completion_parse(self, message: str,
                              response_format: Type[T],
@@ -1073,18 +1098,6 @@ class Agency:
                 strict = False
                 one_call_at_a_time = True
 
-            @model_validator(mode='after')
-            def validate_files(self):
-                if "file-" in self.message or (
-                        self.additional_instructions and "file-" in self.additional_instructions):
-                    if not self.message_files:
-                        raise ValueError("You must include file ids in message_files parameter.")
-
-            @field_validator('recipient')
-            def check_recipient(cls, value):
-                if value.value not in recipient_names:
-                    raise ValueError(f"Recipient {value} is not valid. Valid recipients are: {recipient_names}")
-                return value
 
             async def run(self):
                 thread: Agency.ThreadType = outer_self.agents_and_threads[self._caller_agent.name][self.recipient.value]

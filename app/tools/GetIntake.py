@@ -2,9 +2,11 @@ import json
 import logging
 from typing import Literal
 from pydantic import Field
+import spacy
 from supabase import create_client
 from app.services.supabase.supabase import Supabase
 from presidio_analyzer import AnalyzerEngine
+from presidio_analyzer.nlp_engine import NlpEngineProvider
 from app.tools.base_tool import BaseTool
 from app.logging_config import configure_logger
 
@@ -32,6 +34,22 @@ class GetIntake(BaseTool):
                 # Initialize a list to store PII detection results
                 all_pii_results = []
                 
+                # Create NLP engine for text processing
+                configuration = {
+                    "nlp_engine_name": "spacy",
+                    "models": [{"lang_code": "en", "model_name": "en_core_web_lg"}],
+                }
+                # Create NLP engine based on configuration
+                provider = NlpEngineProvider(nlp_configuration=configuration)
+                nlp_engine = provider.create_engine()
+
+                # Pass the created NLP engine and supported_languages to the AnalyzerEngine
+                analyzer = AnalyzerEngine(
+                    nlp_engine=nlp_engine, 
+                    supported_languages=["en"]
+                )
+                
+                # Analyze text for PII entities
                 analyzer_results = analyzer.analyze(text=result['decrypted_form'], 
                                                 language="en", 
                                                 entities=["PERSON", 

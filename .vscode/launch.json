@@ -39,7 +39,7 @@
         },
         {
             "name": "Python: FastAPI with Profiling",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "module": "main",
             "args": [],
@@ -49,6 +49,26 @@
                 "PROFILE": "true"
             },
             "pythonArgs": ["-Xfrozen_modules=off"]
+        },
+        {
+            "name": "Python: FastAPI in Docker",
+            "type": "docker",
+            "request": "launch",
+            "preLaunchTask": "docker-run: debug",
+            "python": {
+                "pathMappings": [
+                    {
+                        "localRoot": "${workspaceFolder}",
+                        "remoteRoot": "/app"
+                    }
+                ],
+                "projectType": "fastapi"
+            },
+            "dockerServerReadyAction": {
+                "action": "openExternally",
+                "pattern": "Uvicorn running on (http?://\\S+|[0-9]+)",
+                "uriFormat": "%s://localhost:%s"
+            }
         }
     ]
 }

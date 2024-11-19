@@ -13,6 +13,7 @@ import logging
 
 from app.utilities.resource_tracker import ResourceTracker
 
+
 class DependencyService(IDependencyService, IService):
     @inject
     def __init__(
@@ -23,8 +24,10 @@ class DependencyService(IDependencyService, IService):
         resource_tracker: 'ResourceTracker' = Provide['resource_tracker']
     ):
         super().__init__(name="dependency_service", config=config)
+        from containers import get_container
         self.kafka_service = kafka_service
         self.context_manager = context_manager
+        self.event_manager = get_container().event_manager()
         self.logger = self.get_logger_with_instance_id('DependencyService')
         self.resource_tracker = resource_tracker
         self.resource_tracker.track(self.__class__.__name__, self)

@@ -5,7 +5,8 @@ from pydantic import Field
 from typing import Dict, Any, List, Set
 from app.tools.base_tool import BaseTool
 from app.logging_config import configure_logger
-from app.models.Node import NodeStatus, ContextInfo
+from app.models.base_node import NodeStatus
+from app.models.base_context import BaseContextInfo
 
 
 class RegisterOutput(BaseTool):
@@ -41,7 +42,6 @@ class RegisterOutput(BaseTool):
         context_manager = container.context_manager()
         
         try:
-            # Fetch the existing node data            
             # Update the node's context_info in Redis
             context = {
                 "session_id": self.caller_agent.session_id,

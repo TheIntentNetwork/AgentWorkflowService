@@ -133,7 +133,8 @@ class KafkaService(IService):
                                         except Exception as e:
                                             self.logger.error(f"Error processing message: {e}")
                     else:
-                        self.logger.debug("No messages received")
+                        pass
+                        #self.logger.debug("No messages received")
                 except Exception as e:
                     if self.consumer_thread_running:
                         self.logger.error(f"Error in Kafka consumer thread: {e}")
@@ -224,7 +225,7 @@ class KafkaService(IService):
                 self.producer.close(timeout=5)
             if self.consumer:
                 self.consumer_thread_running = False
-                self.consumer.wakeup()  # Wake up the consumer to exit its loop
+                self.consumer.resume()
                 if self.consumer_thread and self.consumer_thread.is_alive():
                     self.consumer_thread.join(timeout=5)
                 self.consumer.close(autocommit=False)

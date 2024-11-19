@@ -85,6 +85,15 @@ class NodeContextManager(IService):
                     else:
                         node.context_info.context['node_template'] = templates[0]
                         node.context_info.context['node_templates'] = templates
+                    
+                    for template in templates[0].get('collection', []):
+                        template['id'] = str(uuid.uuid4())
+                        template['parent_id'] = node.id
+                        template['collection'] = []
+                        template['order_sequence'] = str(template['order_sequence']) if 'order_sequence' in template else '0'
+                    
+                    if 'order_sequence' in templates[0]:
+                        templates[0]['order_sequence'] = str(templates[0]['order_sequence'])
 
         if isinstance(node, Node):
             # Load dynamic context

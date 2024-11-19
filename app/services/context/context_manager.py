@@ -8,13 +8,14 @@ from typing import Dict, Any, List, Type, Union, Optional
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
+import numpy as np
 import redis
 import redis.exceptions
 from app.models.ContextInfo import ContextInfo
 from dependency_injector.wiring import inject, Provide
 
 from app.interfaces.service import IService
-from app.models.Node import Node
+
 from app.services.cache.redis import RedisService
 from app.logging_config import configure_logger
 from app.services.context.base_context_manager import BaseContextManager
@@ -314,8 +315,7 @@ class ContextManager(BaseContextManager):
 
         Args:
             key (str): The context key.
-            value (Union[Dict[str, Any], Any]): The context data to save. If property is None, this should be a dictionary
-                                                representing the entire context. Otherwise, it's the value for the specific property.
+            value (Union[Dict[str, Any], Any]): The context data to save.
             property (str, optional): The specific property to update. If None, update the entire context.
             update_index (bool, optional): Whether to update the search index. Defaults to False.
 
@@ -326,7 +326,7 @@ class ContextManager(BaseContextManager):
             if property is None:
                 # Update the entire context
                 if isinstance(value, dict):
-                    serialized = {k: json.dumps(v, default=self._json_serializer) for k, v in value.items()}
+                    serialized = self._serialize_dict(value)
                     await self.redis.client.hmset(key, serialized)
                 else:
                     await self.redis.client.set(key, json.dumps(value, default=self._json_serializer))
@@ -337,42 +337,43 @@ class ContextManager(BaseContextManager):
                 if existing_context is None:
                     raise ValueError(f"Cannot update property '{property}' for non-existent key '{key}'")
                 
-                await self.redis.client.hset(key, property, json.dumps(value, default=self._json_serializer))
+                serialized_value = self._serialize_value(property, value)
+                await self.redis.client.hset(key, property, serialized_value)
                 self.logger.debug(f"Property '{property}' updated for key {key}")
-                
+            
             if update_index:
-                await self.save_node_state_and_update_embeddings(value)
+                await self.update_search_index(key, value)
 
         except Exception as e:
             self.logger.error(f"Error saving context for key {key}: {str(e)}")
             raise
 
-    async def save_node_state_and_update_embeddings(self, node: Union[Node, Dict[str, Any]]) -> None:
+    async def update_search_index(self, key: str, value: Union[Any, Dict[str, Any]]) -> None:
         """
-        Save the node state and update its embeddings in Redis.
+        Update the search index for a given key and value.
 
         Args:
-            node (Union[Node, Dict[str, Any]]): The node whose state and embeddings need to be updated.
+            key (str): The context key.
+            value (Union[Node, Dict[str, Any]]): The node or data to index.
         """
+        from app.models.Node import Node
+        from app.models.Task import Task
         try:
-            from app.models.Node import Node
-            from app.models.Task import Task
-
-            if isinstance(node, dict):
-                node_data = node
+            if isinstance(value, dict):
+                node_data = value
                 node_id = node_data.get('id')
-            elif isinstance(node, (Node, Task)):
-                node_data = node.model_dump()
-                node_id = node.id
+            elif isinstance(value, (Node, Task)):
+                node_data = value.model_dump()
+                node_id = value.id
             else:
-                raise ValueError(f"Unsupported node type: {type(node)}")
+                raise ValueError(f"Unsupported value type for indexing: {type(value)}")
 
             if node_id is None:
                 raise ValueError("Node ID is missing")
 
-            # Prepare the record for Redis
+            # Prepare the record for indexing
             record = {
-                'key': f"node:{node_id}",
+                'key': key,
                 'id': str(node_id),
                 'session_id': node_data.get('session_id', ''),
                 'name': node_data.get('name', ''),
@@ -380,12 +381,9 @@ class ContextManager(BaseContextManager):
                 'type': node_data.get('type', ''),
                 'status': node_data.get('status', ''),
                 'description': node_data.get('description', ''),
-                'collection': json.dumps(node_data.get('collection', []), default=self._json_serializer),
                 'input_description': node_data.get('input_description', ''),
                 'action_summary': node_data.get('action_summary', ''),
                 'outcome_description': node_data.get('outcome_description', ''),
-                'context': json.dumps(node_data.get('context', {}), default=self._json_serializer),
-                'item': json.dumps(node_data, default=self._json_serializer),
             }
 
             # Define fields for vectorization
@@ -398,27 +396,23 @@ class ContextManager(BaseContextManager):
                 'type': False,
                 'status': False,
                 'description': True,
-                'collection': False,
                 'input_description': True,
                 'action_summary': True,
                 'outcome_description': True,
-                'context': False,
-                'item': False,
             }
 
-            # Use the RedisService to save the record and generate embeddings
-            keys = await self.redis.load_records(
+            # Use the RedisService to update the search index
+            await self.redis.load_records(
                 [record],
                 "context",
                 fields_vectorization,
-                overwrite=True,
                 prefix="node",
                 id_column='id'
             )
 
-            self.logger.info(f"Node state and embeddings updated for node ID: {node_id}")
+            self.logger.info(f"Search index updated for node ID: {node_id}")
         except Exception as e:
-            self.logger.error(f"Error saving node state and updating embeddings: {str(e)}")
+            self.logger.error(f"Error updating search index: {str(e)}")
             self.logger.error(traceback.format_exc())
 
     def _json_serializer(self, obj):
@@ -475,12 +469,52 @@ class ContextManager(BaseContextManager):
     
     async def get_context(self, key: str) -> Dict[str, Any]:
         try:
-            return await self.redis.get_context(key)
-        except redis.exceptions.ResponseError as e:
-            if "WRONGTYPE" in str(e):
-                self.logger.warning(f"Incorrect data type for key {key}. Attempting to retrieve as hash...")
-                return await self.redis.client.hgetall(key)
-            raise
+            raw_data = await self.redis.client.hgetall(key)
+        except UnicodeDecodeError as e:
+            self.logger.error(f"Error retrieving context for key {key}: {str(e)}")
+            # Need to retrieve the keys and pull the values one by one
+            raw_data = await self.redis.client.hkeys(key)
+            for i, field in enumerate(raw_data):
+                if not field.endswith('_vector'):
+                    raw_data[field] = await self.redis.client.hget(key, field)
+                else:
+                    # Here we will retrieve a string of bytes and convert it to a numpy array
+                    raw_data[field] = await self.redis.client.hget(key, field)
+                    raw_data[field] = np.frombuffer(raw_data[field], dtype=np.float32)
+                
+                print(f"Field {field} has value {raw_data[field]}")
+                    
+        except Exception as e:
+            self.logger.error(f"Error retrieving context for key {key}: {str(e)}")
+            return None
+        
+        try:
+            if not raw_data:
+                return None
+
+            deserialized = {}
+            for field, value in raw_data.items():
+                if isinstance(field, bytes):
+                    field = field.decode('utf-8')
+                if field.endswith('_vector'):
+                    # Handle vector fields
+                    deserialized[field] = np.frombuffer(value, dtype=np.float32)
+                else:
+                    try:
+                        # Try to decode as JSON first
+                        deserialized[field] = json.loads(value)
+                    except json.JSONDecodeError:
+                        # If not JSON, decode as utf-8
+                        if isinstance(value, bytes):
+                            deserialized[field] = value.decode('utf-8')
+                        else:
+                            deserialized[field] = value
+
+            return deserialized
+        except Exception as e:
+            self.logger.error(f"Error retrieving context for key {key}: {str(e)}")
+            self.logger.error(traceback.format_exc())
+            return None
 
     async def update_context(self, key: str, value: Dict[str, Any], property_name: Optional[str] = None) -> Dict[str, Any]:
         try:
@@ -508,3 +542,27 @@ class ContextManager(BaseContextManager):
         except Exception as e:
             self.logger.error(f"Error updating context for key {key}: {str(e)}")
             raise
+    
+    def _serialize_dict(self, data: Dict[str, Any]) -> Dict[str, str]:
+        """Serialize a dictionary, handling special cases like vectors."""
+        serialized = {}
+        for k, v in data.items():
+            serialized[k] = self._serialize_value(k, v)
+        return serialized
+
+    def _serialize_value(self, key: str, value: Any) -> str:
+        """Serialize a single value based on its type and key."""
+        if key.endswith('_vector') and isinstance(value, np.ndarray):
+            return value.tobytes()
+        elif isinstance(value, (dict, list)):
+            return json.dumps(value, default=self._json_serializer)
+        elif isinstance(value, bool):
+            return str(value).lower()
+        elif isinstance(value, (int, float)):
+            return str(value)
+        elif isinstance(value, str):
+            return value
+        elif value is None:
+            return ''
+        else:
+            return str(value)

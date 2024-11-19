@@ -31,7 +31,7 @@ class Container(containers.DeclarativeContainer):
     def __init__(self):
         super().__init__()
         self.resource_tracker = resource_tracker
-
+    
     # Configuration
     # -------------
     config = providers.Configuration()

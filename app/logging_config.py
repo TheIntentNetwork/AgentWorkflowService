@@ -2,6 +2,7 @@
 import os
 import uuid
 import logging
+import threading
 from logging.handlers import RotatingFileHandler
 from colorama import Fore, Style, init
 from colorlog import ColoredFormatter
@@ -36,7 +37,7 @@ class UniqueIDFilter(logging.Filter):
         return True
 
 class CustomFormatter(ColoredFormatter):
-    """A custom formatter for colored console output."""
+    """A custom formatter for colored console output with enhanced context and structure."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.last_message = None
@@ -50,19 +51,61 @@ class CustomFormatter(ColoredFormatter):
         }
 
     def format(self, record):
-        timestamp = f"{Fore.WHITE}{self.formatTime(record, self.datefmt)}{Style.RESET_ALL}"
-        log_label = f"{Fore.CYAN}{record.name}.{record.funcName}{Style.RESET_ALL}"
-        log_level = f"{self.log_colors.get(record.levelname, Fore.WHITE)}{record.levelname:<8}{Style.RESET_ALL}"
-        message = f"{Fore.WHITE}{record.getMessage()}{Style.RESET_ALL}"
+        # Add correlation ID if not present
+        if not hasattr(record, 'correlation_id'):
+            record.correlation_id = getattr(record, 'request_id', str(uuid.uuid4())[:8])
+
+        # Add process/thread info
+        process_info = f"[{os.getpid()}:{threading.current_thread().name}]"
         
-        if message == self.last_message:
+        # Format timestamp with milliseconds
+        timestamp = self.formatTime(record, "%Y-%m-%d %H:%M:%S.%f")[:-3]
+        
+        # Build structured components
+        components = {
+            'timestamp': f"{Fore.WHITE}{timestamp}{Style.RESET_ALL}",
+            'level': f"{self.log_colors.get(record.levelname, Fore.WHITE)}{record.levelname:<8}{Style.RESET_ALL}",
+            'correlation': f"{Fore.MAGENTA}[{record.correlation_id}]{Style.RESET_ALL}",
+            'process': f"{Fore.BLUE}{process_info}{Style.RESET_ALL}",
+            'logger': f"{Fore.CYAN}{record.name}.{record.funcName}{Style.RESET_ALL}",
+            'message': f"{Fore.WHITE}{record.getMessage()}{Style.RESET_ALL}"
+        }
+
+        # Add duration if available
+        if hasattr(record, 'duration'):
+            components['duration'] = f"{Fore.YELLOW}({record.duration:.2f}ms){Style.RESET_ALL}"
+        
+        # Add error details for errors
+        if record.levelno >= logging.ERROR and hasattr(record, 'exc_info') and record.exc_info:
+            exc_type, exc_value, _ = record.exc_info
+            components['error'] = f"\n{Fore.RED}Exception: {exc_type.__name__}: {str(exc_value)}{Style.RESET_ALL}"
+
+        # Handle message deduplication
+        if record.getMessage() == self.last_message:
             self.repeat_count += 1
             return None
-        
-        formatted_message = f"{timestamp} - {log_level} - {log_label}: {message}"
+
+        # Build final message
+        formatted_message = (
+            f"{components['timestamp']} "
+            f"{components['level']} "
+            f"{components['correlation']} "
+            f"{components['process']} "
+            f"{components['logger']}: "
+            f"{components['message']}"
+        )
+
+        # Add optional components
+        if 'duration' in components:
+            formatted_message += f" {components['duration']}"
+        if 'error' in components:
+            formatted_message += components['error']
+
+        # Handle repeated messages
         if self.repeat_count > 0:
             formatted_message = f"Last message repeated {self.repeat_count} times\n{formatted_message}"
-        self.last_message = message
+        
+        self.last_message = record.getMessage()
         self.repeat_count = 0
         return formatted_message
 
@@ -133,17 +176,44 @@ def get_logging_level():
     return getattr(logging, level, logging.INFO)
 
 def configure_logger(name, log_level=None):
+    """
+    Configure a logger with appropriate handlers and formatting.
+    
+    Args:
+        name (str): Logger name
+        log_level (int, optional): Override default log level
+    """
     logger = logging.getLogger(name)
-    logging_level = None
+    
     if not logger.handlers:
-        # Get logging level from .env
-        if log_level is None:
-            logging_level = get_logging_level()
-        else:
-            logging_level = log_level
+        # Get logging level from .env or parameter
+        logging_level = log_level if log_level is not None else get_logging_level()
         
-        print(f"Configuring logger '{name}' with level: {logging.getLevelName(logging_level)} ({logging_level})")
+        # Log configuration at debug level
+        logger.debug(f"Configuring logger '{name}'", extra={
+            'level': logging.getLevelName(logging_level),
+            'level_number': logging_level,
+            'correlation_id': str(uuid.uuid4())[:8]
+        })
         
+        # Create logs directory if it doesn't exist
+        os.makedirs('logs', exist_ok=True)
+        
+        # Main log file handler
+        main_log_handler = SafeRotatingFileHandler(
+            filename='logs/main.log',
+            maxBytes=10*1024*1024,  # 10 MB
+            backupCount=5,
+            encoding='utf-8'
+        )
+        main_formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(name)s.%(funcName)s: %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        main_log_handler.setFormatter(main_formatter)
+        main_log_handler.setLevel(logging_level)
+        logger.addHandler(main_log_handler)
+
         # Console handler with colored output
         console_handler = logging.StreamHandler()
         console_formatter = ColoredFormatter(
@@ -161,7 +231,7 @@ def configure_logger(name, log_level=None):
             style='%'
         )
         console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(logging_level)  # Set the handler level explicitly
+        console_handler.setLevel(logging_level)
         logger.addHandler(console_handler)
 
         # CloudWatch handler
@@ -181,7 +251,7 @@ def configure_logger(name, log_level=None):
                 cloudwatch_handler.setFormatter(cloudwatch_formatter)
                 logger.addHandler(cloudwatch_handler)
                 logger.info("CloudWatch logging enabled")
-            except ClientError as e:
+            except (ClientError, NoCredentialsError) as e:
                 logger.error(f"Failed to initialize CloudWatch logging: {str(e)}")
         else:
             logger.info("CloudWatch logging is disabled")
@@ -198,4 +268,7 @@ def setup_logging():
     
     # Configure the root logger with our custom setup
     configure_logger('')  # Empty string configures the root logger
+
+    # Ensure logs directory exists
+    os.makedirs('logs', exist_ok=True)
 

@@ -1,11 +1,13 @@
 import json
 import logging
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import PrivateAttr
+from app.models.base_context import BaseContextInfo
 from redisvl.query.filter import Tag, FilterExpression
 import yaml
 import numpy as np
 from app.config.settings import settings
+from app.utilities.errors import ContextError, VectorDatabaseError
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -28,16 +30,7 @@ async def setup_environment():
     
     # Add any other services that need to be initialized and registered
 
-class ContextInfo(BaseModel):
-    key: Optional[str] = Field(None, description="The key of the context.")
-    input_keys: Optional[List[str]] = Field(None, description="The input keys of the context object.")
-    input_description: Optional[str] = Field(None, description="The input description of the context object.")
-    input_context: Optional[Dict] = Field(None, description="The input context of the context object.", init=False, init_var=False)
-    action_summary: Optional[str] = Field(None, description="The action summary of the context object.")
-    outcome_description: Optional[str] = Field(None, description="The outcome description of the context object.")
-    feedback: Optional[List[str]] = Field(None, description="The feedback of the context object.")
-    output: Optional[dict] = Field({}, description="The output structure of the context object.")
-    context: Optional[Dict[str, Any]] = Field(None, description="The context of the object.")
+class ContextInfo(BaseContextInfo):
     
     _redis_service: Any = PrivateAttr()
     _context_manager: Any = PrivateAttr()
@@ -51,14 +44,44 @@ class ContextInfo(BaseModel):
         self._context_manager = container.context_manager()
         self._user_context_manager = container.user_context_manager()
 
-    async def query_vector_database(self, query: str, vector_field: str, index_name: str, return_fields: List[str], filter_expression: Optional[FilterExpression] = None, limit: int = 10):
+    def validate_context_structure(self, context: Dict[str, Any]) -> None:
+        """Validate the structure of a context dictionary"""
+        if not isinstance(context, dict):
+            suggestions = [
+                "Ensure context is a dictionary",
+                f"Convert {type(context).__name__} to dict format",
+                "Check context creation/modification logic"
+            ]
+            raise ContextError(
+                "Invalid context structure",
+                operation="validate_context",
+                suggestions=suggestions
+            )
+        
+        required_fields = ['input_keys', 'input_description', 'context']
+        missing_fields = [field for field in required_fields if field not in context]
+        if missing_fields:
+            suggestions = [
+                f"Add missing required fields: {', '.join(missing_fields)}",
+                "Initialize context with all required fields",
+                "Check context creation template"
+            ]
+            raise ContextError(
+                "Missing required context fields",
+                operation="validate_context",
+                suggestions=suggestions
+            )
+
+    async def query_vector_database(self, query: str, vector_field: str, index_name: str, return_fields: List[str], 
+                                  filter_expression: Optional[FilterExpression] = None, limit: int = 10):
         from ..logging_config import configure_logger
         logger = configure_logger('ContextInfo')
         
         logger.info(f"Querying vector database for {vector_field} with query: {query}")
-        embeddings = self._redis_service.generate_embeddings({vector_field: query}, [vector_field])
         
         try:
+            embeddings = self._redis_service.generate_embeddings({vector_field: query}, [vector_field])
+            
             results = await self._redis_service.async_search_index(
                 embeddings,
                 f"{vector_field}_vector",
@@ -67,15 +90,34 @@ class ContextInfo(BaseModel):
                 return_fields,
                 filter_expression
             )
+            
+            logger.info(f"Found {len(results)} results for {vector_field}")
+            return sorted(results, key=lambda x: x['vector_distance'])
+            
         except FileNotFoundError as e:
-            logger.warning(f"Index schema file for {index_name} not found: {str(e)}")
-            results = []
+            suggestions = [
+                f"Verify index schema file exists for {index_name}",
+                "Check file permissions and paths",
+                "Run index initialization if needed"
+            ]
+            raise VectorDatabaseError(
+                str(e),
+                query_type=vector_field,
+                index_name=index_name,
+                suggestions=suggestions
+            )
         except Exception as e:
-            logger.error(f"Error querying vector database for {index_name}: {str(e)}")
-            results = []
-        
-        logger.info(f"Found {len(results)} results for {vector_field}")
-        return sorted(results, key=lambda x: x['vector_distance'])
+            suggestions = [
+                "Check vector database connection",
+                "Verify index configuration",
+                "Ensure query format is valid"
+            ]
+            raise VectorDatabaseError(
+                f"Error querying vector database: {str(e)}",
+                query_type=vector_field,
+                index_name=index_name,
+                suggestions=suggestions
+            )
 
     async def query_nodes(self, query: str, vector_field: str, node_type: Optional[str] = None, limit: int = 10):
         return_fields = ["input_description", "output", "outcome_description", "key", "item", "action_summary", "type"]
@@ -172,22 +214,42 @@ class ContextInfo(BaseModel):
             raise ValueError(f"Unsupported format: {format}")
 
     async def prepare_context_for_output(self, context: Dict[str, Any], output_type: str, format: str = "json") -> Union[str, Dict[str, Any]]:
-        formatted_context = await self.format_context(context, format)
-        
-        if output_type == "database":
-            # For database records, we might want to keep the data as a dictionary
-            return context if format == "dict" else json.loads(formatted_context)
-        elif output_type == "config_file":
-            # For configuration files, we might want to return the formatted string
-            return formatted_context
-        elif output_type == "message_payload":
-            # For message payloads, we might want to return the formatted string
-            return formatted_context
-        elif output_type == "agent_prompt":
-            # For agent prompts, we might want to return a formatted string with a specific structure
-            return f"Context Information:\n{formatted_context}"
-        else:
-            raise ValueError(f"Unsupported output type: {output_type}")
+        try:
+            # Validate context structure before processing
+            self.validate_context_structure(context)
+            
+            formatted_context = await self.format_context(context, format)
+            
+            if output_type == "database":
+                return context if format == "dict" else json.loads(formatted_context)
+            elif output_type == "config_file":
+                return formatted_context
+            elif output_type == "message_payload":
+                return formatted_context
+            elif output_type == "agent_prompt":
+                return f"Context Information:\n{formatted_context}"
+            else:
+                suggestions = [
+                    "Use one of the supported output types: database, config_file, message_payload, agent_prompt",
+                    f"Update code to handle new output type: {output_type}"
+                ]
+                raise ContextError(
+                    f"Unsupported output type: {output_type}",
+                    operation="prepare_context",
+                    suggestions=suggestions
+                )
+                
+        except json.JSONDecodeError as e:
+            suggestions = [
+                "Verify context data is valid JSON",
+                "Check for special characters or encoding issues",
+                "Ensure all values are serializable"
+            ]
+            raise ContextError(
+                f"Failed to process context: {str(e)}",
+                operation="format_context",
+                suggestions=suggestions
+            )
 
     async def cleanup(self):
         if hasattr(self, '_redis_service') and self._redis_service:

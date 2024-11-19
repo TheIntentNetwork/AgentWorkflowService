@@ -1,16 +1,16 @@
-from typing import override
+from typing import overload
 from app.logging_config import configure_logger
 import logging
 from openai.lib.streaming import AssistantEventHandler
 
 class AgencySwarmEventHandler(AssistantEventHandler):
-    @override
+    @overload
     def on_text_created(self, text) -> None:
         self.logger = configure_logger('AgencySwarmEventHandler')
         self.logger = logging.LoggerAdapter(self.logger, {'classname': self.__class__.__name__})
         self.logger.info(f"assistant > {text}")
 
-    @override
+    @overload
     def on_text_delta(self, delta, snapshot):
         self.logger.debug(delta.value)
 

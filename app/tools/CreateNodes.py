@@ -8,12 +8,12 @@ import uuid
 import app
 from pydantic import BaseModel, Extra, Field
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Type, Union
-from app.services.cache.redis import RedisService
+
 from app.tools.base_tool import BaseTool
 
 from app.services.queue.kafka import KafkaService
 from uuid import UUID, uuid4
-from app.models.ContextInfo import ContextInfo
+from app.models.base_context import BaseContextInfo
 
 
 class NodePrototype(BaseModel, extra='allow'):
@@ -23,7 +23,7 @@ class NodePrototype(BaseModel, extra='allow'):
     order_sequence: Optional[int]
     type: Literal['model', 'step']
     collection: List[Dict[str, 'NodePrototype']] = []
-    context_info: 'ContextInfo'
+    context_info: BaseContextInfo
 
 class CreateNodes(BaseTool):
     """
@@ -39,15 +39,15 @@ class CreateNodes(BaseTool):
     nodes: List[NodePrototype] = Field(..., description="The nodes to be created.")
 
     @property
-
     def contexts(cls):
         return ['node_context']
     
     async def run(self) -> str:
         self._logger.info("Creating nodes")
+        from app.services.context.context_manager import ContextManager
         from containers import get_container
         container = get_container()
-        redis_service: RedisService = container.redis()
+        context_manager: ContextManager = container.context_manager()
         kafka_service: KafkaService = container.kafka()
 
         for node in self.nodes:
@@ -60,7 +60,7 @@ class CreateNodes(BaseTool):
             
             # Initialize context_info if it doesn't exist
             if node.context_info is None:
-                node.context_info = ContextInfo(context={})
+                node.context_info = BaseContextInfo(context={})
             
             # Ensure context is a dictionary
             if not isinstance(node.context_info.context, dict):
@@ -71,7 +71,7 @@ class CreateNodes(BaseTool):
 
             # Normalize and copy context
             normalized_context = self.get_normalized_context()
-            node.context_info = ContextInfo(**normalized_context)
+            node.context_info = BaseContextInfo(**normalized_context)
         
         payload = {
             "session_id": self.caller_agent.session_id,
@@ -79,7 +79,8 @@ class CreateNodes(BaseTool):
         }
         
         for node in self.nodes:
-            await redis_service.save_context(f"node:{node.id}", node.model_dump())
+            # Use context_manager to save context instead of directly using Redis
+            await context_manager.save_context(f"node:{node.id}", node.model_dump(), update_index=True)
             kafka_service.send_message_sync("agency_action", {
                 "key": f"node:{node.id}",
                 "action": "initialize",
@@ -90,9 +91,9 @@ class CreateNodes(BaseTool):
         return payload
 
     def get_normalized_context(self) -> Dict[str, Any]:
-        if isinstance(self.caller_agent.context_info, BaseModel):
-            return self.caller_agent.context_info.model_dump()
-        elif isinstance(self.caller_agent.context_info, dict):
-            return self.caller_agent.context_info
+        if isinstance(self._caller_agent.context_info, BaseModel):
+            return self._caller_agent.context_info.model_dump()
+        elif isinstance(self._caller_agent.context_info, dict):
+            return self._caller_agent.context_info
         else:
             return {}

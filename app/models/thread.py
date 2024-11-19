@@ -4,11 +4,10 @@ import json
 import os
 import time
 import traceback
-from typing import List, Optional, Type, Union, TypeVar
+from typing import Coroutine, List, Optional, Type, Union, TypeVar
+from app.utilities.logging_mixin import LoggingMixin, log_performance, OperationContext
 
 from openai import APIError, BadRequestError
-from openai.lib._parsing._completions import type_to_response_format_param
-from openai.lib._parsing._completions import type_to_response_format_param
 from openai.types.beta import AssistantToolChoice
 from openai.types.beta.threads.message import Attachment
 from openai.types.beta.threads.run import TruncationStrategy
@@ -24,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import re
 
-class Thread:
+class Thread(LoggingMixin):
     async_mode: str = None
     max_workers: int = 4
 
@@ -33,9 +32,16 @@ class Thread:
         return f'https://platform.openai.com/playground/assistants?assistant={self.recipient_agent.assistant.id}&mode=assistant&thread={self.id}'
 
     def __init__(self, agent: Union[Agent, User], recipient_agent: Agent):
+        super().__init__()
         self.agent = agent
         self.recipient_agent = recipient_agent
-
+        
+        self.logger.info("Initializing thread", extra={
+            'agent_id': getattr(agent, 'id', 'user'),
+            'recipient_agent_id': recipient_agent.id,
+            'correlation_id': self.correlation_id
+        })
+        
         self.client = get_openai_client()
 
         self.id = None
@@ -138,63 +144,36 @@ class Thread:
         validation_attempts = 0
         full_message = ""
         while True:
-            self._run_until_done()
+            await self._run_until_done()
 
             # function execution
             if self.run.status == "requires_action":
                 tool_calls = self.run.required_action.submit_tool_outputs.tool_calls
-                tool_outputs_and_names = [] # list of tuples (name, tool_output)
+                tool_outputs_and_names = []  # list of tuples (name, tool_output)
                 sync_tool_calls = [tool_call for tool_call in tool_calls if tool_call.function.name == "SendMessage"]
-                async_tool_calls = [tool_call for tool_call in tool_calls if tool_call.function.name != "SendMessage"]
 
-                def handle_output(tool_call, output):
-                    if inspect.isgenerator(output):
-                        try:
-                            while True:
-                                item = next(output)
-                                if isinstance(item, MessageOutput) and yield_messages:
-                                    yield item
-                        except StopIteration as e:
-                            output = e.value
-                    else:
-                        if yield_messages:
-                            yield MessageOutput("function_output", tool_call.function.name, recipient_agent.name, output, tool_call)
-
-                    for tool_output in tool_outputs_and_names:
-                        if tool_output[1]["tool_call_id"] == tool_call.id:
-                            tool_output[1]["output"] = output
-
-                if len(async_tool_calls) > 0 and self.async_mode == "tools_threading":
-                    max_workers = min(self.max_workers, os.cpu_count() or 1)  # Use at most 4 workers or the number of CPUs available
-                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                        futures = {}
-                        for tool_call in async_tool_calls:
-                            if yield_messages:
-                                yield MessageOutput("function", recipient_agent.name, self.agent.name, str(tool_call.function), tool_call)
-                            futures[executor.submit(self.execute_tool, tool_call, recipient_agent, event_handler, tool_outputs_and_names)] = tool_call
-                            tool_outputs_and_names.append((tool_call.function.name, {"tool_call_id": tool_call.id}))
-
-                        for future in as_completed(futures):
-                            tool_call = futures[future]
-                            output = future.result()
-                            yield handle_output(tool_call, output)
+                if self.async_mode == 'tools_threading':
+                    futures_with_calls = []
+                    with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                        for tool_call in tool_calls:
+                            if tool_call.function.name != "SendMessage":
+                                future = executor.submit(await self.execute_tool, tool_call, recipient_agent, event_handler, tool_outputs_and_names)
+                                futures_with_calls.append((future, tool_call))
+                        
+                        for future, tool_call in futures_with_calls:
+                            tool_output = future.result()
+                            tool_outputs_and_names.append((tool_call.function.name, {"tool_call_id": tool_call.id, "output": tool_output}))
                 else:
-                    sync_tool_calls += async_tool_calls
+                    for tool_call in tool_calls:
+                        if tool_call.function.name != "SendMessage":
+                            tool_output = await self.execute_tool(tool_call, recipient_agent, event_handler, tool_outputs_and_names)
+                            tool_outputs_and_names.append((tool_call.function.name, {"tool_call_id": tool_call.id, "output": tool_output}))
 
-                # execute sync tool calls
-                for tool_call in sync_tool_calls:
-                    if yield_messages:
-                        yield MessageOutput("function", recipient_agent.name, self.agent.name, str(tool_call.function), tool_call)
-                    output = self.execute_tool(tool_call, recipient_agent, event_handler, tool_outputs_and_names)
-                    tool_outputs_and_names.append((tool_call.function.name, {"tool_call_id": tool_call.id, "output": output}))
-                    yield handle_output(tool_call, output)
-                
+                tool_outputs = await self._execute_async_tool_calls_outputs(tool_outputs_and_names)
+
                 # split names and outputs
                 tool_outputs = [tool_output for _, tool_output in tool_outputs_and_names]
                 tool_names = [name for name, _ in tool_outputs_and_names]
-
-                # await coroutines
-                tool_outputs = await self._execute_async_tool_calls_outputs(tool_outputs)
 
                 # convert all tool outputs to strings
                 for tool_output in tool_outputs:
@@ -210,14 +189,14 @@ class Thread:
                 try:
                     self._submit_tool_outputs(tool_outputs, event_handler)
                 except BadRequestError as e:
-                    if 'Runs in status "expired"' in e.message:
+                    if 'Runs in status "expired"' in e.message or '''tool_outputs' ''' in e.message or 'tool_outputs too large' in e.message:
                         self.create_message(
                             message="Previous request timed out. Please repeat the exact same tool calls in the exact same order with the same arguments.",
                             role="user"
                         )
 
                         self._create_run(recipient_agent, additional_instructions, event_handler, 'required', temperature=0)
-                        self._run_until_done()
+                        await self._run_until_done()
 
                         if self.run.status != "requires_action":
                             raise Exception("Run Failed. Error: ", self.run.last_error or self.run.incomplete_details)
@@ -248,7 +227,7 @@ class Thread:
 
                 if error_attempts < 3 and any(error in error_message for error in common_errors):
                     if error_attempts < 2:
-                        time.sleep(1 + error_attempts)
+                        await asyncio.sleep(1 + error_attempts)
                     else:
                         self.create_message(message="Continue.", role="user")
                     
@@ -349,21 +328,24 @@ class Thread:
             else:
                 raise e
 
-    def _run_until_done(self):
+    async def _run_until_done(self):
         while self.run.status in ['queued', 'in_progress', "cancelling"]:
-            time.sleep(0.5)
-            self.run = self.client.beta.threads.runs.retrieve(
+            await asyncio.sleep(0.5)
+            self.run = await self.client.beta.threads.runs.retrieve(
                 thread_id=self.thread.id,
                 run_id=self.run.id
             )
 
     def _submit_tool_outputs(self, tool_outputs, event_handler):
         if not event_handler:
-            self.run = self.client.beta.threads.runs.submit_tool_outputs_and_poll(
-                thread_id=self.thread.id,
-                run_id=self.run.id,
-                tool_outputs=tool_outputs
-            )
+            try:
+                self.run = self.client.beta.threads.runs.submit_tool_outputs_and_poll(
+                    thread_id=self.thread.id,
+                    run_id=self.run.id,
+                    tool_outputs=tool_outputs
+                )
+            except Exception as e:
+                raise e
         else:
             with self.client.beta.threads.runs.submit_tool_outputs_stream(
                     thread_id=self.thread.id,
@@ -452,7 +434,7 @@ class Thread:
             args = tool_call.function.arguments
             args = json.loads(args) if args else {}
             tool = tool(**args)
-            for tool_name in [name for name, _ in tool_outputs_and_names]:
+            for tool_name, _ in tool_outputs_and_names:
                 if tool_name == tool_call.function.name and (
                         hasattr(tool, "ToolConfig") and hasattr(tool.ToolConfig, "one_call_at_a_time") and tool.ToolConfig.one_call_at_a_time):
                     return f"Error: Function {tool_call.function.name} is already called. You can only call this function once at a time. Please wait for the previous call to finish before calling it again."
@@ -463,7 +445,8 @@ class Thread:
             if inspect.iscoroutinefunction(tool.run):
                 output = await tool.run()
             else:
-                output = await asyncio.get_running_loop().run_in_executor(None, tool.run)
+                output = await asyncio.to_thread(tool.run)
+            
             from app.logging_config import configure_logger
             logger = configure_logger('Thread')
             logger.debug(f"Function {tool.__class__.__name__} completed with output: {output}")
@@ -475,16 +458,16 @@ class Thread:
             logger.error(error_message)
             return error_message
         
-    async def _execute_async_tool_calls_outputs(self, tool_outputs):
+    async def _execute_async_tool_calls_outputs(self, tool_outputs_and_names):
         async_tool_calls = []
-        for tool_output in tool_outputs:
-            if asyncio.iscoroutine(tool_output["output"]):
+        for tool_output in tool_outputs_and_names:
+            if isinstance(tool_output[1]["output"], Coroutine):
                 async_tool_calls.append(tool_output)
 
         if async_tool_calls:
-            results = await asyncio.gather(*[call["output"] for call in async_tool_calls])
+            results = await asyncio.gather(*[call[1]["output"] for call in async_tool_calls])
             
             for tool_output, result in zip(async_tool_calls, results):
-                tool_output["output"] = str(result)
+                tool_output[1]["output"] = str(result)
         
-        return tool_outputs
+        return [output[1] for output in tool_outputs_and_names]

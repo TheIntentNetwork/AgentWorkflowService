@@ -13,7 +13,6 @@ class Task(BaseModel, extra='allow'):
     id: Optional[str] = Field(..., description="The ID of the task.");
     node_template_name: Optional[str] = Field(None, description="The name of the task.");
     name: Optional[str] = Field(None, description="The name of the task.");
-    description: str = Field(..., description="The description of the task.");
     assignees: List[str] = Field([], description="The agents that are involved in the task.");
     status: Literal[None, "pending", "in-progress", "completed", "failed"] = Field("pending", description="The status of the task");
     session_id: Optional[str] = Field(None, description="The ID of the session that the task is associated with.");
@@ -63,7 +62,7 @@ class Task(BaseModel, extra='allow'):
         # Create ContextInfo instance if it's not already one
         if not isinstance(task_data['context_info'], ContextInfo):
             task_data['context_info'] = ContextInfo(**task_data['context_info'])
-
+            
         # Create the Task instance
         task = cls(**task_data)
 
@@ -78,7 +77,11 @@ class Task(BaseModel, extra='allow'):
         context_manager: ContextManager = get_container().context_manager()
         
         if action == 'initialize':
-            task = await cls.create(**object_data)
+            if 'type' in object_data:
+                if object_data['type'] == 'agency_task':
+                    task = await cls.create(**object_data)
+                    
+                task = await cls.create(**object_data)
         else:
             task = await context_manager.get_context(key)
             task.context_info.context.update(await context_manager.get_merged_context(context))

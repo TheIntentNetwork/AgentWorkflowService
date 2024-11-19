@@ -1,5 +1,7 @@
 import base64
 from datetime import datetime
+from functools import lru_cache
+import gc
 from logging import Logger
 import pickle
 import struct
@@ -22,6 +24,7 @@ import re
 import string
 import os
 import numpy as np
+from tqdm import tqdm
 from app.interfaces.service import IService
 from app.logging_config import configure_logger
 from dependency_injector.wiring import inject, Provide
@@ -110,8 +113,8 @@ class RedisService(IService):
 
         for attempt in range(max_retries):
             try:
-                self.pool = ConnectionPool.from_url(self.redis_url, decode_responses=True)
-                self.client = Redis(connection_pool=self.pool)
+                self.pool = ConnectionPool.from_url(self.redis_url)
+                self.client = Redis(connection_pool=self.pool, decode_responses=True)
                 await self.client.ping()
                 self.pubsub = self.client.pubsub()
                 self.logger.info("Successfully created Redis connection pool")
@@ -137,11 +140,15 @@ class RedisService(IService):
         """
         try:
             await self.create_pool()
-            self.logger.info("Successfully connected to Redis")
+            self.pubsub = self.client.pubsub()
+            # Ensure pubsub connection is initialized
+            await self.pubsub.ping()
+            self.logger.info("Successfully connected to Redis and initialized pubsub")
         except Exception as e:
             self.logger.error(f"Failed to connect to Redis: {str(e)}")
+            self.logger.error(traceback.format_exc())
             raise
-
+        
     async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
         """
         Subscribe to a Redis channel.
@@ -158,12 +165,34 @@ class RedisService(IService):
         await self.ensure_connection()
         if queue is None:
             queue = asyncio.Queue()
+            self.logger.debug(f"Created new queue for channel {channel}")
+            
+        self.logger.debug(f"""
+        Subscribing to channel:
+        - Channel: {channel}
+        - Queue ID: {id(queue)}
+        - Has callback: {callback is not None}
+        - Has filter: {filter_func is not None}
+        - Current subscriptions: {len(self.subscriptions.get(channel, []))}
+        """)
+        
         if channel not in self.subscriptions:
             self.subscriptions[channel] = []
             await self.pubsub.subscribe(channel)
-            self.logger.info(f"Subscribed to channel: {channel}")
+            self.logger.info(f"""
+            New channel subscription:
+            - Channel: {channel}
+            - Total channels: {len(self.subscriptions)}
+            """)
+            
         self.subscriptions[channel].append((queue, callback, filter_func))
-        self.logger.debug(f"Added subscription for channel {channel}")
+        self.logger.debug(f"""
+        Added subscription:
+        - Channel: {channel}
+        - Queue ID: {id(queue)}
+        - Total subscriptions for channel: {len(self.subscriptions[channel])}
+        - Callback type: {type(callback).__name__ if callback else 'None'}
+        """)
         return queue
 
     async def unsubscribe(self, channel, queue):
@@ -183,43 +212,23 @@ class RedisService(IService):
                 await self.pubsub.unsubscribe(channel)
                 self.logger.info(f"Unsubscribed from channel: {channel}")
 
-    async def run_listener(self):
-        """
-        Run the listener for Redis pub/sub messages.
-        """
-        while True:
-            try:
-                client = await self.get_connection()
-                message = await client.pubsub().get_message(ignore_subscribe_messages=True)
-                if message is not None:
-                    channel = message['channel'].decode('utf-8')
-                    data = message['data']
-                    if channel in self.subscriptions:
-                        for queue, callback, filter_func in self.subscriptions[channel]:
-                            try:
-                                if filter_func is None or filter_func(data):
-                                    await queue.put((callback, data))
-                            except Exception as e:
-                                self.logger.error(f"Error applying filter for channel {channel}: {str(e)}")
-            except Exception as e:
-                self.logger.error(f"Error in listener: {str(e)}")
-            await asyncio.sleep(0.1)  # Prevent busy-waiting
 
-    async def publish(self, channel: str, message: Any):
+    async def publish(self, channel: str, message: Any) -> bool:
         """
         Publish a message to a Redis channel.
 
         Args:
             channel (str): The channel to publish to.
             message (Any): The message to publish.
+            
+        Returns:
+            bool: True if published successfully, False otherwise
         """
         await self.ensure_connection()
-        try:
-            await self.client.publish(channel, json.dumps(message))
-            self.logger.debug(f"Published message to channel {channel}")
-        except Exception as e:
-            self.logger.error(f"Error publishing to channel {channel}: {str(e)}")
-            raise
+        
+        from app.utilities.redis_publisher import RedisPublisher
+        publisher = RedisPublisher()
+        return await publisher.publish(self, channel, message)
 
     async def async_search_index(self, query_data: str, vector_field: str, index_name: str, top_k: int, return_fields: Optional[List[str]] = None, filter_expression: Optional[FilterExpression] = None):
         """
@@ -315,24 +324,146 @@ class RedisService(IService):
     async def start(self):
         """
         Start the RedisService by initializing the client and pubsub,
-        then starting the listener thread.
+        then starting the message processor.
         """
         self.logger.info("Starting RedisService")
         await self.connect()  # Ensure connection is established
-        if not self.client:
-            raise RuntimeError("Failed to connect to Redis")
+        if not self.client or not self.pubsub:
+            raise RuntimeError("Failed to connect to Redis or initialize pubsub")
         self.initialized = True
+        
+        # Start message processor if not already running
+        if not hasattr(self, '_processor_task') or self._processor_task.done():
+            self._processor_task = asyncio.create_task(self._process_messages())
+            self.logger.info("Message processor task started")
+            
         self.logger.info("RedisService started successfully")
-        # Start the listener thread after pubsub is initialized
-        self.listener_thread = threading.Thread(target=self.run_listener, daemon=True)
-        self.listener_thread.start()
-        self.logger.info("Listener thread started successfully")
+
+    async def _process_messages(self):
+        """
+        Process messages from Redis pubsub and route to appropriate queues
+        """
+        try:
+            self.logger.debug(f"""
+            Starting Redis message processor:
+            - Active channels: {list(self.subscriptions.keys())}
+            - Total subscriptions: {sum(len(subs) for subs in self.subscriptions.values())}
+            """)
+            
+            # Ensure we have active subscriptions before processing
+            if not self.subscriptions:
+                self.logger.warning("No active subscriptions, message processor waiting...")
+                while not self.subscriptions:
+                    await asyncio.sleep(1)
+            
+            while True:
+                try:
+                    # Ensure pubsub connection is active
+                    if not self.pubsub:
+                        self.logger.warning("Pubsub connection lost, reconnecting...")
+                        self.pubsub = self.client.pubsub()
+                        # Resubscribe to all channels
+                        for channel in self.subscriptions.keys():
+                            await self.pubsub.subscribe(channel)
+                    
+                    await asyncio.sleep(0.1)  # Reduced sleep time for better responsiveness
+                    message = await self.pubsub.get_message(ignore_subscribe_messages=True)
+                    if message and message['type'] == 'message':
+                        channel = message['channel'].decode('utf-8')
+                        data = message['data']
+                        
+                        self.logger.debug(f"""
+                        Received message:
+                        - Channel: {channel}
+                        - Data type: {type(data).__name__}
+                        - Data size: {len(str(data))} chars
+                        - Has subscriptions: {channel in self.subscriptions}
+                        """)
+                        
+                        if channel in self.subscriptions:
+                            routing_tasks = []
+                            for queue, callback, filter_func in self.subscriptions[channel]:
+                                try:
+                                    should_process = filter_func is None or filter_func(data)
+                                    if should_process:
+                                        # Create task for routing message
+                                        task = asyncio.create_task(
+                                            self._route_message(channel, queue, callback, data)
+                                        )
+                                        routing_tasks.append(task)
+                                except Exception as e:
+                                    self.logger.error(f"""
+                                    Error processing message filter:
+                                    - Channel: {channel}
+                                    - Error: {str(e)}
+                                    - Traceback: {traceback.format_exc()}
+                                    """)
+                            
+                            # Wait for all routing tasks to complete
+                            if routing_tasks:
+                                await asyncio.gather(*routing_tasks, return_exceptions=True)
+                                
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    self.logger.error(f"""
+                    Error processing Redis message:
+                    - Error: {str(e)}
+                    - Traceback: {traceback.format_exc()}
+                    """)
+                
+                await asyncio.sleep(0.1)
+                
+        except asyncio.CancelledError:
+            self.logger.info("Message processor cancelled")
+        except Exception as e:
+            self.logger.error(f"""
+            Fatal error in message processor:
+            - Error: {str(e)}
+            - Traceback: {traceback.format_exc()}
+            """)
+
+    async def _route_message(self, channel: str, queue: asyncio.Queue, callback: Optional[Callable], data: Any):
+        """
+        Route a single message to its queue
+        """
+        try:
+            if callback:
+                await queue.put((callback, data))
+            else:
+                await queue.put(data)
+                
+            self.logger.debug(f"""
+            Routed message:
+            - Channel: {channel}
+            - Queue ID: {id(queue)}
+            - Queue size: {queue.qsize()}
+            - Has callback: {callback is not None}
+            """)
+        except Exception as e:
+            self.logger.error(f"""
+            Error routing message:
+            - Channel: {channel}
+            - Queue ID: {id(queue)}
+            - Error: {str(e)}
+            - Traceback: {traceback.format_exc()}
+            """)
 
     async def shutdown(self):
         """
-        Shutdown the RedisService.
+        Shutdown the RedisService
         """
         self.logger.info("Shutting down RedisService")
+        
+        # Cancel message processor if running
+        if hasattr(self, '_processor_task') and not self._processor_task.done():
+            self._processor_task.cancel()
+            try:
+                await self._processor_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Clean up connections
         if self.pool:
             await self.pool.disconnect()
         self.client = None
@@ -571,7 +702,7 @@ class RedisService(IService):
         except TypeError:
             return str(value)
 
-    async def get_context(self, key: str) -> dict:
+    async def get_context(self, key: str) -> Dict[str, Any]:
         client = await self.get_connection()
         try:
             result = await client.hgetall(key)
@@ -579,12 +710,23 @@ class RedisService(IService):
                 deserialized = {}
                 for k, v in result.items():
                     k = k.decode('utf-8')
-                    try:
-                        # Try to decode as base64 first
-                        deserialized[k] = base64.b64decode(v)
-                    except:
-                        # If not base64, decode as utf-8
-                        deserialized[k] = v.decode('utf-8')
+                    if k.endswith('_vector'):
+                        deserialized[k] = np.frombuffer(v, dtype=np.float32)
+                    else:
+                        try:
+                            deserialized[k] = json.loads(v)
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            v_str = v.decode('utf-8', errors='ignore')
+                            if v_str.lower() == 'true':
+                                deserialized[k] = True
+                            elif v_str.lower() == 'false':
+                                deserialized[k] = False
+                            elif v_str.isdigit():
+                                deserialized[k] = int(v_str)
+                            elif v_str.replace('.', '', 1).isdigit():
+                                deserialized[k] = float(v_str)
+                            else:
+                                deserialized[k] = v_str
                 return deserialized
             else:
                 self.logger.warning(f"No data found for key: {key}")
@@ -595,34 +737,11 @@ class RedisService(IService):
         return {}
 
     async def save_context(self, key: str, value: Dict[str, Any]) -> None:
-        client = await self.get_connection()
-        try:
-            serialized = {}
+        async with self.client.pipeline(transaction=False) as pipe:
             for k, v in value.items():
                 if v:
-                    if isinstance(v, (bytes, bytearray)):
-                        # Encode binary data as base64
-                        serialized[k] = base64.b64encode(v).decode('ascii')
-                    else:
-                        serialized[k] = v
-            await client.hmset(key, serialized)
-        except Exception as e:
-            self.logger.error(f"Failed to save context for key {key}: {str(e)}")
-            self.logger.error(traceback.format_exc())
-
-    def _serialize_value(self, value: Any) -> bytes:
-        if isinstance(value, (dict, list, str, int, float, bool, type(None))):
-            return json.dumps(value).encode()
-        elif isinstance(value, np.ndarray):
-            return value.tobytes()
-        else:
-            return pickle.dumps(value)
-
-    def _deserialize_value(self, value: str) -> Any:
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return value
+                    pipe.hset(key, k, self._serialize_value(v))
+            await pipe.execute()
 
     async def create_index(self, index_name: str) -> AsyncSearchIndex:
         """
@@ -649,197 +768,66 @@ class RedisService(IService):
             raise
         return index
 
-    async def load_records(self, objects_list, index_name: str, fields_vectorization, overwrite=False, prefix: str = "context", id_column: str = 'id', batch_size: int = 100) -> List[str]:
-        """
-        Load records into a Redis search index.
+    @lru_cache(maxsize=10000)
+    def _get_embedding(self, text: str):
+        return self.get_model().embed(self.preprocess_text(text))
 
-        Args:
-            objects_list (List): List of objects to load.
-            index_name (str): Name of the index to load into.
-            fields_vectorization (Dict[str, bool]): Fields to vectorize.
-            overwrite (bool): Whether to overwrite existing records.
-            prefix (str): Prefix for record keys.
-            id_column (str): Column to use as ID.
-            batch_size (int): Number of records to process in each batch.
-
-        Returns:
-            List[str]: List of keys for the loaded records.
-        """
+    async def load_records(self, objects_list, index_name: str, fields_vectorization, overwrite=True, prefix: str = "context", id_column: str = 'id', batch_size: int = 100) -> List[str]:
         keys = []
-        for i in range(0, len(objects_list), batch_size):
-            batch = objects_list[i:i+batch_size]
-            batch_records = []
-            for obj in batch:
-                record = {}
-                all_text = []
+        total_batches = (len(objects_list) + batch_size - 1) // batch_size
 
-                # Ensure obj is in dict format
-                obj_dict = obj.to_dict() if not isinstance(obj, dict) else obj
-                
-                for field, should_vectorize in fields_vectorization.items():
-                    field_data = obj_dict.get(field, "")
+        if not await self.index_exists(index_name):
+            await self.create_index(index_name)
+
+        async with self.client.pipeline(transaction=False) as pipe:
+            for i in tqdm(range(0, len(objects_list), batch_size), total=total_batches, desc="Loading records"):
+                batch = objects_list[i:i+batch_size]
+                batch_records = []
+
+                for obj in batch:
+                    record = {}
+                    all_text = []
+
+                    obj_dict = obj.to_dict() if not isinstance(obj, dict) else obj
                     
-                    # Convert field_data to string if it's not already
-                    if not isinstance(field_data, str):
-                        if isinstance(field_data, (dict, list)):
-                            field_data = json.dumps(field_data)
-                        else:
-                            field_data = str(field_data)
+                    for field, should_vectorize in fields_vectorization.items():
+                        field_data = obj_dict.get(field, "")
+                        field_data = json.dumps(field_data) if isinstance(field_data, (dict, list)) else str(field_data)
+                        
+                        all_text.append(field_data)
+                        
+                        if should_vectorize:
+                            vector = self._get_embedding(field_data)
+                            record[f"{field}_vector"] = np.array(vector, dtype=np.float32).tobytes()
+                        
+                        record[field] = field_data
                     
-                    # Accumulate text for metadata_vector
-                    all_text.append(field_data)
+                    metadata_vectors = self._get_embedding(" ".join(all_text))
+                    record['metadata_vector'] = np.array(metadata_vectors, dtype=np.float32).tobytes()
                     
-                    # If the field is marked for vectorization, preprocess and vectorize the text
-                    if should_vectorize:
-                        preprocessed_text = self.preprocess_text(field_data)
-                        vector = self.get_model().embed(preprocessed_text)
-                        record[f"{field}_vector"] = np.array(vector, dtype=np.float32).tobytes()
-                    
-                    # Include the original field data in the record
-                    record[field] = field_data
-                
-                # Generate metadata_vector from all accumulated text
-                preprocessed_metadata = self.preprocess_text(" ".join(all_text))
-                metadata_vectors = self.get_model().embed(preprocessed_metadata)
-                record['metadata_vector'] = np.array(metadata_vectors, dtype=np.float32).tobytes()
-                
-                record['item'] = json.dumps(obj_dict)
-                batch_records.append(record)
-            
-            if not await self.index_exists(index_name):
-                await self.create_index(index_name)
-        
-            for i, record in enumerate(batch_records):
-                if id_column is None:
-                    key = f"{prefix}:{i}"
-                else:
-                    if id_column not in record:
-                        key = f"{prefix}:{i}"
+                    record['item'] = json.dumps(obj_dict)
+                    batch_records.append(record)
+
+                for j, record in enumerate(batch_records):
+                    key = f"{prefix}:{record.get(id_column, i+j)}"
+                    keys.append(key)
+                    if overwrite:
+                        pipe.hset(key, mapping=record)
                     else:
-                        key = f"{prefix}:{record[id_column]}"
-                keys.append(key)
-                if overwrite:
-                    await self.client.hset(key, mapping=record)
-                else:
-                    await self.client.hsetnx(key, mapping=record)
-            
-            # Clear batch variables
-            del batch_records
-            del batch
-        
+                        pipe.hmset(key, record)
+
+                await pipe.execute()
+                
+                # Clear batch variables to free up memory
+                del batch_records
+                del batch
+                gc.collect()  # Force garbage collection
+
+                # Clear Redis pipeline to prevent memory buildup
+                await pipe.reset()
+
+                # Introduce a small delay to allow other tasks to run
+                await asyncio.sleep(0.01)
+
         self.logger.info('Records loaded successfully')
-        
         return keys
-            
-    async def close(self):
-        """
-        Close the Redis connection.
-        """
-        if hasattr(self, 'client') and self.client:
-            await self.client.close()
-
-    async def delete_index(self, index_name: str):
-        """
-        Delete a specified index.
-
-        Args:
-            index_name (str): The name of the index to delete.
-        """
-        try:
-            await self.client.ft(index_name).dropindex(delete_documents=True)
-            print(f"Index {index_name} deleted successfully.")
-        except Exception as e:
-            print(f"Failed to delete index {index_name}: {e}")
-
-    async def expire(self, key: str, seconds: int):
-        """
-        Set an expiration time for a key.
-
-        Args:
-            key (str): The key to set the expiration on.
-            seconds (int): The number of seconds until the key expires.
-
-        Returns:
-            bool: True if the expiration was set, False if the key does not exist.
-        """
-        try:
-            result = await self.client.expire(key, seconds)
-            if result:
-                self.logger.debug(f"Expiration set for key {key} to {seconds} seconds")
-            else:
-                self.logger.warning(f"Failed to set expiration for key {key}: Key does not exist")
-            return result
-        except Exception as e:
-            self.logger.error(f"Error setting expiration for key {key}: {str(e)}")
-            raise
-
-    async def async_set(self, key: str, value: str):
-        """
-        Asynchronously set a key-value pair in Redis.
-
-        Args:
-            key (str): The key to set.
-            value (str): The value to set.
-        """
-        await self.client.set(key, value)
-
-    async def get_client(self):
-        """
-        Get the Redis client, connecting if necessary.
-
-        Returns:
-            Redis: The Redis client.
-        """
-        if not self.client:
-            await self.connect()
-        return self.client
-
-    async def disconnect(self):
-        """
-        Disconnect from Redis.
-        """
-        if self.client:
-            await self.client.close()
-            self.client = None
-        self.pubsub = None
-        self.initialized = False
-        self.logger.info("Disconnected from Redis")
-
-    async def reset_connection(self):
-        """
-        Reset the Redis connection.
-        """
-        if self.client:
-            await self.client.close()
-        self.client = None
-        self.pubsub = None
-        await self.connect()
-
-    def _serialize_value(self, value: Any) -> str:
-        if isinstance(value, (dict, list, str, int, float, bool, type(None))):
-            return json.dumps(value)
-        elif isinstance(value, np.ndarray):
-            return json.dumps(value.tolist())
-        else:
-            return json.dumps(str(value))
-
-    def _deserialize_value(self, value: bytes) -> Any:
-        try:
-            # Try to decode as JSON
-            return json.loads(value.decode())
-        except UnicodeDecodeError:
-            # If it's not UTF-8 encoded, it might be binary data
-            try:
-                # Try to unpickle
-                return pickle.loads(value)
-            except pickle.UnpicklingError:
-                # If it's not pickled, it might be a numpy array or other binary format
-                try:
-                    # Assuming it's a numpy array of floats
-                    return struct.unpack('f' * (len(value) // 4), value)
-                except struct.error:
-                    # If all else fails, return the raw bytes
-                    return value
-        except json.JSONDecodeError:
-            # If it's not JSON, return the decoded string
-            return value.decode(errors='replace')

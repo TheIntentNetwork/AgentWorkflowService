@@ -9,14 +9,12 @@ import asyncio
 from app.models.NodeStatus import NodeStatus
 from app.models.CreateReportLifecycle import CreateReportLifecycle
 from dependency_injector.wiring import inject, Provide
-from containers import Container
 from app.services.context.context_manager import ContextManager
 
 class UniverseAgent(Agent):
     @inject
-    def __init__(self, context_manager: ContextManager = Provide[Container.context_manager], **kwargs):
+    def __init__(self, context_manager: ContextManager = None, **kwargs):
         super().__init__(**kwargs)
-        self.context_manager = context_manager
         #self.lifecycle_manager = get_container().lifecycle_manager()
         self.logger = configure_logger(self.__class__.__name__)
         self.logger.debug("Initializing UniverseAgent with kwargs: %s", kwargs)
