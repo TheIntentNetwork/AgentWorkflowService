@@ -66,6 +66,7 @@ class TaskProcessor(BaseModel):
     _processing_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
     _task_semaphore: asyncio.Semaphore = PrivateAttr(default_factory=lambda: asyncio.Semaphore(10))
     _active_tasks: Set[asyncio.Task] = PrivateAttr(default_factory=set)
+    _redis_running_tasks_key: str = PrivateAttr(default="global:running_tasks")
     
     # Result Tracking
     _expected_results: Dict[str, int] = PrivateAttr(default_factory=dict)
@@ -556,6 +557,12 @@ class TaskProcessor(BaseModel):
         try:
             quick_log = configure_logger('quick_log')
             
+            # Check if task is already running
+            is_running = await processor._check_if_task_running(processor.task_info.name)
+            if is_running:
+                quick_log.warning(f"Task {processor.task_info.name} is already running, skipping execution")
+                return None
+                
             # Check if all dependencies are available
             dependencies = list(processor.task_info.dependencies)
             has_all_dependencies = all(dep in processor.context_info.context for dep in dependencies)
@@ -563,6 +570,8 @@ class TaskProcessor(BaseModel):
             
             if has_all_dependencies:
                 async with processor._task_semaphore:  # Control concurrent tasks
+                    # Add task to running tasks in Redis
+                    await processor._add_running_task(processor.task_info.name)
                     quick_log.info(f"Executing task {processor.task_info.name} with key {processor.key}")
                     task = asyncio.create_task(
                         processor.execute_task(),
@@ -880,6 +889,8 @@ class TaskProcessor(BaseModel):
             async with self._tasks_lock:
                 # Remove from running tasks if present
                 self.tasks_running.discard(task_name)
+                # Remove from Redis running tasks
+                await self._remove_running_task(task_name)
                 
                 # Clear Redis state
                 key = f"task:{self.session_id}:{task_name}:state"
@@ -1025,6 +1036,12 @@ class TaskProcessor(BaseModel):
             
             quick_log.info(f"Dependency update - Dependency: {dependency}, Value: {value}")
             
+            # Check if task is already running
+            is_running = await self._check_if_task_running(self.task_info.name)
+            if is_running:
+                quick_log.warning(f"Task {self.task_info.name} is already running, skipping dependency update")
+                return
+            
             if dependency and value is not None:
                     if dependency not in self.context_info.context:
                         if self.task_info.expansion_config:
@@ -1040,7 +1057,7 @@ class TaskProcessor(BaseModel):
                 
             # Check if all dependencies are now met
             all_deps_met = all(dep in self.context_info.context for dep in self.task_info.dependencies)
-            if all_deps_met:
+            if all_deps_met and not await self._check_if_task_running(self.task_info.name):
                 asyncio.create_task(self.execute_task())
             else:
                 pass
@@ -1137,6 +1154,31 @@ class TaskProcessor(BaseModel):
             self._logger.error(f"Error retrying task: {str(e)}")
             self._logger.error(traceback.format_exc())
             await self._handle_final_failure(task_name, str(e))
+
+    async def _check_if_task_running(self, task_name: str) -> bool:
+        """Check if a task is currently running in Redis"""
+        try:
+            running_tasks = await self._redis.client.smembers(self._redis_running_tasks_key)
+            return task_name.encode() in running_tasks
+        except Exception as e:
+            self._logger.error(f"Error checking running task status: {str(e)}")
+            return False
+
+    async def _add_running_task(self, task_name: str):
+        """Add a task to the running tasks set in Redis"""
+        try:
+            await self._redis.client.sadd(self._redis_running_tasks_key, task_name)
+            self._logger.debug(f"Added task {task_name} to running tasks in Redis")
+        except Exception as e:
+            self._logger.error(f"Error adding running task to Redis: {str(e)}")
+
+    async def _remove_running_task(self, task_name: str):
+        """Remove a task from the running tasks set in Redis"""
+        try:
+            await self._redis.client.srem(self._redis_running_tasks_key, task_name)
+            self._logger.debug(f"Removed task {task_name} from running tasks in Redis")
+        except Exception as e:
+            self._logger.error(f"Error removing running task from Redis: {str(e)}")
 
     async def _handle_final_failure(self, task_name: str, error: str):
         """Handle final failure of a task after retries are exhausted"""
