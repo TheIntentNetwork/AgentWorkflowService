@@ -526,18 +526,19 @@ class TaskProcessor(BaseModel):
             # Setup dependency subscriptions
             dependencies = object_data.get('dependencies', [])
             if dependencies:
-                logger.info(f"Setting up dependency subscriptions for task {key}")
                 from containers import get_container
                 event_manager = get_container().event_manager()
                 missing_dependencies = [dep for dep in dependencies if dep not in processor.context_info.context]
                 channels = [f"session:{processor.session_id}:{dep}" for dep in missing_dependencies]
                 
-                await event_manager.subscribe_to_channels(
-                    channels,
-                    callback=lambda data: processor._handle_dependency_update(data),
-                    task_name=processor.task_info.name,
-                    session_id=processor.session_id
-                )
+                if channels:
+                    await event_manager.subscribe_to_channels(
+                        channels,
+                        callback=lambda data: processor._handle_dependency_update(data),
+                        task_name=processor.task_info.name,
+                        session_id=processor.session_id
+                    )
+                    return
             
             # Process the task
             return await cls._process_task(processor, key, object_data, context, logger)
