@@ -220,7 +220,8 @@ class TaskProcessor(BaseModel):
                         'dependencies': self.task_info.dependencies,
                         'result_keys': self.task_info.result_keys,
                         'message_template': self.task_info.message_template,
-                        'shared_instructions': self.task_info.shared_instructions
+                        'shared_instructions': self.task_info.shared_instructions,
+                        'optional_dependencies': self.task_info.optional_dependencies
                     },
                     expansion_config=self.task_info.expansion_config,
                     context=self.context_info.context
@@ -264,6 +265,7 @@ class TaskProcessor(BaseModel):
                             'result_keys': expanded_task['result_keys'],
                             'message_template': expanded_task['message_template'],
                             'shared_instructions': expanded_task['shared_instructions'],
+                            'optional_dependencies': expanded_task['optional_dependencies'],
                             'session_id': self.session_id,
                             'context_info': self.context_info.dict()
                         },
@@ -497,6 +499,7 @@ class TaskProcessor(BaseModel):
                         dependencies=object_data.get('dependencies', []),
                         result_keys=object_data.get('result_keys', []),
                         tools=object_data.get('tools', []),
+                        optional_dependencies=object_data.get('optional_dependencies', []),
                         shared_instructions=object_data.get('shared_instructions', None),
                         agent_class=object_data.get('agent_class', None),
                         message_template=object_data.get('message_template', None),
@@ -507,7 +510,7 @@ class TaskProcessor(BaseModel):
                 )
 
                 # Setup dependencies and process task
-                return await cls._setup_and_process_task(processor, key, object_data, context, logger)
+                asyncio.create_task(cls._setup_and_process_task(processor, key, object_data, context, logger))
             else:
                 logger.warning(f"Unsupported action for TaskProcessor: {action}")
                 
@@ -539,10 +542,9 @@ class TaskProcessor(BaseModel):
                         task_name=processor.task_info.name,
                         session_id=processor.session_id
                     )
-                    return
             
             # Process the task
-            return await cls._process_task(processor, key, object_data, context, logger)
+            asyncio.create_task(cls._process_task(processor, key, object_data, context, logger))
             
         except Exception as e:
             logger.error(f"Error in task setup: {str(e)}")
@@ -567,7 +569,12 @@ class TaskProcessor(BaseModel):
                 
             # Check if all dependencies are available
             dependencies = list(processor.task_info.dependencies)
-            has_all_dependencies = all(dep in processor.context_info.context for dep in dependencies)
+            if processor.task_info.optional_dependencies:
+                critical_dependencies = list(set(dependencies) - set(processor.task_info.optional_dependencies))
+            else:
+                critical_dependencies = dependencies
+                
+            has_all_dependencies = all(dep in processor.context_info.context for dep in critical_dependencies)
             quick_log.info(f"{processor.task_info.name} - has all dependencies (Yes/No): {has_all_dependencies}")
             
             if has_all_dependencies:
@@ -1037,12 +1044,6 @@ class TaskProcessor(BaseModel):
             value = value.get('value')
             
             quick_log.info(f"Dependency update - Dependency: {dependency}, Value: {value}")
-            
-            # Check if task is already running
-            is_running = await self._check_if_task_running(self.task_info.name)
-            if is_running:
-                quick_log.warning(f"Task {self.task_info.name} is already running, skipping dependency update")
-                return
             
             if dependency and value is not None:
                     if dependency not in self.context_info.context:
