@@ -50,6 +50,7 @@ class TaskProcessor(BaseModel):
     session_id: str = Field(..., description="The ID of the session")
     context_info: ContextInfo = Field(..., description="The context information")
     task_info: TaskInfo = Field(..., description="The task information")
+    total_tasks: int = Field(default=0, description="Total number of tasks in the workflow")
     
     # Task State Tracking
     tasks_completed: Set[str] = Field(default_factory=set, description="Set of completed task names")
@@ -482,6 +483,12 @@ class TaskProcessor(BaseModel):
         event_manager: EventManager = get_container().event_manager()
         
         logger.info(f"Received task: key={key}, action={action} on Worker: {worker.worker_uuid}")
+
+        # Get total tasks count from Redis
+        redis = get_container().redis()
+        total_tasks_key = f"session:{object_data.get('session_id')}:total_tasks"
+        total_tasks = await redis.client.get(total_tasks_key)
+        total_tasks = int(total_tasks) if total_tasks else 0
         
         try:
             if action == 'execute':
@@ -491,6 +498,7 @@ class TaskProcessor(BaseModel):
                     name=object_data.get('name'),
                     context_info=ContextInfo(context=context),
                     session_id=object_data.get('session_id'),
+                    total_tasks=total_tasks,
                     task_info=TaskInfo(
                         key=key,
                         name=object_data.get('name'),
@@ -1058,10 +1066,16 @@ class TaskProcessor(BaseModel):
                             self.context_info.context[dependency] = value
                             self._logger.debug(f"Updated context with dependency {dependency} = {value}")
                 
-            # Check if all dependencies are now met
+            # Check if all dependencies are met and ordering allows execution
             all_deps_met = all(dep in self.context_info.context for dep in self.task_info.dependencies)
+            order = getattr(self.task_info, 'order', 0)  # Default to 0 if no order specified
+            
             if all_deps_met and not await self._check_if_task_running(self.task_info.name):
-                asyncio.create_task(self.execute_task())
+                should_execute = await self._should_execute_ordered_task(order)
+                if should_execute:
+                    asyncio.create_task(self.execute_task())
+                else:
+                    self._logger.info(f"Task {self.task_info.name} waiting for correct execution order (order={order})")
             else:
                 pass
                     
@@ -1157,6 +1171,34 @@ class TaskProcessor(BaseModel):
             self._logger.error(f"Error retrying task: {str(e)}")
             self._logger.error(traceback.format_exc())
             await self._handle_final_failure(task_name, str(e))
+
+    async def _get_remaining_tasks(self) -> int:
+        """Get number of tasks remaining to be completed"""
+        try:
+            completed = len(self.tasks_completed)
+            failed = len(self.tasks_failed)
+            return self.total_tasks - (completed + failed)
+        except Exception as e:
+            self._logger.error(f"Error getting remaining tasks: {str(e)}")
+            return 0
+
+    async def _should_execute_ordered_task(self, order: int) -> bool:
+        """
+        Determine if a task with given order should execute based on remaining tasks
+        
+        Args:
+            order (int): Task execution order (-1 for last, -2 for second to last, etc)
+            
+        Returns:
+            bool: True if task should execute, False otherwise
+        """
+        if order >= 0:  # Positive orders execute immediately
+            return True
+            
+        remaining = await self._get_remaining_tasks()
+        # For negative orders, wait until abs(order) tasks remain
+        # -1 means last task (1 remaining), -2 means second to last (2 remaining), etc
+        return remaining <= abs(order)
 
     async def _check_if_task_running(self, task_name: str) -> bool:
         """Check if a task is currently running in Redis"""
