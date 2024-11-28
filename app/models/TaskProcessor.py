@@ -66,7 +66,7 @@ class TaskProcessor(BaseModel):
     _processing_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
     _task_semaphore: asyncio.Semaphore = PrivateAttr(default_factory=lambda: asyncio.Semaphore(10))
     _active_tasks: Set[asyncio.Task] = PrivateAttr(default_factory=set)
-    _redis_running_tasks_key: str = PrivateAttr(default="global:running_tasks")
+    _redis_running_tasks_key: str = PrivateAttr()
     
     # Result Tracking
     _expected_results: Dict[str, int] = PrivateAttr(default_factory=dict)
@@ -107,6 +107,7 @@ class TaskProcessor(BaseModel):
         self._task_semaphore = asyncio.Semaphore(10)  # Initialize semaphore
         self._active_tasks = set()  # Initialize active tasks set
         self._processing = False
+        self._redis_running_tasks_key = f"session:{self.session_id}:running_tasks"
         
         # Initialize handlers synchronously
         self._register_default_handlers_sync()
