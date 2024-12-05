@@ -16,81 +16,155 @@ class TaskExpansion:
     def _expand_array_task(task_data: Dict[str, Any], expansion_config: Dict[str, Any], context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Expands a task based on array data in the context.
-        
-        Args:
-            task_data: Original task configuration
-            expansion_config: Expansion settings including type, format, etc
-            context: Current execution context
-            
-        Returns:
-            List of expanded task configurations
         """
         try:
+            # Safely get context keys
+            context_keys = list(context.keys()) if isinstance(context, dict) else "Context is not a dictionary"
+            
+            logger.info(f"""
+            ====== TASK EXPANSION DEBUG ======
+            Task Name: {task_data.get('name')}
+            Expansion Config: {json.dumps(expansion_config, indent=2)}
+            Context Type: {type(context)}
+            Context Keys: {context_keys}
+            Dependencies: {task_data.get('dependencies', [])}
+            ================================
+            """)
+
             expanded_tasks = []
             array_mapping = expansion_config.get('array_mapping', {})
+            identifiers = expansion_config.get('identifiers', {})
             
+            if not identifiers:
+                logger.error("No identifiers found in expansion config!")
+                raise ValueError("Expansion config must contain identifiers")
+
             # Find array dependencies in context
             array_deps = TaskExpansion.find_array_dependencies(task_data, context)
             
+            # If no array dependencies found, attempt to parse context values
             if not array_deps:
-                logger.debug(f"No array dependencies found for task: {task_data.get('name')}")
+                for key, value in context.items():
+                    if isinstance(value, str):
+                        try:
+                            context[key] = json.loads(value)
+                        except json.JSONDecodeError:
+                            logger.error(f"Failed to parse JSON for context key: {key}")
+
+                # Retry finding array dependencies after parsing
+                array_deps = TaskExpansion.find_array_dependencies(task_data, context)
+
+            logger.info(f"""
+            ====== ARRAY DEPENDENCIES DEBUG ======
+            Found Dependencies: {array_deps}
+            Array Mapping: {array_mapping}
+            Identifiers: {identifiers}
+            Raw Context: {json.dumps(context, indent=2) if isinstance(context, dict) else str(context)}
+            ==================================
+            """)
+            
+            if not array_deps:
+                logger.error(f"No array dependencies found for task: {task_data.get('name')}")
+                logger.error(f"Context available: {context_keys}")
+                logger.error(f"Dependencies needed: {task_data.get('dependencies', [])}")
                 return [task_data]
-                
+            
             # Process each array dependency
             for dep_name, dep_array in array_deps:
                 if not isinstance(dep_array, list):
-                    logger.warning(f"Expected list for {dep_name}, got {type(dep_array)}")
+                    logger.error(f"Expected list for {dep_name}, got {type(dep_array)}: {dep_array}")
                     continue
                 
-                logger.debug(f"""
-                Processing array dependency:
-                - Dependency: {dep_name}
-                - Array length: {len(dep_array)}
-                - Task: {task_data.get('name')}
+                logger.info(f"""
+                ====== PROCESSING ARRAY DEPENDENCY ======
+                Dependency: {dep_name}
+                Array Length: {len(dep_array)}
+                Array Contents: {json.dumps(dep_array[:2], indent=2)}... (truncated)
+                =======================================
                 """)
                 
                 # Create expanded task for each array item
                 for i, item in enumerate(dep_array):
                     expanded_task = task_data.copy()
+                    expanded_task.pop('expansion_config', None)
                     
-                    # Update task name to be unique
-                    item_id = TaskExpansion._get_item_identifier(item, expansion_config)
-                    expanded_task['name'] = f"{task_data['name']}_{dep_name}_{item_id}"
-                    
+                    # Create replacement dictionary based on identifiers
+                    replacements = {}
+                    if isinstance(item, dict):
+                        # Handle dictionary items
+                        for identifier_key, identifier_path in identifiers.items():
+                            try:
+                                parts = identifier_path.split('.')
+                                value = item
+                                for part in parts:
+                                    if isinstance(value, dict):
+                                        value = value.get(part)
+                                    else:
+                                        value = None
+                                        break
+                                if value is not None:
+                                    replacements[identifier_key] = value
+                                else:
+                                    logger.error(f"""
+                                    Failed to extract value for identifier {identifier_key}
+                                    Path: {identifier_path}
+                                    Item: {json.dumps(item, indent=2)}
+                                    """)
+                            except Exception as e:
+                                logger.error(f"Error processing identifier {identifier_key}: {e}")
+                    else:
+                        # Handle simple values (like strings)
+                        replacements['url'] = item
+
+                    if not replacements:
+                        logger.error(f"""
+                        No replacements found for item {i}!
+                        Item: {json.dumps(item, indent=2) if isinstance(item, dict) else str(item)}
+                        Identifiers: {identifiers}
+                        """)
+                        continue
+
+                    logger.info(f"""
+                    ====== TASK EXPANSION ITEM {i} ======
+                    Replacements: {json.dumps(replacements, indent=2)}
+                    Original Instructions: {expanded_task.get('shared_instructions')}
+                    Original Message: {expanded_task.get('message_template')}
+                    ================================
+                    """)
+
                     # Replace template variables
                     if 'message_template' in expanded_task:
                         expanded_task['message_template'] = TaskExpansion.replace_template_vars(
                             expanded_task['message_template'],
-                            TaskExpansion.format_structured_data(item),
-                            context
+                            replacements,
+                            context if isinstance(context, dict) else {}
                         )
                     if 'shared_instructions' in expanded_task:
                         expanded_task['shared_instructions'] = TaskExpansion.replace_template_vars(
                             expanded_task['shared_instructions'],
-                            TaskExpansion.format_structured_data(item),
-                            context
+                            replacements,
+                            context if isinstance(context, dict) else {}
                         )
-                    
-                    # Add array index metadata
-                    expanded_task['array_metadata'] = {
-                        'dependency': dep_name,
-                        'index': i,
-                        'total': len(dep_array),
-                        'item_id': item_id
-                    }
+
+                    logger.info(f"""
+                    ====== EXPANDED TASK {i} RESULT ======
+                    New Instructions: {expanded_task.get('shared_instructions')}
+                    New Message: {expanded_task.get('message_template')}
+                    ====================================
+                    """)
+
+                    # Update task name to be unique
+                    item_id = str(i + 1)
+                    expanded_task['name'] = f"{task_data['name']}_{item_id}"
                     
                     expanded_tasks.append(expanded_task)
-                    
-                    logger.debug(f"""
-                    Created expanded task:
-                    - Original name: {task_data.get('name')}
-                    - Expanded name: {expanded_task['name']}
-                    - Item ID: {item_id}
-                    - Index: {i}/{len(dep_array)}
-                    """)
-            
-            return expanded_tasks if expanded_tasks else [task_data]
-            
+
+            if not expanded_tasks:
+                logger.error("No tasks were expanded! Check the logs above for errors.")
+                return [task_data]
+
+            return expanded_tasks
+
         except Exception as e:
             logger.error(f"Error expanding array task: {str(e)}")
             logger.error(f"Traceback: {traceback.format_exc()}")
@@ -134,18 +208,20 @@ class TaskExpansion:
         dependencies = task_data.get('dependencies', [])
         expansion_config = task_data.get('expansion_config', {})
         array_mapping = expansion_config.get('array_mapping', {})
-        
+
         if dependencies:
             for dep in dependencies:
                 if dep in context and dep in array_mapping.values():
-                    
                     try:
-                        value = json.loads(dep)
-                    except Exception:
+                        # Ensure the context value is a JSON string and parse it
                         value = context[dep]
-                    
-                    if isinstance(value, list):
-                        array_deps.append((dep, value))
+                        if isinstance(value, str):
+                            value = json.loads(value)
+                        
+                        if isinstance(value, list):
+                            array_deps.append((dep, value))
+                    except (json.JSONDecodeError, TypeError) as e:
+                        logger.error(f"Error processing dependency {dep}: {str(e)}")
                     
         return array_deps
 

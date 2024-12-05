@@ -25,8 +25,8 @@ class AnalyzeContent(BaseTool):
         screenshot = get_b64_screenshot(wd)
 
         # save screenshot locally
-        # with open("screenshot.png", "wb") as fh:
-        #     fh.write(base64.b64decode(screenshot))
+        with open("screenshot.png", "wb") as fh:
+            fh.write(base64.b64decode(screenshot))
 
         messages = [
             {
@@ -34,11 +34,13 @@ class AnalyzeContent(BaseTool):
                 "content": "As a web scraping tool, your primary task is to accurately extract and provide information in response to user queries based on webpage screenshots. When a user asks a question, analyze the provided screenshot of the webpage for relevant information. Your goal is to ensure relevant data retrieval from webpages. If some elements are obscured by pop ups, notify the user about how to close them. If there might be additional information on the page regarding the user's question by scrolling up or down, notify the user about it as well. Once you have found the information you are looking for, you will use the 'ReadPageText' or 'ReadPDF' tool to gather the contents of the page or PDF for analysis to read and understand the actual contents to report or write a summary of the page.",
             },
             {
-                "role": "user",
+                "role": "user", 
                 "content": [
                     {
                         "type": "image_url",
-                        "image_url": f"data:image/jpeg;base64,{screenshot}",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{screenshot}"
+                        }
                     },
                     {
                         "type": "text",
@@ -46,11 +48,10 @@ class AnalyzeContent(BaseTool):
                     }
                 ]
             }
-
         ]
 
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o", # Updated from deprecated gpt-4-vision-preview
             messages=messages,
             max_tokens=1024,
         )

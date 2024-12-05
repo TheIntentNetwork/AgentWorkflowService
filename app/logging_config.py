@@ -11,6 +11,9 @@ import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 import watchtower
 from dotenv import load_dotenv
+from pathlib import Path
+from datetime import datetime
+import os.path
 
 # Load environment variables from .env file
 load_dotenv()
@@ -175,96 +178,150 @@ def get_logging_level():
     level = os.getenv('LOGGING_LEVEL', 'INFO').upper()
     return getattr(logging, level, logging.INFO)
 
-def configure_logger(name, log_level=None):
+class CustomRotatingFileHandler(RotatingFileHandler):
+    """Custom handler that ensures log directory exists before writing"""
+    
+    def __init__(self, filename, mode='a', maxBytes=0, backupCount=0, encoding=None, delay=False):
+        # Create directory if it doesn't exist
+        log_dir = os.path.dirname(filename)
+        if log_dir:
+            Path(log_dir).mkdir(parents=True, exist_ok=True)
+            
+        super().__init__(filename, mode, maxBytes, backupCount, encoding, delay)
+    
+    def emit(self, record):
+        """Emit a record with directory creation"""
+        try:
+            # Ensure directory exists before each emit in case it was deleted
+            log_dir = os.path.dirname(self.baseFilename)
+            if log_dir:
+                Path(log_dir).mkdir(parents=True, exist_ok=True)
+            super().emit(record)
+        except Exception as e:
+            # Avoid infinite recursion if logging fails
+            print(f"Error in log emission: {str(e)}")
+
+class LogFilter(logging.Filter):
+    """Filter to exclude specific log messages"""
+    def __init__(self):
+        super().__init__()
+        # Add patterns or loggers to filter
+        self.filtered_patterns = [
+            'presidio-analyzer',  # Filter presidio-analyzer logs
+            'Loaded recognizer',  # Filter recognizer loading messages
+            'Detected PII',       # Filter PII detection messages
+            'HTTP Request'        # Filter HTTP request logs
+        ]
+        
+        # Add specific loggers to filter completely
+        self.filtered_loggers = {
+            'httpx',             # Filter all httpx logs
+            'presidio-analyzer'  # Filter all presidio-analyzer logs
+        }
+
+    def filter(self, record):
+        # Filter out specific loggers entirely
+        if record.name in self.filtered_loggers:
+            return False
+            
+        # Filter based on message content
+        message = record.getMessage()
+        return not any(pattern in message for pattern in self.filtered_patterns)
+
+class SessionErrorHandler(CustomRotatingFileHandler):
+    """Handler for session-specific error logging"""
+    def __init__(self, session_id=None, *args, **kwargs):
+        self.session_id = session_id or 'unknown_session'
+        # Create session error log path
+        session_log_dir = os.path.join('logs', 'sessions', self.session_id)
+        filename = os.path.join(session_log_dir, 'errors.log')
+        super().__init__(filename, *args, **kwargs)
+
+    def emit(self, record):
+        """Only emit error and critical level records"""
+        if record.levelno >= logging.ERROR:
+            super().emit(record)
+
+def configure_logger(name, log_path=None, level=logging.INFO, session_id=None):
     """
-    Configure a logger with appropriate handlers and formatting.
+    Configure a logger with file and console handlers
     
     Args:
-        name (str): Logger name
-        log_level (int, optional): Override default log level
+        name: Name of the logger
+        log_path: Optional list of subdirectories for log file location
+        level: Logging level
+        session_id: Optional session ID for error logging
     """
     logger = logging.getLogger(name)
+    logger.setLevel(level)
     
-    if not logger.handlers:
-        # Get logging level from .env or parameter
-        logging_level = log_level if log_level is not None else get_logging_level()
+    # Avoid duplicate handlers
+    if logger.handlers:
+        return logger
         
-        # Log configuration at debug level
-        logger.debug(f"Configuring logger '{name}'", extra={
-            'level': logging.getLevelName(logging_level),
-            'level_number': logging_level,
-            'correlation_id': str(uuid.uuid4())[:8]
-        })
-        
-        # Create logs directory if it doesn't exist
-        os.makedirs('logs', exist_ok=True)
-        
-        # Main log file handler
-        main_log_handler = SafeRotatingFileHandler(
-            filename='logs/main.log',
-            maxBytes=10*1024*1024,  # 10 MB
+    # Create formatters
+    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s: %(message)s')
+    console_formatter = logging.Formatter('%(levelname)s - %(name)s: %(message)s')
+    error_formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(name)s\n'
+        'Message: %(message)s\n'
+        'Path: %(pathname)s:%(lineno)d\n'
+        'Function: %(funcName)s\n'
+        '%(exc_info)s\n'
+    )
+    
+    # Create and add the filter
+    log_filter = LogFilter()
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(console_formatter)
+    console_handler.addFilter(log_filter)
+    logger.addHandler(console_handler)
+    
+    # File handler if path specified
+    if log_path:
+        log_file = f"{name}.log"
+        if isinstance(log_path, (list, tuple)):
+            log_file = os.path.join('logs', *log_path, log_file)
+        else:
+            log_file = os.path.join('logs', log_path, log_file)
+            
+        file_handler = CustomRotatingFileHandler(
+            filename=log_file,
+            maxBytes=10*1024*1024,
             backupCount=5,
             encoding='utf-8'
         )
-        main_formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(name)s.%(funcName)s: %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+        file_handler.setFormatter(file_formatter)
+        file_handler.addFilter(log_filter)
+        logger.addHandler(file_handler)
+    
+    # Add session error handler if session_id is provided
+    if session_id:
+        error_handler = SessionErrorHandler(
+            session_id=session_id,
+            maxBytes=10*1024*1024,
+            backupCount=5,
+            encoding='utf-8'
         )
-        main_log_handler.setFormatter(main_formatter)
-        main_log_handler.setLevel(logging_level)
-        logger.addHandler(main_log_handler)
-
-        # Console handler with colored output
-        console_handler = logging.StreamHandler()
-        console_formatter = ColoredFormatter(
-            "%(cyan)s%(asctime)s%(reset)s - %(log_color)s%(levelname)s%(reset)s - %(blue)s%(name)s%(reset)s: %(white)s%(message)s",
-            datefmt=None,
-            reset=True,
-            log_colors={
-                'DEBUG': 'cyan',
-                'INFO': 'green',
-                'WARNING': 'yellow',
-                'ERROR': 'red',
-                'CRITICAL': 'red,bg_white',
-            },
-            secondary_log_colors={},
-            style='%'
-        )
-        console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(logging_level)
-        logger.addHandler(console_handler)
-
-        # CloudWatch handler
-        use_cloudwatch = os.getenv('USE_CLOUDWATCH_LOGGING', 'false').lower() == 'true'
-        if use_cloudwatch:
-            try:
-                cloudwatch_handler = watchtower.CloudWatchLogHandler(
-                    log_group=os.getenv('CLOUDWATCH_LOG_GROUP', 'DefaultLogGroup'),
-                    stream_name=os.getenv('CLOUDWATCH_STREAM_NAME', 'DefaultStreamName'),
-                    boto3_session=boto3.Session(
-                        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-                        region_name=os.getenv('AWS_REGION', 'us-east-1')
-                    )
-                )
-                cloudwatch_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s: %(message)s')
-                cloudwatch_handler.setFormatter(cloudwatch_formatter)
-                logger.addHandler(cloudwatch_handler)
-                logger.info("CloudWatch logging enabled")
-            except (ClientError, NoCredentialsError) as e:
-                logger.error(f"Failed to initialize CloudWatch logging: {str(e)}")
-        else:
-            logger.info("CloudWatch logging is disabled")
-
-        logger.setLevel(logging_level)
-        logger.propagate = False
-
+        error_handler.setFormatter(error_formatter)
+        error_handler.setLevel(logging.ERROR)
+        logger.addHandler(error_handler)
+    
     return logger
+
+def get_logger(name):
+    """Get an existing logger or create a new one"""
+    return logging.getLogger(name)
 
 def setup_logging():
     """Set up the basic configuration for logging."""
     root_logger = logging.getLogger()
     root_logger.setLevel(get_logging_level())
+    
+    # Add filter to root logger
+    root_logger.addFilter(LogFilter())
     
     # Configure the root logger with our custom setup
     configure_logger('')  # Empty string configures the root logger

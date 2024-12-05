@@ -10,89 +10,69 @@ from app.tools.base_tool import BaseTool
 from app.logging_config import configure_logger
 from app.services.supabase.supabase import Supabase, Client
 from app.models.Report import Report, Letter
-from app.tools.WriteConditionReportSection import WriteRequest, SectionUpdate
 
 class SaveToPersonalStatements(BaseTool):
     """
-    Tool for writing and saving a personal statement to the user's report.
-    Updates the personalStatementLetters section in the database.
+    Tool for saving personal statements to context.
+    The data will be used by CompileDocument to construct the final report.
     """
-    title: str = Field(..., description="The title of the personal statement. Example: 'Personal Statement for {condition}'")
-    condition_name: str = Field(..., description="The name of the condition for which the personal statement is being written.")
-    personal_statement: str = Field(..., description="The personal statement to be written.")
+    title: str = Field(..., description="The title of the personal statement")
+    condition_name: str = Field(..., description="The condition name")
+    personal_statement: str = Field(..., description="The personal statement content")
     result_keys: ClassVar[List[str]] = ['personal_statements']
-    
+
+    def _serialize_json_safe(self, obj: Any) -> Any:
+        """Helper method to ensure objects are JSON serializable"""
+        if isinstance(obj, bytes):
+            return obj.decode('utf-8')
+        if isinstance(obj, (datetime, np.datetime64)):
+            return obj.isoformat()
+        return str(obj)
+
     async def run(self) -> Dict[str, Any]:
         logger = configure_logger('SaveToPersonalStatements')
         logger.info("Running SaveToPersonalStatements tool")
         
-        # Create Letter object
-        letter = Letter(
-            title=self.title,
-            condition_name=self.condition_name,
-            content=self.personal_statement
-        )
-        
-        # Get user_id from caller agent context
-        user_id = self._caller_agent.context_info.context['user_id']
-        
-        # Create write request
-        ##write_request = WriteRequest(
-        ##    user_id=user_id,
-        ##    task_type="personal_statement",
-        ##    update=SectionUpdate(
-        ##        path=["personalStatementLetters"],
-        ##        value=letter
-        ##    )
-        ##)
-        report_id = None
-        # Fetch current report
-        client: Client = Supabase.supabase
         try:
-            result = client.from_("decrypted_reports").select("id, decrypted_report, user_id").eq("user_id", user_id).single().execute()
-            report = Report(**json.loads(result.data['decrypted_report']))
-            report_id = result.data['id']
-            
-            condition_letter = next((l for l in report.personalStatementLetters if l.condition_name == self.condition_name), None)
-            if condition_letter:
-                if condition_letter in report.personalStatementLetters:
-                    report.personalStatementLetters.remove(condition_letter)
-            
-            # Append new letter to existing letters
-            report.personalStatementLetters.append(letter)
-            
-            record = {
-                "user_id": user_id,
-                "report": json.dumps(report.dict()),
-                "updated_at": datetime.now().isoformat()
-            }
-            
-            if report_id:
-                record["id"] = report_id
-            
-            # Save updated report
-            updated_result = client.from_("reports").update(record).eq("user_id", user_id).execute()
-        
-        except Exception as e:
-            logger.error(f"Error fetching report: {e}")
-            logger.error(traceback.format_exc())
-            report = Report(
-                user_id=user_id,
-                personalStatementLetters=[letter]
+            letter = Letter(
+                title=self.title,
+                condition_name=self.condition_name,
+                content=self.personal_statement
             )
             
-            record = {
-                "user_id": user_id,
-                "report": json.dumps(report.dict()),
-                "updated_at": datetime.now().isoformat()
-            }
+            # Get existing letters or initialize empty list
+            existing_letters = []
+            if self._caller_agent.context_info.context.get('personal_statements'):
+                try:
+                    existing_data = self._caller_agent.context_info.context['personal_statements']
+                    if isinstance(existing_data, str):
+                        existing_data = json.loads(existing_data)
+                    if isinstance(existing_data, list):
+                        existing_letters = existing_data
+                except json.JSONDecodeError:
+                    logger.warning("Could not decode existing personal statements, starting fresh")
+                    existing_letters = []
+
+            # Add new letter
+            letter_dict = letter.dict()
+            existing_letters.append(letter_dict)
             
-            if report_id:
-                record["id"] = report_id
+            # Ensure JSON serialization is safe
+            json_safe_letters = json.loads(
+                json.dumps(existing_letters, default=self._serialize_json_safe)
+            )
             
-            # Save updated report
-            updated_result = client.from_("reports").insert(record).execute()
-        
-        self._caller_agent.context_info.context["personal_statements"] = json.dumps(report.personalStatementLetters, skipkeys=True, default=lambda x: x.__dict__)
-        
-        return json.dumps(report.personalStatementLetters, skipkeys=True, default=lambda x: x.__dict__)
+            # Store in context with proper key
+            self._caller_agent.context_info.context["personal_statements"] = json_safe_letters
+
+            # Ensure user_id remains unchanged if it exists
+            if "user_id" in self._caller_agent.context_info.context:
+                original_user_id = self._caller_agent.context_info.context["user_id"]
+                logger.debug(f"Preserving original user_id: {original_user_id}")
+
+            return json_safe_letters
+
+        except Exception as e:
+            logger.error(f"Error in SaveToPersonalStatements: {e}")
+            logger.error(traceback.format_exc())
+            raise

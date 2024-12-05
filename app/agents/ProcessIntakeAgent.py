@@ -3,10 +3,12 @@
 import logging
 import sys
 
+from app.models.ContextInfo import ContextInfo
 from app.models.agents.Agent import Agent
 from app.services.supabase.supabase import Supabase
 from app.tools import SaveIntakeInformation
 from app.logging_config import configure_logger
+from app.tools.GetIntake import GetIntake
 
 logger = configure_logger('ProcessIntakeAgent')
 
@@ -32,7 +34,11 @@ class ProcessIntakeAgent(Agent):
             
             intakes = result.data
             
+        if kwargs.get('context_info', None):
+            if isinstance(kwargs['context_info'], dict):
+                kwargs['context_info'] = ContextInfo(**kwargs['context_info'])
             
+            self.context_info = kwargs['context_info']
 
         base_instructions = f"""
         You are an agent designed to process intake information using specialized tools. Your primary objective is to 
@@ -60,5 +66,5 @@ class ProcessIntakeAgent(Agent):
     def set_tools(self):
         """Set the tools available to the ProcessIntakeAgent."""
         self.tools.extend([
-            SaveIntakeInformation
+           GetIntake, SaveIntakeInformation
         ])

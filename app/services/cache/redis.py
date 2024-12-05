@@ -141,6 +141,7 @@ class RedisService(IService):
         try:
             await self.create_pool()
             self.pubsub = self.client.pubsub()
+            await self.pubsub.connect()
             # Ensure pubsub connection is initialized
             await self.pubsub.ping()
             self.logger.info("Successfully connected to Redis and initialized pubsub")
@@ -149,7 +150,7 @@ class RedisService(IService):
             self.logger.error(traceback.format_exc())
             raise
         
-    async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None):
+    async def subscribe(self, channel, queue=None, callback: Optional[Callable[[dict], bool]] = None, filter_func: Optional[Callable[[dict], bool]] = None, session_id: Optional[str] = None):
         """
         Subscribe to a Redis channel.
 
@@ -158,6 +159,7 @@ class RedisService(IService):
             queue (asyncio.Queue, optional): Queue to store messages.
             callback (Callable, optional): Callback function for messages.
             filter_func (Callable, optional): Function to filter messages.
+            session_id (str, optional): Session ID for tracking subscriptions.
 
         Returns:
             asyncio.Queue: The queue for the subscription.
@@ -166,11 +168,14 @@ class RedisService(IService):
         if queue is None:
             queue = asyncio.Queue()
             self.logger.debug(f"Created new queue for channel {channel}")
+        
+        self.logger.info(f"Subscribing to channel: {channel}")
             
         self.logger.debug(f"""
         Subscribing to channel:
         - Channel: {channel}
         - Queue ID: {id(queue)}
+        - Session ID: {session_id}
         - Has callback: {callback is not None}
         - Has filter: {filter_func is not None}
         - Current subscriptions: {len(self.subscriptions.get(channel, []))}
@@ -178,20 +183,41 @@ class RedisService(IService):
         
         if channel not in self.subscriptions:
             self.subscriptions[channel] = []
-            await self.pubsub.subscribe(channel)
-            self.logger.info(f"""
-            New channel subscription:
-            - Channel: {channel}
-            - Total channels: {len(self.subscriptions)}
-            """)
+            try:
+                # First verify channel doesn't already exist
+                channels = await self.client.pubsub_channels()
+                if channel.encode() not in channels:
+                    # Then subscribe
+                    await self.pubsub.subscribe(channel)
+                    self.logger.info(f"""
+                    New channel subscription created:
+                    - Channel: {channel}
+                    - Session ID: {session_id}
+                    - Total channels: {len(self.subscriptions)}
+                    """)
+            except Exception as e:
+                self.logger.error(f"Error subscribing to channel {channel}: {str(e)}")
+                self.logger.error(traceback.format_exc())
+                raise
             
-        self.subscriptions[channel].append((queue, callback, filter_func))
+        subscription_data = {
+            'queue': queue,
+            'callback': callback,
+            'filter_func': filter_func,
+            'session_id': session_id,
+            'created_at': datetime.now().isoformat(),
+            'task': asyncio.current_task(),
+            'last_message_time': None,
+            'message_count': 0
+        }
+        self.subscriptions[channel].append(subscription_data)
         self.logger.debug(f"""
         Added subscription:
         - Channel: {channel}
         - Queue ID: {id(queue)}
         - Total subscriptions for channel: {len(self.subscriptions[channel])}
         - Callback type: {type(callback).__name__ if callback else 'None'}
+        - Callback details: {getattr(callback, '__qualname__', str(callback)) if callback else 'None'}
         """)
         return queue
 
@@ -341,87 +367,76 @@ class RedisService(IService):
 
     async def _process_messages(self):
         """
-        Process messages from Redis pubsub and route to appropriate queues
+        Process incoming Redis messages.
+        This method runs in a separate task and continuously processes messages from subscribed channels.
         """
+        last_channels = set()  # Track last known channels
+        
         try:
-            self.logger.debug(f"""
-            Starting Redis message processor:
-            - Active channels: {list(self.subscriptions.keys())}
-            - Total subscriptions: {sum(len(subs) for subs in self.subscriptions.values())}
-            """)
-            
-            # Ensure we have active subscriptions before processing
-            if not self.subscriptions:
-                self.logger.warning("No active subscriptions, message processor waiting...")
-                while not self.subscriptions:
-                    await asyncio.sleep(1)
-            
             while True:
                 try:
-                    # Ensure pubsub connection is active
-                    if not self.pubsub:
-                        self.logger.warning("Pubsub connection lost, reconnecting...")
-                        self.pubsub = self.client.pubsub()
-                        # Resubscribe to all channels
-                        for channel in self.subscriptions.keys():
-                            await self.pubsub.subscribe(channel)
+                    # Check subscription status only when channels change
+                    if self.client:
+                        current_channels = set(await self.client.pubsub_channels())
+                        if current_channels != last_channels:
+                            self.logger.debug(f"Currently subscribed to channels: {current_channels}")
+                            last_channels = current_channels
                     
-                    await asyncio.sleep(0.1)  # Reduced sleep time for better responsiveness
-                    message = await self.pubsub.get_message(ignore_subscribe_messages=True)
-                    if message and message['type'] == 'message':
-                        channel = message['channel'].decode('utf-8')
-                        data = message['data']
+                    # Get message from pubsub connection with timeout
+                    message = await self.pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+                    
+                    if message is None:
+                        await asyncio.sleep(0.01)  # Prevent tight loop
+                        continue
+                    
+                    self.logger.debug(f"Received message: {message}")
+                    
+                    if not isinstance(message, dict) or 'channel' not in message:
+                        self.logger.warning(f"Invalid message format: {message}")
+                        continue
+                    
+                    channel_bytes = message.get('channel')
+                    if not channel_bytes:
+                        continue
+                    
+                    channel = channel_bytes.decode('utf-8') if isinstance(channel_bytes, bytes) else str(channel_bytes)
+                    if channel not in self.subscriptions:
+                        self.logger.debug(f"Message received for unsubscribed channel: {channel}")
+                        continue
+                    
+                    data = message.get('data')
+                    try:
+                        if isinstance(data, bytes):
+                            data = json.loads(data.decode('utf-8'))
                         
-                        self.logger.debug(f"""
-                        Received message:
-                        - Channel: {channel}
-                        - Data type: {type(data).__name__}
-                        - Data size: {len(str(data))} chars
-                        - Has subscriptions: {channel in self.subscriptions}
-                        """)
-                        
-                        if channel in self.subscriptions:
-                            routing_tasks = []
-                            for queue, callback, filter_func in self.subscriptions[channel]:
-                                try:
-                                    should_process = filter_func is None or filter_func(data)
-                                    if should_process:
-                                        # Create task for routing message
-                                        task = asyncio.create_task(
-                                            self._route_message(channel, queue, callback, data)
-                                        )
-                                        routing_tasks.append(task)
-                                except Exception as e:
-                                    self.logger.error(f"""
-                                    Error processing message filter:
-                                    - Channel: {channel}
-                                    - Error: {str(e)}
-                                    - Traceback: {traceback.format_exc()}
-                                    """)
+                        # Process message for all subscribers
+                        for subscription in self.subscriptions[channel]:
+                            self.logger.debug(f"Processing message for subscription on channel {channel}")
+                            await self._handle_subscription(subscription, channel, data)
                             
-                            # Wait for all routing tasks to complete
-                            if routing_tasks:
-                                await asyncio.gather(*routing_tasks, return_exceptions=True)
-                                
-                except asyncio.CancelledError:
-                    raise
+                    except json.JSONDecodeError:
+                        self.logger.warning(f"Failed to decode message data for channel {channel}")
+                        continue
+                    
+                except redis.exceptions.ConnectionError:
+                    self.logger.error("Redis connection lost, attempting to reconnect...")
+                    await self._ensure_connection()
+                    await asyncio.sleep(1)
+                    
                 except Exception as e:
-                    self.logger.error(f"""
-                    Error processing Redis message:
-                    - Error: {str(e)}
-                    - Traceback: {traceback.format_exc()}
-                    """)
-                
-                await asyncio.sleep(0.1)
-                
+                    self.logger.error(f"Error processing Redis message: {str(e)}")
+                    self.logger.error(traceback.format_exc())
+                    await asyncio.sleep(1)
+                    
         except asyncio.CancelledError:
             self.logger.info("Message processor cancelled")
-        except Exception as e:
-            self.logger.error(f"""
-            Fatal error in message processor:
-            - Error: {str(e)}
-            - Traceback: {traceback.format_exc()}
-            """)
+            raise
+    
+    async def _handle_subscription(self, subscription: dict, channel: str, data: Any):
+        """
+        Handle a single subscription
+        """
+        await self._route_message(channel, subscription['queue'], subscription['callback'], data)
 
     async def _route_message(self, channel: str, queue: asyncio.Queue, callback: Optional[Callable], data: Any):
         """
@@ -489,13 +504,25 @@ class RedisService(IService):
         if queue is None:
             queue = asyncio.Queue()
         
+        # Batch subscriptions
         if pattern not in self.subscriptions:
             self.subscriptions[pattern] = []
+            
+            # Extract result key from pattern
+            result_key = pattern.split(':')[-1]
+            
+            # Subscribe to pattern
             await self.pubsub.psubscribe(pattern)
-            self.logger.info(f"Subscribed to pattern: {pattern}")
+            
+            # Log subscription with instance ID
+            self.logger.debug(f"""
+            New pattern subscription:
+            - Pattern: {pattern}
+            - Result key: {result_key}
+            - Instance: {self.instance_id}
+            """)
         
         self.subscriptions[pattern].append((queue, callback, filter_func))
-        self.logger.debug(f"Added subscription for pattern {pattern}")
         
         return queue
 

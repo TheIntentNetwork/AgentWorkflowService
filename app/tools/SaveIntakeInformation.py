@@ -18,7 +18,7 @@ class ConditionInfo(BaseModel):
     description: str
 
 class SaveIntakeInformation(BaseTool):
-    _result_keys = ["intake_info", "conditions"]
+    _result_keys = ["intake_info"]
     
     """
     This class represents a tool for saving information gathered from the intake process.
@@ -27,7 +27,7 @@ class SaveIntakeInformation(BaseTool):
     intake_info: List[Question] = Field(..., description="The questions asked during the intake process.")
     conditions: List[ConditionInfo] = Field(..., description="The conditions selected during the intake process.")
     
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> None:
         logger = configure_logger('SaveIntakeInformation')
         logger.info("Running SaveIntakeInformation tool")
         
@@ -35,12 +35,11 @@ class SaveIntakeInformation(BaseTool):
         serializable_intake_info = [q.dict() for q in self.intake_info]
         serializable_conditions = [c.dict() for c in self.conditions]
         
-        self._caller_agent.context_info.context.update({
-            "user_id": self.user_id,
-            "intake_info": serializable_intake_info,
-        })
-            
-        return {
-            "user_id": self.user_id,
-            "intake_info": serializable_intake_info,
-        }
+        if 'intake_info' not in self._caller_agent.context_info.context:
+            intake_info = {
+                "conditions": serializable_conditions,
+                "intake_info": serializable_intake_info
+            }
+            self._caller_agent.context_info.context.update(intake_info)
+        
+        return intake_info or self._caller_agent.context_info.context.get('intake_info')

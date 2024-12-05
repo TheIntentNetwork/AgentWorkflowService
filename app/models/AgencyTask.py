@@ -20,7 +20,7 @@ from app.logging_config import configure_logger
 from app.services.queue.kafka import KafkaService
 from app.services.supabase.supabase import Supabase, Client
 from app.tools import SaveToNexusLetters
-from app.tools.AggregateIntakes import AggregateIntakes
+from app.tools.SaveSupplementalInformation import AggregateIntakes
 from app.tools.SaveNotesInformation import SaveNotesInformation
 from app.tools.Write38CFRPoints import Write38CFRPoints
 from app.tools.WriteExecutiveSummary import WriteExecutiveSummary

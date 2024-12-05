@@ -47,33 +47,30 @@ def get_web_driver():
     options = webdriver.ChromeOptions()
     print("ChromeOptions initialized.")
 
-    # Add required arguments
-    options.add_argument("--disable-extensions")
-    options.add_argument("--headless")
+    # Add required arguments for headless mode
+    # Headless mode configuration
+    options.add_argument("--headless=new")
+    options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox") 
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--enable-gpu")
-
-    if selenium_config.get("headless", False):
-        #chrome_options.add_argument('--headless')
-        print("Headless mode enabled.")
-    if selenium_config.get("full_page_screenshot", False):
-        options.add_argument("--start-maximized")
-        print("Full page screenshot mode enabled.")
-    else:
-        options.add_argument("--window-size=1920,1080")
-        print("Window size set to 1920,1080.")
+    options.add_argument("--window-size=1920,1080")
     
-    # Configure preferences
-    prefs = {
-        "profile.default_content_settings": {"images": 2}
-    }
-    options.add_experimental_option("prefs", prefs)
-
-    # Add additional required options
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--remote-debugging-port=9222")
+    # Renderer/GPU configuration
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-gpu-sandbox")
+    options.add_argument("--disable-setuid-sandbox")
+    options.add_argument("--disable-accelerated-2d-canvas")
+    options.add_argument("--disable-accelerated-jpeg-decoding")
+    options.add_argument("--disable-accelerated-mjpeg-decode")
+    options.add_argument("--disable-accelerated-video-decode")
+    options.add_argument("--disable-gpu-compositing")
+    
+    # Memory/process configuration
+    options.add_argument("--single-process")
+    options.add_argument("--no-zygote")
+    options.add_argument("--disable-infobars")
+    
+    # Browser security/automation configuration
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-popup-blocking")
     options.add_argument("--ignore-certificate-errors")
@@ -82,16 +79,15 @@ def get_web_driver():
     options.add_argument("--allow-running-insecure-content")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
-
-    # Handle profile settings if specified
-    chrome_profile_path = selenium_config.get("chrome_profile_path", None)
-    if isinstance(chrome_profile_path, str) and os.path.exists(chrome_profile_path):
-        profile_directory = os.path.split(chrome_profile_path)[-1].strip("\\").rstrip("/")
-        user_data_dir = os.path.split(chrome_profile_path)[0].strip("\\").rstrip("/")
-        options.add_argument(f"user-data-dir={user_data_dir}")
-        options.add_argument(f"profile-directory={profile_directory}")
-        print(f"Using Chrome profile: {profile_directory}")
-
+    
+    # Error handling configuration
+    options.add_argument("--disable-crash-reporter")
+    options.add_argument("--disable-in-process-stack-traces")
+    options.add_argument("--disable-logging")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--log-level=3")
+    options.add_argument("--silent")
+    
     try:
         wd = webdriver.Chrome(service=service, options=options)
         print("WebDriver initialized successfully.")

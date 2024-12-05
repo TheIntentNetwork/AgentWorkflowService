@@ -433,6 +433,8 @@ class Thread(LoggingMixin):
             # init tool
             args = tool_call.function.arguments
             args = json.loads(args) if args else {}
+            args['_session_id'] = recipient_agent.session_id
+            args['_task_name'] = recipient_agent.context_info.context.get('task_info', {}).get('name', None)
             tool = tool(**args)
             for tool_name, _ in tool_outputs_and_names:
                 if tool_name == tool_call.function.name and (
@@ -440,6 +442,7 @@ class Thread(LoggingMixin):
                     return f"Error: Function {tool_call.function.name} is already called. You can only call this function once at a time. Please wait for the previous call to finish before calling it again."
             
             tool._caller_agent = recipient_agent
+            tool._session_id = recipient_agent.session_id
             tool._event_handler = event_handler
             
             if inspect.iscoroutinefunction(tool.run):

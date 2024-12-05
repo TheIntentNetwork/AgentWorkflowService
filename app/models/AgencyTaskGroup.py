@@ -33,49 +33,66 @@ class AgencyTaskGroup(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+        extra = "allow"
         
     def __init__(self, *args, **kwargs):
+        # Remove redis from kwargs if present to avoid validation error
+        if 'redis' in kwargs:
+            del kwargs['redis']
+            
+        # Perform synchronous initialization
         super().__init__(*args, **kwargs)
         self._logger = configure_logger(self.__class__.__name__)
+        self._processor_task = None
+        self._redis = None  # Will be initialized when needed
 
     @classmethod
     async def create(cls, **task_group_data):
+        # Create instance with sync initialization
         agency_task_group = cls(**task_group_data)
+        # Perform async initialization
         await agency_task_group.initialize()
         return agency_task_group
 
     async def initialize(self):
         """Initialize the task group and ensure message processor is running"""
-        await self.create_task_mappings()
-        
-        # Start message processor if not already running
-        if not hasattr(self, '_processor_task') or self._processor_task.done():
-            self._processor_task = asyncio.create_task(self._process_messages())
-            self._logger.info("Message processor task started")
+        try:
+            await self.create_task_mappings()
             
-            # Wait briefly to ensure processor is running
-            await asyncio.sleep(0.1)
-            
-        self.start_consumer_thread()
+            # Start message processor if not already running
+            if not self._processor_task or (hasattr(self._processor_task, 'done') and self._processor_task.done()):
+                self._processor_task = asyncio.create_task(self.process_messages())
+                self._logger.info("Message processor task started")
+                
+                # Wait briefly to ensure processor is running
+                await asyncio.sleep(0.1)
+                
+            self.start_consumer_thread()
+        except Exception as e:
+            self._logger.error(f"Error during initialization: {str(e)}")
+            raise
+
+    @property
+    def redis(self):
+        """Lazy initialization of redis connection"""
+        if self._redis is None:
+            from containers import get_container
+            self._redis = get_container().redis()
+        return self._redis
 
     async def create_task_mappings(self):
         """Create Redis mappings for task groups' result keys"""
         try:
-            from containers import get_container
-            redis = get_container().redis()
-            
-            self._logger.info(f"""
-            Creating Redis mappings:
-            - Session ID: {self.session_id}
-            - Agency Task Group ID: {self.id}
-            - Number of task groups: {len(self.task_groups)}
-            """)
-
-            # Clear existing mappings first
-            await redis.client.delete(
-                f"session:{self.session_id}:result_keys",
-                f"session:{self.session_id}:context:*"
+            # Only clear result keys mapping, preserve context
+            await self.redis.client.delete(
+                f"session:{self.session_id}:result_keys"
             )
+            
+            # Add context preservation
+            context_key = f"session:{self.session_id}:context"
+            existing_context = await self.redis.client.get(context_key)
+            if existing_context:
+                self.context_info.context.update(json.loads(existing_context))
             
             # Track processed task groups and mapped keys
             processed_task_groups = set()
@@ -136,7 +153,7 @@ class AgencyTaskGroup(BaseModel):
                         - Dependencies: {task.get('dependencies', [])}
                         """)
                         
-                        await redis.client.hset(
+                        await self.redis.client.hset(
                             f"session:{self.session_id}:result_keys",
                             result_key,
                             json.dumps(mapping_data)
@@ -146,7 +163,7 @@ class AgencyTaskGroup(BaseModel):
                         mapped_keys.add(result_key)
 
             # Verify mappings were created
-            result_keys = await redis.client.hgetall(f"session:{self.session_id}:result_keys")
+            result_keys = await self.redis.client.hgetall(f"session:{self.session_id}:result_keys")
             self._logger.info(f"""
             Verified Redis mappings:
             - Result key mappings: {len(result_keys)} entries
@@ -169,11 +186,8 @@ class AgencyTaskGroup(BaseModel):
             str: Task group ID if found, None otherwise
         """
         try:
-            from containers import get_container
-            redis = get_container().redis()
-            
             # First check the result_keys mapping which contains the full metadata
-            result_key_data = await redis.client.hget(
+            result_key_data = await self.redis.client.hget(
                 f"session:{self.session_id}:result_keys",
                 dependency
             )
@@ -255,32 +269,39 @@ class AgencyTaskGroup(BaseModel):
             except Exception as e:
                 logger.error(f"Error processing queue event: {str(e)}")
                 logger.exception("Exception details:")
+    
+    async def _check_group_dependencies(self, task_group: TaskGroup) -> bool:
+        """Check if all dependencies for a task group are met"""
+        try:
+            for task in task_group.tasks:
+                dependencies = task.get('dependencies', [])
+                for dependency in dependencies:
+                    if not await self.redis.client.hexists(f"session:{self.session_id}:result_keys", dependency):
+                        return False
+            return True
+        except Exception as e:
+            logger.error(f"Error checking task group dependencies: {str(e)}")
+            return False
 
     async def process_task_groups(self):
         try:
-            from containers import get_container
-            kafka = get_container().kafka()
-            redis = get_container().redis()
-            
-            self._logger.debug(f"Starting to process {len(self.task_groups)} task groups")
-            
-            # Create Redis mappings first
-            await self.create_task_mappings()
-            
             # Create tasks for processing task groups
             process_tasks = []
             for task_group in self.task_groups:
-                self._logger.debug(f"Creating task for processing: {task_group.name}")
-                process_task = asyncio.create_task(self.process_single_task_group(kafka, redis, task_group))
+                
+                await self.create_task_mappings()
+                process_task = asyncio.create_task(
+                    self.process_single_task_group(task_group)
+                )
                 process_tasks.append(process_task)
-            
+                
             # Wait for all processing tasks to complete
             await asyncio.gather(*process_tasks)
             
             # Cleanup Redis mappings
-            await redis.client.delete(
-                f"session:{self.session_id}:result_keys",
-            )
+            #await self.redis.client.delete(
+            #    f"session:{self.session_id}:result_keys",
+            #)
             
             self._logger.debug("All task groups processed")
         
@@ -288,11 +309,10 @@ class AgencyTaskGroup(BaseModel):
             self._logger.error(f"Error in process_task_groups: {str(e)}")
             self._logger.error(traceback.format_exc())
 
-    async def process_single_task_group(self, kafka: KafkaService, redis: RedisService, task_group: TaskGroup):
+    async def process_single_task_group(self, task_group: TaskGroup):
         try:
             logger.debug(f"Processing task group: {task_group.name}")
-            await self.send_task_group_for_processing(kafka, task_group)
-            await self.wait_for_task_group_completion(redis, task_group)
+            await self.send_task_group_for_processing(task_group)
         except Exception as e:
             logger.error(f"Error processing task group {task_group.name}: {str(e)}")
             logger.error(traceback.format_exc())
@@ -378,23 +398,6 @@ class AgencyTaskGroup(BaseModel):
             logger.error(traceback.format_exc())
             raise
 
-    async def send_final_result(self, final_result: Dict[str, Any]):
-        from containers import get_container
-        redis = get_container().redis()
-        
-        # Determine status based on result content
-        status = "completed"
-        if isinstance(final_result, dict) and final_result.get("status") == "failed":
-            status = "failed"
-            
-        message = {
-            "sessionId": self.session_id,
-            "agency_task_group_id": self.id,
-            "status": status,
-            "result": final_result
-        }
-        await redis.publish(AGENCY_TASK_GROUP_COMPLETED, message)
-
     @classmethod
     async def handle(cls, key: str, action: str, object_data: Dict[str, Any], context: Dict[str, Any]):
         logger.info(f"Handling AgencyTaskGroup: key={key}, action={action}")
@@ -403,7 +406,7 @@ class AgencyTaskGroup(BaseModel):
             logger.info("Initializing new AgencyTaskGroup")
             if 'id' not in object_data:
                 object_data['id'] = str(uuid.uuid4())
-            object_data['session_id'] = context.get('session_id', str(uuid.uuid4()))
+            object_data['session_id'] = object_data.get('session_id')
             object_data['context_info'] = context
             
             if 'task_groups' in object_data:
@@ -413,155 +416,66 @@ class AgencyTaskGroup(BaseModel):
                     group['session_id'] = object_data['session_id']
                     group['context_info'] = object_data['context_info']
                     group['description'] = group.get('description', f"Task group for {group['name']}")
-
-            agency_task_group = cls(**object_data)
+            try:
+                agency_task_group = cls(**object_data)
+            except Exception as e:
+                logger.error(f"Error initializing AgencyTaskGroup: {str(e)}")
+                logger.error(traceback.format_exc())
+                raise
             # Start task group execution in a non-blocking manner
-            asyncio.create_task(agency_task_group.execute_task_groups())
+            await asyncio.create_task(agency_task_group.process_task_groups())
         else:
             logger.warning(f"Unsupported action for AgencyTaskGroup: {action}")
 
-    async def execute_task_groups(self):
-        """Execute all task groups in sequence"""
-        try:
-            logger.info(f"Starting execution of {len(self.task_groups)} task groups for AgencyTaskGroup {self.id}")
-            
-            # Create Redis mappings first
-            await self.create_task_mappings()
-            logger.info("Created Redis mappings for all task groups")
-            
-            # Create tasks for processing task groups
-            tasks = []
-            for i, task_group in enumerate(self.task_groups, 1):
-                logger.info(f"Creating task for processing {i}/{len(self.task_groups)}: {task_group.name}")
-                task = asyncio.create_task(
-                    self.setup_and_execute_task_group(task_group),
-                    name=f"task_group_{task_group.id}"
-                )
-                tasks.append(task)
-            
-            # Wait for all tasks to complete
-            await asyncio.gather(*tasks)
-            
-            logger.info(f"All task groups for AgencyTaskGroup {self.id} completed")
-            
-            # Clean up session context only after all tasks complete
-            from containers import get_container
-            redis = get_container().redis()
-            #await self.cleanup_session_context(redis)
-        except Exception as e:
-            logger.error(f"Error in execute_task_groups: {str(e)}")
-            raise
-    
-    async def cleanup_session_context(self, redis: RedisService):
-        """Cleanup session context after task group execution"""
-        try:
-            # First verify all task groups are complete
-            for task_group in self.task_groups:
-                completion_channel = f"{task_group.key}:completion"
-                pubsub = redis.client.pubsub()
-                await pubsub.subscribe(completion_channel)
-                
-                try:
-                    while True:
-                        message = await pubsub.get_message(ignore_subscribe_messages=True)
-                        if message:
-                            try:
-                                data = json.loads(message['data'])
-                                if isinstance(data, str):
-                                    data = json.loads(data)
-                                if data.get('status') == 'completed':
-                                    break
-                            except json.JSONDecodeError:
-                                logger.warning(f"Received non-JSON message: {message['data']}")
-                        await asyncio.sleep(0.1)
-                finally:
-                    await pubsub.unsubscribe(completion_channel)
 
-            # Only after all task groups complete, clear context mappings
-            await redis.client.delete(
-                f"session:{self.session_id}:result_keys",
-                f"session:{self.session_id}:context:*"
-            )
-            
-            logger.info(f"Cleaned up session context for {self.session_id}")
-        except Exception as e:
-            logger.error(f"Error cleaning up session context: {str(e)}")
-
-    async def setup_and_execute_task_group(self, task_group: TaskGroup):
-        """Setup and execute a single task group"""
+    async def send_task_group_for_processing(self, task_group: TaskGroup):
+        """Send a task group for processing via Kafka"""
         try:
-            logger.info(f"Setting up and executing task group: {task_group.name}")
-            
-            # Get required services
             from containers import get_container
             kafka = get_container().kafka()
-            redis = get_container().redis()
             
-            # Send initialize message once
-            await self.send_task_group_for_processing(kafka, task_group)
+            # Prepare message with full task group data
+            message = {
+                "key": task_group.key,
+                "action": "initialize",
+                "object": {
+                    "id": task_group.id,
+                    "name": task_group.name,
+                    "session_id": task_group.session_id,
+                    "tasks": task_group.tasks,
+                    "context_info": task_group.context_info.dict(),
+                    "key": task_group.key
+                },
+                "context": self.context_info.context 
+            }
             
-            # Wait for completion
-            await self.wait_for_task_group_completion(redis, task_group)
+            logger.info(f"""
+            Sending task group for processing:
+            - Task Group: {task_group.name}
+            - ID: {task_group.id}
+            - Key: {task_group.key}
+            - Number of tasks: {len(task_group.tasks)}
+            """)
+            
+            asyncio.create_task(kafka.send_message(AGENCY_ACTION_TOPIC, message))
+            
         except Exception as e:
-            logger.error(f"Error processing task group {task_group.name}: {str(e)}")
+            logger.error(f"Error sending task group {task_group.name} for processing: {str(e)}")
             raise
 
-    async def send_task_group_for_processing(self, kafka: KafkaService, task_group: TaskGroup):
-        message = {
-            "key": task_group.key,
-            "action": "initialize",
-            "object": task_group.dict(),
-            "context": self.context_info.context
-        }
-        await kafka.send_message(AGENCY_ACTION_TOPIC, message)
-
-    async def wait_for_task_group_completion(self, redis: RedisService, task_group: TaskGroup):
-        completion_channel = f"{task_group.key}:completion"
-        pubsub = redis.client.pubsub()
-        await pubsub.subscribe(completion_channel)
-        try:
-            while True:
-                message = await pubsub.get_message(ignore_subscribe_messages=True)
-                if message:
-                    try:
-                        data = json.loads(message['data'])
-                        if isinstance(data, str):
-                            data = json.loads(data)
-                        if data.get('status') == 'completed':
-                            context_data = data.get('context', {})
-                            if isinstance(context_data, str):
-                                context_data = json.loads(context_data)
-                            if isinstance(context_data, dict):
-                                self.context_info.context.update(context_data)
-                            else:
-                                logger.warning(f"Received invalid context data: {context_data}")
-                            break
-                    except json.JSONDecodeError:
-                        logger.warning(f"Received non-JSON message: {message['data']}")
-                    except Exception as e:
-                        logger.error(f"Error processing message: {str(e)}")
-                await asyncio.sleep(0.1)
-        finally:
-            await pubsub.unsubscribe(completion_channel)
-
     async def send_final_result(self, final_result: Dict[str, Any]):
-        from containers import get_container
-        redis = get_container().redis()
-        
+        """Send final result to the completion topic"""      
         message = {
             "sessionId": self.session_id,
             "agency_task_group_id": self.id,
             "status": "completed",
             "result": final_result
         }
-        await redis.publish(AGENCY_TASK_GROUP_COMPLETED, json.dumps(message))
+        await self.redis.publish(AGENCY_TASK_GROUP_COMPLETED, json.dumps(message))
 
     async def save_partial_results(self):
         """Save any partial results when a timeout occurs"""
-        try:
-            from containers import get_container
-            redis = get_container().redis()
-            
+        try:            
             # Prepare partial results from current context
             partial_results = {
                 'status': 'timeout',
@@ -570,7 +484,7 @@ class AgencyTaskGroup(BaseModel):
             }
             
             # Publish partial results to Redis
-            await redis.publish(
+            await self.redis.publish(
                 f"{self.key}:partial_results",
                 json.dumps(partial_results)
             )

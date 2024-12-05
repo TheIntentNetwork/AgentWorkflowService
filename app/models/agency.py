@@ -95,7 +95,7 @@ class Agency:
         This constructor initializes various components of the Agency, including CEO, agents, threads, and user interactions. It parses the agency chart to set up the organizational structure and initializes the messaging tools, agents, and threads necessary for the operation of the agency. Additionally, it prepares a main thread for user interactions.
         """
         self.ceo = None
-        self.session_id = session_id if session_id else str(uuid.uuid4())
+        self.session_id = session_id
         self.user = User()
         self.agents = []
         self.agents_and_threads = {}

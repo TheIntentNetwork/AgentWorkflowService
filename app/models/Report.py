@@ -1,11 +1,35 @@
-from typing import List, Optional
-from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field
 
 class ResearchItem(BaseModel):
     researchTitle: str
     authorName: str
     researchUrl: str
     summaryOfResearch: str
+
+class RatingCriteria(BaseModel):
+    """Represents a single rating criteria from 38 CFR"""
+    percentage: int = Field(..., description="The percentage rating (e.g. 0, 10, 30, 50, 70, 100)")
+    requirements: List[str] = Field(..., description="The specific requirements or criteria required for this rating level. (e.g. Specific hand or finger, or other specific criteria)")
+    criteria: str = Field(..., description="The specific severity or other treatment or diagnostic criteria required for this rating level")
+    notes: Optional[str] = Field(None, description="Additional notes or clarifications about this rating level")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata about the rating criteria")
+
+class CFRResearchItem(BaseModel):
+    cfr_document_location: str
+    cfr_reference_link: str
+    excerpts: List[str]
+    condition_name: str
+    rating_table: List[RatingCriteria] = Field(default_factory=list, description="List of rating criteria")
+    diagnostic_code: Optional[str] = Field(None, description="The diagnostic code for this condition")
+    notes: Optional[str] = Field(None, description="Additional context or notes about this reference")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata about the CFR research")
+    effective_date: Optional[str] = Field(None, description="The effective date of this CFR version")
+    last_modified: Optional[str] = Field(None, description="The last modification date of this CFR version")
+    section_title: Optional[str] = Field(None, description="The title of the CFR section")
+    subsection_title: Optional[str] = Field(None, description="The title of the CFR subsection")
+    related_conditions: Optional[List[str]] = Field(default_factory=list, description="List of related conditions referenced in this CFR section")
+    related_diagnostic_codes: Optional[List[str]] = Field(default_factory=list, description="List of related diagnostic codes")
 
 class Point(BaseModel):
     pointTitle: str
@@ -19,6 +43,8 @@ class Condition(BaseModel):
     condition_name: str
     research_section: List[ResearchItem]
     PointsFor38CFR: List[Point]
+    PointsFor38CFRRequirements: List[Point]
+    cfr_research: List[ResearchItem]
     key_points: List[Point]
     future_considerations: List[FutureConsideration]
     executive_summary: str
@@ -82,6 +108,16 @@ class GlossaryItem(BaseModel):
     term: str
     definition: str
 
+class CFRReference(BaseModel):
+    """Represents a reference to a specific part of 38 CFR"""
+    document_location: str = Field(..., description="The specific location in 38 CFR (e.g. '4.130')")
+    reference_link: str = Field(..., description="Link to the specific CFR section")
+    excerpt: str = Field(..., description="The relevant excerpt from the CFR")
+    condition_name: str = Field(..., description="The name of the condition this reference applies to")
+    rating_table: List[RatingCriteria] = Field(default_factory=list, description="List of rating criteria")
+    diagnostic_code: Optional[str] = Field(None, description="The diagnostic code for this condition")
+    notes: Optional[str] = Field(None, description="Additional context or notes about this reference")
+
 class Report(BaseModel):
     executive_summary: Optional[List[str]] = []
     conditions: Optional[List[Condition]] = []
@@ -101,5 +137,5 @@ class Report(BaseModel):
     
     
     class Config:
-        orm_mode = True
+        from_attributes = True
         extra = "allow"

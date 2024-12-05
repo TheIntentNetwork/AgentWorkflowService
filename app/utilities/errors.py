@@ -44,8 +44,9 @@ class VectorDatabaseError(Exception):
 
 class DependencyError(Exception):
     """Error raised when there are issues with task dependencies"""
-    def __init__(self, message: str, missing_deps: list = None, task_name: str = None, suggestions: list = None):
+    def __init__(self, message: str, missing_deps: list = None, invalid_deps: list = None, task_name: str = None, suggestions: list = None):
         self.missing_deps = missing_deps or []
+        self.invalid_deps = invalid_deps or []
         self.task_name = task_name
         self.suggestions = suggestions or []
         super().__init__(self._format_message(message))
@@ -104,6 +105,59 @@ class TaskGroupExecutionError(Exception):
         self.failed_tasks = failed_tasks
         self.message = message
         super().__init__(self.message)
+
+class MissingDependencyError(Exception):
+    """Error raised when required dependencies are missing from context"""
+    def __init__(self, task_name: str, missing_keys: Dict[str, List[str]], context_keys: List[str], 
+                 task_config: Dict[str, Any] = None, parent_context_keys: List[str] = None):
+        self.task_name = task_name
+        self.missing_keys = missing_keys
+        self.context_keys = context_keys
+        self.task_config = task_config
+        self.parent_context_keys = parent_context_keys
+        message = self._format_message()
+        super().__init__(message)
+
+    def _format_message(self) -> str:
+        error_msg = [
+            f"Dependency validation failed for task '{self.task_name}':"
+        ]
+        
+        # Add each type of missing dependency with enhanced details
+        if self.missing_keys.get('missing_keys'):
+            error_msg.append(f"- Missing keys: {', '.join(self.missing_keys['missing_keys'])}")
+            # Add info about parent context availability
+            available_in_parent = self.missing_keys.get('parent_context_available', [])
+            if available_in_parent:
+                error_msg.append(f"  * Available in parent context: {', '.join(available_in_parent)}")
+            
+        if self.missing_keys.get('null_values'):
+            error_msg.append(f"- Keys with null values: {', '.join(self.missing_keys['null_values'])}")
+        if self.missing_keys.get('empty_collections'):
+            error_msg.append(f"- Keys with empty collections: {', '.join(self.missing_keys['empty_collections'])}")
+            
+        error_msg.append(f"- Available context keys: {', '.join(self.context_keys)}")
+        if self.parent_context_keys:
+            error_msg.append(f"- Parent context keys: {', '.join(self.parent_context_keys)}")
+        
+        if self.task_config:
+            error_msg.extend([
+                "",
+                "Task Configuration:",
+                f"- Dependencies required: {self.task_config.get('dependencies', [])}",
+                f"- Expected results: {self.task_config.get('result_keys', [])}",
+                f"- Message template: {self.task_config.get('message_template', 'None')}"
+            ])
+            
+        error_msg.extend([
+            "",
+            "Suggestions:",
+            "1. Verify that previous tasks are completing successfully",
+            "2. Check that dependency names match exactly",
+            "3. Ensure required context is being passed correctly"
+        ])
+        
+        return "\n".join(error_msg)
 
 class TaskGroupExecutionError(Exception):
     def __init__(self, failed_tasks: List[Dict[str, Any]], message: str = "Some tasks failed during execution"):

@@ -94,9 +94,14 @@ class Agent:
             from app.tools.base_tool import BaseTool
             if isinstance(tool, str):
                 tool = self.add_tool_by_name(tool)
-                self.tools[i] = tool  # Update the tool in the list with the class reference
-            if issubclass(tool, BaseTool):
-                tool._shared_state = value
+                #self.tools.append(tool)
+            try:
+                if tool is not None:
+                    if issubclass(tool, BaseTool):
+                        tool._shared_state = value
+            except Exception as e:
+                logger.error(f"Error setting shared state for tool {str(type(tool))}: {e}")
+                logger.error(traceback.format_exc())
 
     def response_validator(self, message: str | list) -> str:
         """
@@ -189,7 +194,7 @@ class Agent:
         self.top_p = top_p
         self.response_format = response_format
         self.tools_folder = tools_folder
-        self.files_folder = files_folder if files_folder else [f"./app/Agents/{self.__class__.__name__}/"]
+        self.files_folder = files_folder if files_folder else [f"../agents/{self.__class__.__name__}/"]
         self.schemas_folder = schemas_folder if schemas_folder else []
         self.api_headers = api_headers if api_headers else {}
         self.api_params = api_params if api_params else {}
@@ -335,21 +340,18 @@ class Agent:
         self.redis_service = get_container().redis()
         self.track_resource(self.redis_service)
 
-        self.is_running = True
-        self.message_queue = asyncio.Queue()
-        self.queue_listener_task = asyncio.create_task(self.listen_to_queue())
-        self.track_resource(self.queue_listener_task)
+        #self.is_running = True
+        #self.message_queue = asyncio.Queue()
+        #self.queue_listener_task = asyncio.create_task(self.listen_to_queue())
+        #self.track_resource(self.queue_listener_task)
         
         system_context = ["workflow_id", "object_contexts", "agent_context", "node_templates", "node_template"]
         if not self.context_info:
             logger.info(f"Existing context_info not found, creating context info for agent: {self.name}")
             self.context_info = {}
-            self.context_info['context'] = {}
-        else:
-            if isinstance(self.context_info, ContextInfo):
-                self.context_info = self.context_info.dict()
+            self.context_info = ContextInfo()
 
-        context_dict: Dict = self.context_info
+        context_dict: Dict = self.context_info.dict()
         for key, value in context_dict.items():
             if key == 'context':
                 if value is not None and isinstance(value, dict):
@@ -364,6 +366,11 @@ class Agent:
                 self._contexts[key] = value
         if self._contexts.get('output') is None:
             self._contexts['output'] = {}
+        
+        self._shared_state = SharedState()
+        
+        for key, value in self._contexts.items():
+            self._shared_state.set(key, value)
             
         additional_instructions = []
         additional_instructions.append("Current Task Information: ")
@@ -380,7 +387,7 @@ class Agent:
             self.set_tools()
         
         # Start the listen_to_queue task and store it
-        self.queue_listener_task = asyncio.create_task(self.listen_to_queue())
+        #self.queue_listener_task = asyncio.create_task(self.listen_to_queue())
         
     async def assign(self) -> None:
         """
@@ -420,7 +427,7 @@ class Agent:
 
         self._parse_schemas()
         self._parse_tools_folder()
-        asyncio.create_task(self.listen_to_queue())
+        #asyncio.create_task(self.listen_to_queue())
     
     def to_dict(self):
         return {
@@ -682,8 +689,6 @@ class Agent:
         tools = []
         processed_tools = []
         
-        logger.debug(f"Get OAI Tools Init: {self.tools}")
-        
         # If tools are empty, try to set them
         if not self.tools:
             self.set_tools()
@@ -694,12 +699,15 @@ class Agent:
             if isinstance(tool, str):
                 tool = self.add_tool_by_name(tool)
                 if tool:
-                    self.tools[self.tools.index(tool.__name__)] = tool
+                    try:
+                        self.tools[self.tools.index(tool.__name__)] = tool
+                    except ValueError:
+                        self.tools.append(tool)
         
         for tool in self.tools:
+            tool._session_id = self.context_info.context.get('session_id', None)
             if inspect.isclass(tool) and tool.__name__ not in processed_tools:
                 processed_tools.append(tool.__name__)
-                self.logger.info(f"Tool Class Found: {tool.__name__}")
                 if issubclass(tool, FileSearch):
                     tools.append(tool().model_dump())
                 elif issubclass(tool, CodeInterpreter):

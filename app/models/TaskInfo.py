@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, validator
+from app.models.ContextInfo import ContextInfo
 from app.utilities.errors import ConfigurationError
 
 class TaskInfo(BaseModel):
@@ -8,12 +9,18 @@ class TaskInfo(BaseModel):
     agent_class: str = Field(..., description="Name of the agent class to execute this task")
     shared_instructions: str = Field(..., description="Instructions shared across all agents")
     result_keys: List[str] = Field(..., description="Keys where task results will be stored")
+    optional_result_keys: Optional[List[str]] = Field(None, description="Optional keys where task results will be stored")
     tools: List[str] = Field(..., description="List of tool names required for this task")
     message_template: str = Field(..., description="Template for the task message")
     dependencies: Optional[List[str]] = Field(None, description="Keys required from previous tasks")
+    optional_dependencies: Optional[List[str]] = Field(None, description="Optional keys required from previous tasks")
     validator_prompt: Optional[str] = Field(None, description="Prompt for result validation")
     validator_tool: Optional[str] = Field(None, description="Tool used for result validation")
     expansion_config: Optional[Dict[str, Any]] = Field(None, description="Configuration for task expansion")
+    session_id: Optional[str] = None
+    context_info: Optional[ContextInfo] = None
+    is_expanded_task: bool = False
+    parent_task_key: Optional[str] = None
 
     @validator('agent_class')
     def validate_agent_class(cls, v):
@@ -41,12 +48,6 @@ class TaskInfo(BaseModel):
 
     @validator('tools')
     def validate_tools(cls, v):
-        if not v:
-            raise ConfigurationError(
-                "At least one tool must be specified",
-                field="tools",
-                suggestions=["Add required tools to the task configuration"]
-            )
         for tool in v:
             if not isinstance(tool, str):
                 raise ConfigurationError(

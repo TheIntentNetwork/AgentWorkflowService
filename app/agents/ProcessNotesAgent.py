@@ -25,10 +25,10 @@ class ProcessNotesAgent(Agent):
         kwargs.setdefault('tools', [])
         
         intakes = []
-        if 'user_context' in kwargs.get('context_info', {}).context:
-            logger.info(f"Processing intake information for user: {kwargs['context_info'].context['user_context']['user_id']}")
+        if 'user_id' in kwargs.get('context_info', {}).context:
+            logger.info(f"Processing intake information for user: {kwargs['context_info'].context['user_id']}")
             
-            result = Supabase.supabase.table('decrypted_notes').select('decrypted_note').eq('user_id', kwargs['context_info'].context['user_context']['user_id']).execute()
+            result = Supabase.supabase.table('decrypted_notes').select('decrypted_note').eq('user_id', kwargs['context_info'].context['user_id']).execute()
             
             intakes = result.data or 'No notes found.'
 
@@ -37,6 +37,8 @@ class ProcessNotesAgent(Agent):
         1. Review the intake notes carefully.
         2. Extract relevant information from the notes.
         3. Use the SaveNotesInformation tool to store this information for future reference.
+        
+        You must use the SaveNotesInformation tool to save the notes information. You will fail without using the SaveNotesInformation tool. Use this tool even if there are no notes.
             
         Ensure that you capture all essential details from the intake notes and save them accurately using the SaveIntakeInformation tool.
         

@@ -7,7 +7,7 @@ class AgentFactory:
 
     @staticmethod
     @inject
-    async def from_name(context_manager=Provide['context_manager'], **agent_data: Dict[str, Any]) -> Any:
+    async def from_name(**agent_data: Dict[str, Any]) -> Any:
         from app.models.agents.Agent import Agent
         from app.logging_config import configure_logger
         logger = configure_logger('AgentFactory')
@@ -16,18 +16,19 @@ class AgentFactory:
             agents_module = 'app.agents'
             module = importlib.import_module(agents_module)
             agent_class = getattr(module, agent_data['name'], None)
-            if agent_class and issubclass(agent_class, Agent):
-                try:
-                    if hasattr(agent_class, 'create'):
-                        instantiated_agent = await agent_class.create(**agent_data)
-                    else:
-                        instantiated_agent = agent_class(**agent_data)
-                    logger.info(f"Instantiated Agent class: {agent_class}")
-                    logger.debug(f"with data: {agent_data}")
-                    return instantiated_agent
-                except Exception as e:
-                    logger.error(f"Error creating agent {agent_data['name']}: {e}")
-                    logger.error(traceback.format_exc())
+            if isinstance(agent_class, type):
+                if agent_class and issubclass(agent_class, Agent):
+                    try:
+                        if hasattr(agent_class, 'create'):
+                            instantiated_agent = await agent_class.create(**agent_data)
+                        else:
+                            instantiated_agent = agent_class(**agent_data)
+                        logger.info(f"Instantiated Agent class: {agent_class}")
+                        logger.debug(f"with data: {agent_data}")
+                        return instantiated_agent
+                    except Exception as e:
+                        logger.error(f"Error creating agent {agent_data['name']}: {e}")
+                        logger.error(traceback.format_exc())
         
         return await Agent.create(**agent_data)
     

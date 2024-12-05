@@ -1,3 +1,5 @@
+import os
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, List
 
@@ -11,6 +13,7 @@ from app.utilities.shared_state import SharedState
 class BaseTool(BaseModel, ABC):
     _shared_state: ClassVar[SharedState] = None
     _caller_agent: Any = None
+    _session_id: str = None
     _event_handler: Any = None
     result_keys: ClassVar[List[str]] = []
     
@@ -22,8 +25,50 @@ class BaseTool(BaseModel, ABC):
         if not self.__class__._shared_state:            
             self.__class__._shared_state = SharedState()
         super().__init__(**kwargs)
-        from app.logging_config import configure_logger
-        self._logger = configure_logger(self.__class__.__name__)
+        self._logger = self._configure_logger(kwargs.get('_session_id', self._session_id), kwargs.get('_task_name', None))
+
+    def _configure_logger(self, session_id: str = None, task_name: str = None):
+        """Configure logger with proper folder structure for tool calls"""
+        if not session_id:
+            return logging.getLogger(self.__class__.__name__)
+
+        if not task_name:
+            raise ValueError("Task name is required to configure logger")
+        
+        # Construct log path: sessions/{session_id}/{task_name}/tasks/tool_calls.log
+        log_path = os.path.join(
+            'logs',
+            'sessions',
+            session_id,
+            task_name,
+            'tasks'
+        )
+        
+        # Create directory structure
+        os.makedirs(log_path, exist_ok=True)
+        
+        # Full path to log file
+        log_file = os.path.join(log_path, 'tool_calls.log')
+
+        # Get or create logger
+        logger = logging.getLogger(f"{self.__class__.__name__}_{session_id}_{task_name}")
+        
+        # Avoid duplicate handlers
+        if not logger.handlers:
+            logger.setLevel(logging.INFO)
+
+            # Create file handler
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setLevel(logging.INFO)
+
+            # Create formatter and add it to the handler
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            file_handler.setFormatter(formatter)
+
+            # Add the handler to the logger
+            logger.addHandler(file_handler)
+
+        return logger
 
     class ToolConfig:
         strict: bool = False
@@ -86,5 +131,12 @@ class BaseTool(BaseModel, ABC):
         return schema
 
     @abstractmethod
-    def run(self, **kwargs):
+    async def run(self, **kwargs):
+        self._logger = self._configure_logger()
+        
+        # Access task info from context if needed
+        task_info = self._caller_agent.context_info.context.get('task_info', {})
+        self._logger.debug(f"Running tool for task: {task_info.get('name')}")
+        
+        # Tool implementation
         pass

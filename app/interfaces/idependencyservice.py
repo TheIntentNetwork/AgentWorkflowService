@@ -1,55 +1,34 @@
-# app/interfaces/idependency_service.py
-
 from abc import ABC, abstractmethod
-from typing import List, Any, Dict
-from app.models.Dependency import Dependency
-from app.models.Node import Node
+from typing import List, Any, Dict, Callable
 
 class IDependencyService(ABC):
+    """Interface for dependency tracking service"""
+    
     @abstractmethod
-    async def discover_and_register_dependencies(self, node: Node) -> None:
+    async def start(self) -> None:
+        """Start the dependency service"""
         pass
-
+        
     @abstractmethod
-    async def add_dependency(self, node: Node, dependency: Dependency) -> None:
+    async def shutdown(self) -> None:
+        """Shutdown the dependency service"""
         pass
-
+        
     @abstractmethod
-    async def remove_dependency(self, node: Node, dependency: Dependency) -> None:
-        pass
-
-    @abstractmethod
-    async def clear_dependencies(self, node: Node) -> None:
-        pass
-
-    @abstractmethod
-    async def get_dependency(self, node: Node, dependency_key: str) -> Dependency:
-        pass
-
-    @abstractmethod
-    async def subscribe_to_dependency(self, node: Node, dependency: Dependency) -> None:
-        pass
-
-    @abstractmethod
-    async def unsubscribe_from_dependency(self, node: Node, dependency: Dependency) -> None:
-        pass
-
-    @abstractmethod
-    async def on_dependency_update(self, node: Node, data: Dict[str, Any]) -> None:
-        pass
-
-    @abstractmethod
-    async def dependencies_met(self, node: Node) -> bool:
-        pass
-
-    @abstractmethod
-    async def resolve_dependency(self, node: Node, dependency: Dependency) -> None:
-        pass
-
-    @abstractmethod
-    async def on_all_dependencies_resolved(self, node: Node) -> None:
-        pass
-
-    @abstractmethod
-    async def get_dependencies(self, node: Node) -> None:
+    async def register_task(
+        self,
+        session_id: str,
+        task_key: str,
+        dependencies: List[str],
+        callback: Callable
+    ) -> None:
+        """
+        Register a task with its dependencies and callback.
+        
+        Args:
+            session_id: The session ID
+            task_key: Unique identifier for the task
+            dependencies: List of dependency keys required by the task
+            callback: Function to call when dependencies are met
+        """
         pass

@@ -41,5 +41,5 @@ class GetSupplemental(BaseTool):
         except Exception as e:
             self._logger.error(f"Error running {self.__class__.__name__} tool: {str(e)} with traceback: {e.__traceback__}")
             raise e
-        return result
+        return result['decrypted_form']
 

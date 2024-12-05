@@ -10,94 +10,57 @@ from app.models.Report import Report, FutureConsideration, Condition
 
 class SaveToFutureConsiderations(BaseTool):
     """
-    Tool for writing and saving future considerations to a specific condition in the user's report.
-    Updates the future_considerations within the conditions section while preserving other data.
+    Tool for saving future considerations to context for a specific condition.
+    The data will be used by CompileDocument to construct the final report.
     """
-    condition_name: str = Field(..., description="The name of the condition for which the future considerations are being written.")
-    considerations: List[FutureConsideration] = Field(..., description="The future considerations to be written.")
+    condition_name: str = Field(..., description="The name of the condition")
+    considerations: List[FutureConsideration] = Field(..., description="The future considerations to save")
     result_keys: ClassVar[List[str]] = ['future_considerations']
     
     async def run(self) -> Dict[str, Any]:
         logger = configure_logger('SaveToFutureConsiderations')
         logger.info("Running SaveToFutureConsiderations tool")
         
-        user_id = self._caller_agent.context_info.context['user_id']
-        report_id = None
-        
-        client: Client = Supabase.supabase
         try:
-            result = client.from_("decrypted_reports").select("id, decrypted_report").eq("user_id", user_id).single().execute()
-            report = Report(**json.loads(result.data['decrypted_report']))
-            report_id = result.data['id']
+            section_data = {
+                "condition_name": self.condition_name,
+                "considerations": [consideration.dict() for consideration in self.considerations],
+                "last_updated": datetime.now().isoformat()
+            }
             
-            condition = next((c for c in report.conditions if c.condition_name == self.condition_name), None)
-            
-            if condition:
-                # Update only future_considerations while preserving other fields
-                condition.future_considerations = self.considerations
+            # Get existing considerations from context
+            existing_considerations = self._caller_agent.context_info.context.get("future_considerations")
+            if existing_considerations:
+                if isinstance(existing_considerations, str):
+                    existing_considerations = json.loads(existing_considerations)
+                if isinstance(existing_considerations, bytes):
+                    existing_considerations = json.loads(existing_considerations.decode('utf-8'))
             else:
-                new_condition = Condition(
-                    condition_name=self.condition_name,
-                    research_section=[],
-                    PointsFor38CFR=[],
-                    key_points=[],
-                    future_considerations=self.considerations,
-                    executive_summary=""
-                )
-                if not report.conditions:
-                    report.conditions = []
-                report.conditions.append(new_condition)
-            
-            record = {
-                "user_id": user_id,
-                "report": json.dumps(report.dict()),
-                "updated_at": datetime.now().isoformat()
-            }
-            
-            if report_id:
-                record["id"] = report_id
-                
-            updated_result = client.from_("reports").update(record).eq("user_id", user_id).execute()
-            
-        except Exception as e:
-            logger.error(f"Error fetching report: {e}")
-            logger.error(traceback.format_exc())
-            new_condition = Condition(
-                condition_name=self.condition_name,
-                research_section=[],
-                PointsFor38CFR=[],
-                key_points=[],
-                future_considerations=self.considerations,
-                executive_summary=""
-            )
-            
-            report = Report(
-                user_id=user_id,
-                conditions=[new_condition],
-                executive_summary=[]
-            )
-            
-            record = {
-                "user_id": user_id,
-                "report": json.dumps(report.dict()),
-                "updated_at": datetime.now().isoformat()
-            }
-            
-            if report_id:
-                record["id"] = report_id
-                
-            updated_result = client.from_("reports").insert(record).execute()
-            
-        condition = next((c for c in report.conditions if c.condition_name == self.condition_name), None)
-        if condition:
+                existing_considerations = []
+
+            # Update or add new considerations
+            updated = False
+            if isinstance(existing_considerations, list):
+                for consideration in existing_considerations:
+                    if consideration.get("condition_name") == self.condition_name:
+                        consideration.update(section_data)
+                        updated = True
+                        break
+                if not updated:
+                    existing_considerations.append(section_data)
+            else:
+                existing_considerations = [section_data]
+
+            # Update context with all considerations
             self._caller_agent.context_info.context["future_considerations"] = json.dumps(
-                condition.future_considerations,
+                existing_considerations,
                 skipkeys=True,
-                default=lambda x: x.__dict__
+                default=str
             )
-            
-        return json.dumps(
-            condition.future_considerations if condition else [],
-            skipkeys=True,
-            default=lambda x: x.__dict__
-        )
+
+            return section_data
+
+        except Exception as e:
+            logger.error(f"Error in SaveToFutureConsiderations: {e}")
+            logger.error(traceback.format_exc())
+            raise

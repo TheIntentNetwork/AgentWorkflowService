@@ -58,6 +58,6 @@ class BrowsingAgent(Agent):
     def set_tools(self):
         """Set the tools available to the BrowsingAgent."""
         self.tools.extend([
-            Scroll, SendKeys, ClickElement, ReadURL, AnalyzeContent, GoBack, SelectDropdown,
+            Scroll, SendKeys, ClickElement, ReadURL, GoBack, SelectDropdown,
             SolveCaptcha, ReadPDF, ReadPageText, SearchTool
         ])

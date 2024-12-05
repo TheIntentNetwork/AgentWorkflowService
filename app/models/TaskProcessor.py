@@ -1,7 +1,7 @@
 from datetime import datetime
 import json
 import traceback
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional, Set, Tuple
 import uuid
 import asyncio
 from pydantic import BaseModel, Field, PrivateAttr
@@ -40,7 +40,7 @@ class TaskProcessor(BaseModel):
     """
     
     # Add at class level, before __init__
-    _logger = configure_logger("TaskProcessor")  # Class-level logger
+    _logger = None  # Initialize logger as None
     
     #######################
     # Core Configuration #
@@ -58,8 +58,6 @@ class TaskProcessor(BaseModel):
     tasks_running: Set[str] = Field(default_factory=set, description="Set of currently running task names")
     
     # Private Attributes
-    _logger: Any = PrivateAttr(default=None)
-    _redis: RedisService = PrivateAttr(default=None)
     _subscriptions: Dict[str, asyncio.Queue] = PrivateAttr(default_factory=dict)
     _message_processor_task: Optional[asyncio.Task] = PrivateAttr(default=None)
     _processing_active: bool = PrivateAttr(default=False)
@@ -103,7 +101,40 @@ class TaskProcessor(BaseModel):
 
     def __init__(self, **data):
         super().__init__(**data)
-        self._logger = configure_logger(self.__class__.__name__)
+        # Main processor logger
+        
+        # Task-specific logger
+        self._task_logger = configure_logger(
+            self.task_info.name,
+            log_path=['sessions', self.session_id, self.task_info.name]
+        )
+        
+        # Add task_info to context
+        self.context_info.context['task_info'] = {
+            'name': self.task_info.name,
+            'key': self.task_info.key,
+            'dependencies': self.task_info.dependencies,
+            'optional_dependencies': self.task_info.optional_dependencies,
+            'result_keys': self.task_info.result_keys,
+            'agent_class': self.task_info.agent_class,
+            'tools': self.task_info.tools,
+            'message_template': self.task_info.message_template,
+            'validator_prompt': self.task_info.validator_prompt,
+            'validator_tool': self.task_info.validator_tool,
+            'expansion_config': self.task_info.expansion_config
+        }
+        
+        # Log task initialization
+        self._task_logger.info(f"""
+        Task Initialized:
+        - Task Name: {self.task_info.name}
+        - Task Key: {self.task_info.key}
+        - Dependencies: {self.task_info.dependencies}
+        - Optional Dependencies: {self.task_info.optional_dependencies}
+        - Expected Results: {self.task_info.result_keys}
+        - Task Info Added to Context: {bool(self.context_info.context.get('task_info'))}
+        """)
+        
         self._event_handler = EventHandler()
         self._task_semaphore = asyncio.Semaphore(10)  # Initialize semaphore
         self._active_tasks = set()  # Initialize active tasks set
@@ -129,6 +160,7 @@ class TaskProcessor(BaseModel):
             'task_started': self._handle_task_started,
             'task_completed': self._handle_task_completed,
             'task_failed': self._handle_task_failed,
+            'result_publishing': self._handle_result_publishing,
             'result_published': self._handle_result_published,
             'result_validation': self._handle_result_validation,
             'error': self._handle_error,
@@ -138,15 +170,15 @@ class TaskProcessor(BaseModel):
         # Register each handler immediately
         for event_type, handler in default_handlers.items():
             if self._event_handler:  # Check if event handler exists
-                self._event_handler.register_handler(event_type, handler)
+                asyncio.create_task(self._event_handler.register_handler(event_type, handler))
             else:
-                self._logger.error("Event handler not initialized")
+                self._task_logger.error("Event handler not initialized")
 
     async def _handle_dependency_check(self, data: Dict[str, Any]):
         """Handle dependency check events"""
         try:
             task_name = data.get('task_name')
-            self._logger.info(f"Checking dependencies for task {task_name}")
+            self._task_logger.info(f"Checking dependencies for task {task_name}")
             
             # Update state without triggering a state update event
             await self._save_state_to_redis({
@@ -155,46 +187,75 @@ class TaskProcessor(BaseModel):
                 'status': data
             })
         except Exception as e:
-            self._logger.error(f"Error in dependency check handler: {str(e)}")
+            self._task_logger.error(f"Error in dependency check handler: {str(e)}")
 
     async def _handle_dependency_resolved(self, data: Dict[str, Any]):
         """Handle resolved dependency events"""
-        self._logger.info(f"Dependency resolved for task {data.get('task_name')}: {data.get('dependency')}")
+        self._task_logger.info(f"Dependency resolved for task {data.get('task_name')}: {data.get('dependency')}")
         await self._update_context(data)
+    
+    async def _attempt_dependency_recovery(self, data: Dict[str, Any]):
+        """Attempt to recover from dependency failures"""
+        self._task_logger.info(f"Attempting dependency recovery for task {data.get('task_name')}")
+        await self._cleanup_failed_dependency(data)
 
     async def _handle_dependency_failed(self, data: Dict[str, Any]):
         """Handle failed dependency events"""
-        self._logger.error(f"Dependency failed for task {data.get('task_name')}: {data.get('error')}")
-        await self._cleanup_failed_dependency(data)
+        try:
+            task_name = data.get('task_name')
+            error = data.get('error')
+            
+            # Check if dependency is optional
+            if task_name in self.task_info.optional_dependencies:
+                # Continue execution with warning
+                self._task_logger.warning(f"Optional dependency failed for {task_name}: {error}")
+                return
+            
+            # Handle required dependency failure
+            await self._cleanup_failed_dependency(data)
+            
+            # Attempt recovery if possible
+            await self._attempt_dependency_recovery(task_name)
+        except Exception as e:
+            self._task_logger.error(f"Error handling dependency failure: {str(e)}")
 
     async def _handle_task_started(self, data: Dict[str, Any]):
         """Handle task start events"""
-        self._logger.info(f"Task started: {data.get('task_name')}")
+        self._task_logger.info(f"Task started: {data.get('task_name')}")
         await self._update_task_state(data.get('task_name'), 'running')
 
     async def _handle_task_completed(self, data: Dict[str, Any]):
         """Handle task completion events"""
-        self._logger.info(f"Task completed: {data.get('task_name')}")
+        self._task_logger.info(f"Task completed: {data.get('task_name')}")
         await self._update_task_state(data.get('task_name'), 'completed')
 
     async def _handle_task_failed(self, data: Dict[str, Any]):
         """Handle task failure events"""
-        self._logger.error(f"Task failed: {data.get('task_name')} - {data.get('error')}")
+        self._task_logger.error(f"Task failed: {data.get('task_name')} - {data.get('error')}")
         await self._update_task_state(data.get('task_name'), 'failed')
+    
+    async def _handle_result_publishing(self, data: Dict[str, Any]):
+        """Handle result publishing events"""
+        self._task_logger.info(f"Result publishing: {data.get('task_name')}")
+        await self._notify_subscribers(data)
 
     async def _handle_result_published(self, data: Dict[str, Any]):
         """Handle result publication events"""
-        self._logger.info(f"Result published for task {data.get('task_name')}")
-        await self._notify_subscribers(data)
+        self._task_logger.info(f"""
+        Result Published:
+        - Task: {data.get('task_name')}
+        - Result Key: {data.get('result_key')}
+        - Value: {data.get('value')}
+        """)
 
     async def _handle_result_validation(self, data: Dict[str, Any]):
         """Handle result validation events"""
-        self._logger.info(f"Validating result for task {data.get('task_name')}")
+        self._task_logger.info(f"Validating result for task {data.get('task_name')}")
         await self._validate_result_data(data)
 
     async def _handle_error(self, data: Dict[str, Any]):
         """Handle error events"""
-        self._logger.error(f"Error in {data.get('context')}: {data.get('error')}")
+        self._task_logger.error(f"Error in {data.get('context')}: {data.get('error')}")
         await self._handle_error_recovery(data)
 
     async def execute_task(self) -> None:
@@ -212,6 +273,10 @@ class TaskProcessor(BaseModel):
             if self.task_info.expansion_config:
                 quick_log.info(f"[TASK_EXPAND] {self.task_info.name} - Starting task expansion")
                 from app.models.task_expansion import TaskExpansion
+                
+                # Ensure context is properly serialized once
+                serialized_context = json.dumps(self.context_info.context, default=str)
+                
                 expanded_tasks = TaskExpansion._expand_array_task(
                     task_data={
                         'key': self.task_info.key,
@@ -222,10 +287,11 @@ class TaskProcessor(BaseModel):
                         'result_keys': self.task_info.result_keys,
                         'message_template': self.task_info.message_template,
                         'shared_instructions': self.task_info.shared_instructions,
-                        'optional_dependencies': self.task_info.optional_dependencies
+                        'optional_dependencies': self.task_info.optional_dependencies,
+                        'expansion_config': self.task_info.expansion_config
                     },
                     expansion_config=self.task_info.expansion_config,
-                    context=self.context_info.context
+                    context=serialized_context
                 )
                 
                 quick_log.info(f"[TASK_EXPAND] {self.task_info.name} - Expanded into {len(expanded_tasks)} tasks")
@@ -254,34 +320,30 @@ class TaskProcessor(BaseModel):
                 for i, expanded_task in enumerate(expanded_tasks):
                     expanded_key = f"task_expanded:{self.task_info.key}:{i}"
                     quick_log.info(f"Sending expanded task {expanded_task['name']} to Kafka")
+                    expanded_task['session_id'] = self.session_id
+                    
+                    # Convert context_info to dict first if it's not already
+                    context_info_dict = (
+                        self.context_info.dict() 
+                        if hasattr(self.context_info, 'dict') 
+                        else self.context_info
+                    )
+                    
+                    expanded_task['context_info'] = json.dumps(context_info_dict, default=str)
+                    expanded_task['is_expanded_task'] = True
+                    expanded_task['parent_task_key'] = self.task_info.key
+                    
                     kafka_message = {
                         "key": expanded_key,
                         "action": "execute",
-                        "object": {
-                            'key': expanded_key,
-                            'name': expanded_task['name'],
-                            'agent_class': expanded_task['agent_class'],
-                            'tools': expanded_task['tools'],
-                            'dependencies': expanded_task['dependencies'],
-                            'result_keys': expanded_task['result_keys'],
-                            'message_template': expanded_task['message_template'],
-                            'shared_instructions': expanded_task['shared_instructions'],
-                            'optional_dependencies': expanded_task['optional_dependencies'],
-                            'session_id': self.session_id,
-                            'context_info': self.context_info.dict()
-                        },
-                        "context": self.context_info.context,
-                        "parent_task_key": self.task_info.key,
-                        "is_expanded_task": True
+                        "object": expanded_task,
+                        "context": serialized_context,  # Use the already serialized context
                     }
                     
                     await kafka.send_message("agency_action", kafka_message)                
             else:
                 # Execute single task normally
-                outputs = await self._execute_single_task(self.task_info, self.task_info.tools)
-                
-                self._logger.warning(f"Task {self.task_info.name} completed but returned no results")
-                await self.mark_task_completed(self.task_info.name, results=outputs)
+                asyncio.create_task(self._execute_single_task(self.task_info, self.task_info.tools))
             
         except (DependencyError, ConfigurationError, TaskExecutionError) as e:
             await self.mark_task_failed(self.task_info.name, str(e))
@@ -298,11 +360,7 @@ class TaskProcessor(BaseModel):
     async def _execute_single_task(self, task: TaskInfo, tools) -> None:
         """
         Execute a single task (either original or expanded) with proper context management
-        """        
-        ## Ensure task has an ID
-        #if not hasattr(task, 'id'):
-        #    task.id = f"{task.name}_{hash(str(task.dict()))}"
-        
+        """
         try:
             message = task.message_template
             
@@ -327,7 +385,7 @@ class TaskProcessor(BaseModel):
         except KeyError as e:
             missing_key = str(e).strip("'")
             available_keys = list(self.context_info.context.keys())
-            self._logger.error(f"""
+            self._task_logger.error(f"""
             Template formatting error:
             Missing key: {missing_key}
             Available keys: {available_keys}
@@ -354,7 +412,7 @@ class TaskProcessor(BaseModel):
             context_info=self.context_info
         )
             
-        agency = Agency(agency_chart=[agent], shared_instructions=task.shared_instructions)
+        agency = Agency(agency_chart=[agent], shared_instructions=task.shared_instructions, session_id=self.session_id)
         await agency.get_completion(message)
         
         if isinstance(agent.context_info, dict):
@@ -362,13 +420,13 @@ class TaskProcessor(BaseModel):
         
         outputs = {}
         for result_key in task.result_keys:
-            result = agent.context_info.context.get(result_key)
+            result = agent.context_info.context.get(result_key, None)
             if result is None:
                 if task.optional_result_keys and result_key in task.optional_result_keys:
                     self.context_info.context[result_key] = []
-                    self._logger.warning(f"Task result is None for optional key: {result_key}")
+                    self._task_logger.warning(f"Task result is None for optional key: {result_key}")
                 else:
-                    self._logger.error(f"Task result is None for key: {result_key}")
+                    self._task_logger.error(f"Task result is None for key: {result_key}")
                     agency = Agency(agency_chart=[agent], shared_instructions=task.shared_instructions)
                     await agency.get_completion(
                     f"{task.message_template}\n\n"
@@ -393,8 +451,8 @@ class TaskProcessor(BaseModel):
             else:
                 self.context_info.context[result_key] = result
                 agent.context_info.context[result_key] = result
-            
-            self._logger.debug(f"""
+                
+            self._task_logger.debug(f"""
             Context updated:
             - Key: {result_key}
             - Previous value: {self.context_info.context.get(result_key)}
@@ -402,8 +460,34 @@ class TaskProcessor(BaseModel):
             - Merged result: {self.context_info.context[result_key]}
             - Updated keys: {set(self.context_info.context.keys())}
             """)
+            
+            # We need to update any context in Redis for all the keys in context_info.context
+            for key in self.task_info.result_keys:
+                if key in self.context_info.context:
+                    if task.expansion_config:
+                        if key in task.expansion_config['array_mapping'].values():
+                            await self._redis.client.lpush(
+                                f"session:{self.session_id}:task_results:array_mapping:{key}",
+                                json.dumps(outputs[key])
+                            )
+                    else:
+                        await self._redis.client.hset(
+                            f"session:{self.session_id}:task_results",
+                            key,
+                            json.dumps(outputs[key])
+                        )
+            
+            await self._notify_subscribers({
+                'task_name': self.task_info.name,
+                'result_key': result_key,
+                'value': outputs[result_key]
+            })
 
-        return outputs
+        if not outputs:
+            self._task_logger.warning(f"Task {self.task_info.name} completed but returned no results")
+        else:
+            await self.mark_task_completed(self.task_info.name, results=outputs)
+            return outputs
 
     async def _create_agent(self, task: TaskInfo) -> Agency:
         """Create an agent for task execution"""
@@ -423,53 +507,6 @@ class TaskProcessor(BaseModel):
                 message=f"Failed to create agent: {str(e)}",
                 task_name=task.name,
                 field="agent_configuration"
-            )
-
-    async def publish_result(self, task_name: str, result_key: str, value: Any):
-        """Publish task result"""
-        try:
-            quick_log.info(f"Publishing result - Task: {task_name}, Key: {result_key}")
-            async with self._processing_lock:
-                # Store result value
-                mapping_key = f"session:{self.session_id}:result_values"
-                await self._redis.client.hset(
-                    mapping_key,
-                    result_key,
-                    json.dumps(value)
-                )
-                
-                # Publish to result channel
-                channel = f"session:{self.session_id}:{result_key}"
-                message = {
-                    'task_name': task_name,
-                    'result_key': result_key,
-                    'value': value,
-                    'dependency': result_key,  # Add this for dependency tracking
-                    'timestamp': datetime.now().isoformat()
-                }
-                
-                publisher = RedisPublisher()
-                success = await publisher.publish(self._redis, channel, message)
-                
-                if success:
-                    quick_log.info(f"Result published successfully - Task: {task_name}, Key: {result_key}")
-                    
-                    # Also publish to dependency channel
-                    dep_channel = f"session:{self.session_id}:{result_key}"
-                    await publisher.publish(self._redis, dep_channel, message)
-                
-                await self._event_handler.handle_event('result_published', {
-                    'task_name': task_name,
-                    'result_key': result_key,
-                    'channel': channel,
-                    'value': value
-                })
-                
-        except Exception as e:
-            raise TaskExecutionError(
-                message=f"Failed to publish result: {str(e)} \n{traceback.format_exc()}",
-                task_name=task_name,
-                error_type="result_publication"
             )
 
     @classmethod
@@ -492,18 +529,24 @@ class TaskProcessor(BaseModel):
         
         try:
             if action == 'execute':
+                # Deserialize context if it's a string
+                context_dict = (
+                    json.loads(context) if isinstance(context, str)
+                    else context
+                )
+                
                 # Create processor instance
                 processor = cls(
                     key=key,
                     name=object_data.get('name'),
-                    context_info=ContextInfo(context=context),
+                    context_info=ContextInfo(context=context_dict),
                     session_id=object_data.get('session_id'),
                     total_tasks=total_tasks,
                     task_info=TaskInfo(
                         key=key,
                         name=object_data.get('name'),
                         session_id=object_data.get('session_id'),
-                        context_info=ContextInfo(context=context),
+                        context_info=ContextInfo(context=context_dict),
                         dependencies=object_data.get('dependencies', []),
                         result_keys=object_data.get('result_keys', []),
                         tools=object_data.get('tools', []),
@@ -518,12 +561,18 @@ class TaskProcessor(BaseModel):
                 )
 
                 # Setup dependencies and process task
-                asyncio.create_task(cls._setup_and_process_task(processor, key, object_data, context, logger))
+                asyncio.create_task(cls._setup_and_process_task(processor, key, object_data, context_dict, logger))
             else:
                 logger.warning(f"Unsupported action for TaskProcessor: {action}")
                 
         except Exception as e:
             logger.error(f"Error handling task: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise TaskExecutionError(
+                message=f"Task handling failed: {str(e)}",
+                task_name=key,
+                error_type="task_handling"
+            )
             logger.error(traceback.format_exc())
             raise TaskExecutionError(
                 message=f"Task handling failed: {str(e)}",
@@ -568,12 +617,14 @@ class TaskProcessor(BaseModel):
         """Process individual task with proper dependency management"""
         try:
             quick_log = configure_logger('quick_log')
+            is_expanded_task = processor.task_info.is_expanded_task is True
             
-            # Check if task is already running
-            is_running = await processor._check_if_task_running(processor.task_info.name)
-            if is_running:
-                quick_log.warning(f"Task {processor.task_info.name} is already running, skipping execution")
-                return None
+            if not is_expanded_task:
+                # Check if parent task is already running
+                is_running = await processor._check_if_task_running(processor.task_info.name)
+                if is_running:
+                    quick_log.warning(f"Task {processor.task_info.name} is still running, continue the execution")
+                    #return None
                 
             # Check if all dependencies are available
             dependencies = list(processor.task_info.dependencies)
@@ -652,11 +703,11 @@ class TaskProcessor(BaseModel):
                     'timestamp': datetime.utcnow().isoformat()
                 })
             
-            self._logger.debug(f"Updated state in Redis: {state_data}")
+            self._task_logger.debug(f"Updated state in Redis: {state_data}")
             
         except Exception as e:
-            self._logger.error(f"Error saving state to Redis: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error saving state to Redis: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
 
     async def _update_context(self, data: Dict[str, Any]):
         """Update context with resolved dependency"""
@@ -666,15 +717,18 @@ class TaskProcessor(BaseModel):
             value = data.get('value')
             
             if dependency and value is not None:
+                # Update local context
                 self.context_info.context[dependency] = value
-                self._logger.debug(f"Updated context with dependency {dependency} = {value}")
                 
-                # Check if this resolves any waiting tasks
-                await self._check_waiting_tasks(dependency)
-                
+                # Sync to Redis for other task groups
+                context_key = f"session:{self.session_id}:{dependency}"
+                await self._redis.client.set(
+                    context_key,
+                    json.dumps(value, cls=TaskContextEncoder)
+                )
         except Exception as e:
-            self._logger.error(f"Error updating context: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error updating context: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
 
     async def _cleanup_failed_dependency(self, data: Dict[str, Any]):
         """Clean up after dependency failure"""
@@ -695,8 +749,8 @@ class TaskProcessor(BaseModel):
             })
             
         except Exception as e:
-            self._logger.error(f"Error cleaning up failed dependency: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error cleaning up failed dependency: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
 
     async def _update_task_state(self, task_name: str, state: str):
         """Update task state tracking"""
@@ -718,8 +772,8 @@ class TaskProcessor(BaseModel):
             })
             
         except Exception as e:
-            self._logger.error(f"Error updating task state: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error updating task state: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
 
     async def _notify_subscribers(self, data: Dict[str, Any]):
         """Notify subscribers of published results"""
@@ -728,19 +782,26 @@ class TaskProcessor(BaseModel):
             result_key = data.get('result_key')
             value = data.get('value')
             
-            if result_key in self._result_subscribers:
-                channel = f"session:{self.session_id}:{result_key}"
-                message = {
-                    'type': 'result',
-                    'task_name': task_name,
-                    'result_key': result_key,
-                    'value': value
-                }
-                await self._redis.client.publish(channel, json.dumps(message))
+            channel = f"session:{self.session_id}:{result_key}"
+            message = {
+                'type': 'result',
+                'task_name': task_name,
+                'result_key': result_key,
+                'value': value
+            }
+            await self._redis.client.publish(channel, json.dumps(message))
+            await self._redis.client.set(channel, json.dumps(value, cls=TaskContextEncoder))
+            
+            await self._event_handler.handle_event('result_published', {
+                'task_name': task_name,
+                'result_key': result_key,
+                'channel': channel,
+                'value': value
+            })
                     
         except Exception as e:
-            self._logger.error(f"Error notifying subscribers: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error notifying subscribers: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
 
     async def _validate_result_data(self, data: Dict[str, Any]):
         """Validate published result data"""
@@ -765,8 +826,8 @@ class TaskProcessor(BaseModel):
             })
             
         except Exception as e:
-            self._logger.error(f"Error validating result data: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error validating result data: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
             await self._event_handler.handle_event('result_validated', {
                 'task_name': data.get('task_name'),
                 'result_key': data.get('result_key'),
@@ -786,8 +847,8 @@ class TaskProcessor(BaseModel):
                     })
                     
         except Exception as e:
-            self._logger.error(f"Error checking waiting tasks: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error checking waiting tasks: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
 
     async def _handle_state_update(self, data: Dict[str, Any]):
         """Handle state updates with proper set serialization"""
@@ -798,7 +859,7 @@ class TaskProcessor(BaseModel):
                 await self._save_state_to_redis(data)
                 return
 
-            self._logger.debug(f"""
+            self._task_logger.debug(f"""
             Handling processor state update:
             - Input data: {data}
             - Current completed tasks: {self.tasks_completed}
@@ -808,8 +869,8 @@ class TaskProcessor(BaseModel):
             await self._save_state_to_redis(data)
             
         except Exception as e:
-            self._logger.error(f"Error updating processor state: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error updating processor state: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
             await self._event_handler.handle_event('error', {
                 'error': str(e),
                 'context': 'state_update',
@@ -823,18 +884,6 @@ class TaskProcessor(BaseModel):
                 if task_name in self.tasks_running:
                     self.tasks_running.remove(task_name)
                 self.tasks_completed.add(task_name)
-                
-                # Store and publish results if provided
-                if results:
-                    quick_log.info(f"Publishing results for {task_name}")
-                    publish_tasks = []
-                    for key, value in results.items():
-                        # Only publish results, don't set up subscriptions for output keys
-                        publish_tasks.append(self.publish_result(task_name, key, value))
-                    
-                    if publish_tasks:
-                        await asyncio.gather(*publish_tasks)
-                        quick_log.info(f"Completed publishing results for {task_name}")
                 
                 # Update state in Redis
                 await self._event_handler.handle_event('state_update', {
@@ -853,11 +902,11 @@ class TaskProcessor(BaseModel):
                 # Cleanup task resources
                 await self.cleanup_task_resources(task_name)
                 
-                self._logger.info(f"Task {task_name} marked as completed with results: {results}")
+                self._task_logger.info(f"Task {task_name} marked as completed with results: {results}")
                 
         except Exception as e:
-            self._logger.error(f"Error marking task {task_name} as completed: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error marking task {task_name} as completed: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
             await self._event_handler.handle_event('error', {
                 'error': str(e),
                 'context': 'task_completion',
@@ -889,11 +938,11 @@ class TaskProcessor(BaseModel):
                 # Cleanup task resources
                 await self.cleanup_task_resources(task_name)
                 
-                self._logger.error(f"Task {task_name} marked as failed: {error_message}")
+                self._task_logger.error(f"Task {task_name} marked as failed: {error_message}")
                 
         except Exception as e:
-            self._logger.error(f"Error marking task {task_name} as failed: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error marking task {task_name} as failed: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
             await self._event_handler.handle_event('error', {
                 'error': str(e),
                 'context': 'task_failure',
@@ -938,11 +987,11 @@ class TaskProcessor(BaseModel):
                 # Clear task attempts
                 self._task_attempts.pop(task_name, None)
                 
-                self._logger.debug(f"Cleaned up resources for task {task_name}")
+                self._task_logger.debug(f"Cleaned up resources for task {task_name}")
                 
         except Exception as e:
-            self._logger.error(f"Error cleaning up task resources: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error cleaning up task resources: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
             await self._event_handler.handle_event('error', {
                 'error': str(e),
                 'context': 'resource_cleanup',
@@ -993,7 +1042,7 @@ class TaskProcessor(BaseModel):
                             received = expansion_state.get('received_tasks', 0)
                             quick_log.debug(f"Expansion progress - Parent: {parent_key}, Received: {received}/{total_tasks}")
                             
-                            self._logger.debug(f"""
+                            self._task_logger.debug(f"""
                             Expansion progress for {parent_key}:
                             - Received tasks: {received}/{total_tasks}
                             - Current results: {expansion_state.get('results', {})}
@@ -1007,7 +1056,7 @@ class TaskProcessor(BaseModel):
                                     'completed': True
                                 })
                                 
-                                self._logger.info(f"All expanded tasks completed for {parent_key}")
+                                self._task_logger.info(f"All expanded tasks completed for {parent_key}")
                                 return expansion_state.get('results', {})
                     
                     # Wait for next message
@@ -1026,8 +1075,8 @@ class TaskProcessor(BaseModel):
                     await asyncio.sleep(0.1)
                     
             except Exception as e:
-                self._logger.error(f"Error waiting for expanded tasks: {str(e)}")
-                self._logger.error(traceback.format_exc())
+                self._task_logger.error(f"Error waiting for expanded tasks: {str(e)}")
+                self._task_logger.error(traceback.format_exc())
                 raise
                 
         finally:
@@ -1035,14 +1084,14 @@ class TaskProcessor(BaseModel):
             if (parent_key in self._expansion_tracking and 
                 self._expansion_tracking[parent_key]['completed']):
                 await pubsub.unsubscribe(channel)
-                self._logger.info(f"Unsubscribed from channel {channel} after completion")
+                self._task_logger.info(f"Unsubscribed from channel {channel} after completion")
                 
                 # Cleanup tracking data
                 async with self._expansion_locks[parent_key]:
                     self._expansion_tracking.pop(parent_key, None)
                 self._expansion_locks.pop(parent_key, None)
             else:
-                self._logger.warning(f"Keeping subscription active for incomplete expansion {parent_key}")
+                self._task_logger.warning(f"Keeping subscription active for incomplete expansion {parent_key}")
 
     async def _handle_dependency_update(self, data: tuple):
         """Handle updates to task dependencies"""
@@ -1051,20 +1100,34 @@ class TaskProcessor(BaseModel):
             dependency = value.get('result_key')
             value = value.get('value')
             
-            quick_log.info(f"Dependency update - Dependency: {dependency}, Value: {value}")
-            
             if dependency and value is not None:
-                    if dependency not in self.context_info.context:
-                        if self.task_info.expansion_config:
-                            if dependency in self.task_info.expansion_config['array_mapping'].values():
-                                self.context_info.context[dependency] = []
-                                self.context_info.context[dependency].append(value)
-                                self._logger.debug(f"Updated context with array dependency {dependency} = {value}")
-                            else:
-                                self.context_info.context[dependency] = value
-                        else:
-                            self.context_info.context[dependency] = value
-                            self._logger.debug(f"Updated context with dependency {dependency} = {value}")
+                # Check if this is an array dependency from expansion config
+                is_array_dependency = (self.task_info.expansion_config and 
+                                     dependency in self.task_info.expansion_config['array_mapping'].values())                
+                # Update the context value
+                if is_array_dependency:
+                    if dependency in self.context_info.context and isinstance(self.context_info.context[dependency], list):
+                        self.context_info.context[dependency].append(value)
+                        self._task_logger.debug(f"Updated context with array dependency {dependency} = {value}")
+                else:
+                    self.context_info.context.update({dependency: value})
+                        
+            self._task_logger.info(f"""
+            Dependency Updated:
+            - Task: {self.task_info.name}
+            - Dependency: {dependency}
+            - Status: {'Received' if value is not None else 'Missing'}
+            - Value Type: {type(value).__name__ if value is not None else 'None'}
+            """)
+            
+            for dep in self.task_info.dependencies:
+                #Check Redis for value
+                redis_value = await self._redis.client.get(f"session:{self.session_id}:{dep}")
+                if redis_value:
+                    if dep not in self.context_info.context:
+                        self.context_info.context.update({dep: redis_value})
+                    else:
+                        self.context_info.context[dep] = redis_value
                 
             # Check if all dependencies are met and ordering allows execution
             all_deps_met = all(dep in self.context_info.context for dep in self.task_info.dependencies)
@@ -1073,15 +1136,56 @@ class TaskProcessor(BaseModel):
             if all_deps_met and not await self._check_if_task_running(self.task_info.name):
                 should_execute = await self._should_execute_ordered_task(order)
                 if should_execute:
+                    self._task_logger.info(f"All dependencies met - Starting task execution")
                     asyncio.create_task(self.execute_task())
                 else:
-                    self._logger.info(f"Task {self.task_info.name} waiting for correct execution order (order={order})")
+                    self._task_logger.info(f"Task waiting for correct execution order (order={order})")
             else:
-                pass
+                self._task_logger.info(f"Task dependencies not met - Waiting for dependencies")
+            
+            unfulfilled_deps, missing_deps = await self._validate_dependencies()
+            
+            if unfulfilled_deps:
+                self._task_logger.info(f"""
+                Unfulfilled Dependencies:
+                - {len(unfulfilled_deps)}/{len(self.task_info.dependencies)}
+                - ({len(unfulfilled_deps)}) {unfulfilled_deps}
+                """)
+        
+            if missing_deps:
+                self._task_logger.info(f"""
+                Missing Dependencies:
+                - {len(missing_deps)}/{len(self.task_info.dependencies)}
+                - ({len(missing_deps)}) {missing_deps}
+                """)
+                raise DependencyError(f"Missing dependencies: {missing_deps}")
+            
+            # If this is an expanded task, validate results collection
+            if self.task_info.expansion_config:
+                is_complete = await self._validate_expansion_results(
+                    f"session:{self.session_id}:task_results:{dependency}"
+                )
+                
+                if is_complete:
+                    # All results collected, proceed with task execution
+                    quick_log.info(f"All expansion results collected for {self.task_info.name}")
+                    asyncio.create_task(self.execute_task())
+                else:
+                    quick_log.info(f"Still waiting for expansion results for {self.task_info.name}")
                     
+            else:
+                # Regular dependency handling continues...
+                has_all_dependencies = all(
+                    dep in self.context_info.context 
+                    for dep in self.task_info.dependencies
+                )
+                
+                if has_all_dependencies:
+                    asyncio.create_task(self.execute_task())
+                
         except Exception as e:
-            self._logger.error(f"Error handling dependency update: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error handling dependency update: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
             
     async def _handle_error_recovery(self, data: Dict[str, Any]):
         """Handle error recovery for failed tasks"""
@@ -1089,7 +1193,7 @@ class TaskProcessor(BaseModel):
             task_name = data.get('task_name')
             error = data.get('error')
             
-            self._logger.info(f"""
+            self._task_logger.info(f"""
             Attempting error recovery for task:
             - Task: {task_name}
             - Error: {error}
@@ -1097,15 +1201,15 @@ class TaskProcessor(BaseModel):
             """)
             
             if not await self._should_retry_task(task_name):
-                self._logger.warning(f"Task {task_name} has exceeded retry limits")
+                self._task_logger.warning(f"Task {task_name} has exceeded retry limits")
                 await self._handle_final_failure(task_name, error)
                 return
                 
             await self._retry_task(task_name)
             
         except Exception as e:
-            self._logger.error(f"Error during error recovery: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error during error recovery: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
             await self._event_handler.handle_event('error', {
                 'error': str(e),
                 'context': 'error_recovery',
@@ -1131,7 +1235,7 @@ class TaskProcessor(BaseModel):
             return True
             
         except Exception as e:
-            self._logger.error(f"Error checking retry status: {str(e)}")
+            self._task_logger.error(f"Error checking retry status: {str(e)}")
             return False
 
     async def _retry_task(self, task_name: str):
@@ -1140,7 +1244,7 @@ class TaskProcessor(BaseModel):
             current_attempt = self._task_attempts.get(task_name, 1)
             delay = self._retry_delays[min(current_attempt - 1, len(self._retry_delays) - 1)]
             
-            self._logger.info(f"""
+            self._task_logger.info(f"""
             Scheduling task retry:
             - Task: {task_name}
             - Attempt: {current_attempt}
@@ -1168,8 +1272,8 @@ class TaskProcessor(BaseModel):
                 raise ValueError(f"Could not retrieve task info for {task_name}")
                 
         except Exception as e:
-            self._logger.error(f"Error retrying task: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error retrying task: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
             await self._handle_final_failure(task_name, str(e))
 
     async def _get_remaining_tasks(self) -> int:
@@ -1179,7 +1283,7 @@ class TaskProcessor(BaseModel):
             failed = len(self.tasks_failed)
             return self.total_tasks - (completed + failed)
         except Exception as e:
-            self._logger.error(f"Error getting remaining tasks: {str(e)}")
+            self._task_logger.error(f"Error getting remaining tasks: {str(e)}")
             return 0
 
     async def _should_execute_ordered_task(self, order: int) -> bool:
@@ -1206,29 +1310,30 @@ class TaskProcessor(BaseModel):
             running_tasks = await self._redis.client.smembers(self._redis_running_tasks_key)
             return task_name.encode() in running_tasks
         except Exception as e:
-            self._logger.error(f"Error checking running task status: {str(e)}")
+            self._task_logger.error(f"Error checking running task status: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
             return False
 
     async def _add_running_task(self, task_name: str):
         """Add a task to the running tasks set in Redis"""
         try:
             await self._redis.client.sadd(self._redis_running_tasks_key, task_name)
-            self._logger.debug(f"Added task {task_name} to running tasks in Redis")
+            self._task_logger.debug(f"Added task {task_name} to running tasks in Redis")
         except Exception as e:
-            self._logger.error(f"Error adding running task to Redis: {str(e)}")
+            self._task_logger.error(f"Error adding running task to Redis: {str(e)}")
 
     async def _remove_running_task(self, task_name: str):
         """Remove a task from the running tasks set in Redis"""
         try:
             await self._redis.client.srem(self._redis_running_tasks_key, task_name)
-            self._logger.debug(f"Removed task {task_name} from running tasks in Redis")
+            self._task_logger.debug(f"Removed task {task_name} from running tasks in Redis")
         except Exception as e:
-            self._logger.error(f"Error removing running task from Redis: {str(e)}")
+            self._task_logger.error(f"Error removing running task from Redis: {str(e)}")
 
     async def _handle_final_failure(self, task_name: str, error: str):
         """Handle final failure of a task after retries are exhausted"""
         try:
-            self._logger.error(f"""
+            self._task_logger.error(f"""
             Final failure for task:
             - Task: {task_name}
             - Error: {error}
@@ -1251,5 +1356,102 @@ class TaskProcessor(BaseModel):
             await self.cleanup_task_resources(task_name)
             
         except Exception as e:
-            self._logger.error(f"Error handling final failure: {str(e)}")
-            self._logger.error(traceback.format_exc())
+            self._task_logger.error(f"Error handling final failure: {str(e)}")
+            self._task_logger.error(traceback.format_exc())
+    
+    async def _validate_expansion_results(self, result_key: str) -> bool:
+        """
+        Validates that all expected results from task expansion have been collected.
+        
+        Args:
+            task_key: The key of the parent task
+            array_mapping: Dictionary mapping array keys to result keys
+        
+        Returns:
+            bool: True if all results are collected, False otherwise
+        """
+        logger = configure_logger('TaskProcessor')
+        
+        try:
+            results_key = f"session:{self.session_id}:task_results:{result_key}"
+            expansion_results = await self._redis.client.hgetall(results_key)
+            
+            if result_key in self.context_info.context:
+                if len(self.context_info.context[result_key]) == len(expansion_results):
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error validating expansion results: {str(e)}")
+            logger.error(traceback.format_exc())
+            return False
+
+    async def _validate_dependencies(self) -> Tuple[List[str], List[str]]:
+        """
+        Validate that all dependencies exist in the session's result keys.
+        """
+        try:
+            # Get all registered result keys for the session using hgetall
+            session_result_keys = await self._redis.client.hgetall(f"session:{self.session_id}:result_keys")
+            
+            # Parse result keys, handling both JSON and non-JSON values
+            parsed_result_keys = {}
+            for key, value in session_result_keys.items():
+                key = key.decode()
+                value = value.decode()
+                try:
+                    parsed_value = json.loads(value)
+                except json.JSONDecodeError:
+                    # Handle legacy format where value is just the task name
+                    parsed_value = {"task_name": value}
+                parsed_result_keys[key] = parsed_value
+            
+            unfulfilled_deps = []
+            missing_deps = []
+            
+            for dep in self.task_info.dependencies:
+                if dep not in self.context_info.context:
+                    if dep not in parsed_result_keys.keys():
+                        missing_deps.append(dep)
+                    else:
+                        unfulfilled_deps.append(dep)
+                        
+            return unfulfilled_deps, missing_deps
+        except Exception as e:
+            self._task_logger.error(f"Error validating dependencies: {str(e)}")
+            raise
+
+    async def _initialize_task(self):
+        """Initialize task and register its result keys"""
+        try:
+            # Register result keys for the session
+            for result_key in self.task_info.result_keys:
+                mapping_data = {
+                    "task_name": self.task_info.name,
+                    "task_key": self.task_info.key,
+                    "registered_at": datetime.utcnow().isoformat()
+                }
+                
+                # Use hset to store result key mappings
+                await self._redis.client.hset(
+                    f"session:{self.session_id}:result_keys",
+                    result_key,
+                    json.dumps(mapping_data)
+                )
+                self._task_logger.debug(f"Registered result key: {result_key} with mapping: {mapping_data}")
+            
+            # Log registered keys
+            registered_keys = await self._redis.client.hgetall(f"session:{self.session_id}:result_keys")
+            registered_keys = {key.decode(): json.loads(value.decode()) for key, value in registered_keys.items()}
+            
+            self._task_logger.info(f"""
+            Task Initialization:
+            - Task: {self.task_info.name}
+            - Registered Result Keys: {list(registered_keys.keys())}
+            - Result Key Mappings: {registered_keys}
+            """)
+            
+        except Exception as e:
+            self._task_logger.error(f"Error initializing task: {str(e)}")
+            raise
