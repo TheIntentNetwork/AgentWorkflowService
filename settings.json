@@ -10205,7 +10205,7 @@
         "id": "asst_pn2DuMkLsrxWLFQqWdg08ebf",
         "created_at": 1733182944,
         "description": null,
-        "instructions": "Write the final story using the research and analysis.\n\nWrite the final story using the research and analysis.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Write Story', 'key': 'task_execute:765b5ed6-51b5-4a05-84dc-8bb12fa94723:Write Story', 'dependencies': ['story_research'], 'optional_dependencies': [], 'result_keys': ['story'], 'agent_class': 'StoryWriter', 'tools': ['SaveToStory'], 'message_template': '\\n        Review the VA Claims Blogs Guide.pdf file to understand the structure and format of the story requirements for inserting into our Strapi content api.\\n\\n        Write a compelling story incorporating:\\n        - Research findings\\n        - Analysis insights \\n        - Clear narrative structure\\n        \\n        Output the final story as a markdown file.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Research: b'[]' Story: {\"paragraphs\": [\"In the year 2025, the world stood at a crossroads. The rapid advancements in technology had transformed every aspect of human life, from the way we communicate to how we work and even how we perceive reality. Amidst this whirlwind of change, a small town named Eldridge became a microcosm of the global shift, embodying both the promise and the peril of this new era.\\n\\nEldridge, once a sleepy town known for its lush landscapes and tight-knit community, had become a hub of innovation. The local government, in partnership with tech giants, had implemented a series of smart city initiatives that promised to revolutionize urban living. Streets were lined with autonomous vehicles, drones buzzed overhead delivering packages, and public spaces were equipped with interactive digital displays providing real-time information.\\n\\nHowever, as the town embraced these technological advancements, it also faced significant challenges. The digital divide became more pronounced, with older residents struggling to adapt to the new systems. Privacy concerns arose as data collection became ubiquitous, and the once-strong community bonds began to fray as face-to-face interactions dwindled.\\n\\nAmidst these challenges, a group of residents banded together to form the Eldridge Community Alliance. Their mission was to ensure that the town's transformation remained inclusive and that the benefits of technology were accessible to all. They organized workshops to educate residents on digital literacy, advocated for policies that protected personal data, and created spaces for community gatherings to foster human connections.\\n\\nThrough their efforts, Eldridge became a model for other towns navigating the complexities of technological integration. The story of Eldridge in 2025 serves as a reminder that while technology can drive progress, it is the human spirit of collaboration and inclusivity that truly shapes the future.\"], \"last_updated\": \"2024-12-05T14:03:56.390703\", \"metadata\": {\"title\": \"Eldridge 2025: A Tale of Transformation and Community\", \"slug\": \"eldridge-2025-transformation-community\", \"createAt\": \"2023-10-17\", \"description\": \"Explore the journey of Eldridge, a town that became a beacon of technological innovation and community spirit in 2025.\", \"metaTitle\": \"Eldridge 2025: Transformation and Community\", \"metaDescription\": \"Discover how Eldridge balanced technological advancements with community values in 2025.\", \"featuredImage\": \"https://example.com/eldridge-2025.jpg\", \"sharedImage\": {\"alt\": \"Eldridge in 2025\", \"sharedMedia\": \"https://example.com/eldridge-2025-share.jpg\"}, \"blogBanner\": [{\"orientation\": \"horizontal\", \"Heading\": \"Eldridge 2025: A New Era\", \"text\": \"Join us as we explore Eldridge's journey through technological transformation and community resilience.\", \"backgroundColor\": \"#FFFFFF\", \"backgroundImage\": \"https://example.com/eldridge-banner.jpg\", \"label\": \"Eldridge 2025\", \"buttonText\": \"Read More\", \"buttonLink\": \"https://example.com/eldridge-2025\"}], \"optIn\": [{\"buttonText\": \"Subscribe\", \"title\": \"Stay Updated\", \"description\": \"Get the latest stories and updates from Eldridge.\", \"label\": \"Newsletter\", \"referral\": \"eldridge-newsletter\"}], \"callToAction\": [{\"buttonText\": \"Explore Eldridge\", \"buttonLink\": \"https://example.com/explore-eldridge\", \"title\": \"Discover More\", \"label\": \"Explore\"}]}}",
+        "instructions": "Write the final story using the research and analysis.\n\nWrite the final story using the research and analysis.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Write Story', 'key': 'task_execute:85c56ae9-0ffb-4d3c-881e-ffd159a51441:Write Story', 'dependencies': ['story_research'], 'optional_dependencies': [], 'result_keys': ['story'], 'agent_class': 'StoryWriter', 'tools': ['SaveToStory'], 'message_template': '\\n        Review the VA Claims Blogs Guide.pdf file to understand the structure and format of the story requirements for inserting into our Strapi content api.\\n\\n        Write a compelling story incorporating:\\n        - Research findings\\n        - Analysis insights \\n        - Clear narrative structure\\n        \\n        Output the final story as a markdown file.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Research: b'[]' Story: {\"paragraphs\": [\"### The Year 2025: A Glimpse into the Future\\n\\nAs we stand on the brink of 2025, the world is poised at the edge of unprecedented technological and societal transformations. The rapid advancements in artificial intelligence, renewable energy, and biotechnology are not just shaping industries but are redefining the very fabric of our daily lives. This story explores the key developments that are expected to define the year 2025, drawing insights from recent research and analysis.\\n\\n### Technological Advancements\\n\\nIn 2025, artificial intelligence is expected to reach new heights, with AI systems becoming more integrated into everyday activities. From autonomous vehicles navigating city streets to AI-driven healthcare systems diagnosing and treating patients with precision, the influence of AI is set to be profound. Research indicates that AI will not only enhance efficiency but also create ethical and regulatory challenges that societies must address.\\n\\n### Renewable Energy Revolution\\n\\nThe push towards sustainable energy sources is gaining momentum, with 2025 being a pivotal year for renewable energy. Solar and wind power are projected to become the dominant sources of energy, significantly reducing reliance on fossil fuels. Analysis suggests that this shift will not only mitigate climate change impacts but also drive economic growth by creating new jobs in the green energy sector.\\n\\n### Biotechnology Breakthroughs\\n\\nBiotechnology is another field where 2025 promises groundbreaking advancements. Gene editing technologies, such as CRISPR, are expected to revolutionize medicine by offering cures for genetic disorders and enhancing agricultural productivity. However, these advancements also raise ethical questions about the extent of human intervention in natural processes.\\n\\n### Societal Implications\\n\\nThe societal implications of these advancements are vast. As technology becomes more integrated into our lives, issues of privacy, security, and ethical governance will become increasingly important. Societies will need to balance innovation with regulation to ensure that technological progress benefits all of humanity.\\n\\n### Conclusion\\n\\nThe year 2025 is set to be a landmark year, characterized by rapid technological advancements and significant societal changes. As we navigate these changes, it is crucial to remain informed and engaged with the developments shaping our future. By understanding the research and analysis behind these trends, we can better prepare for the challenges and opportunities that lie ahead.\"], \"last_updated\": \"2024-12-05T21:51:36.585105\", \"metadata\": {\"title\": \"The Year 2025: A Glimpse into the Future\", \"slug\": \"the-year-2025-glimpse-into-the-future\", \"createAt\": \"2023-11-27\", \"description\": \"Explore the key technological and societal transformations expected in 2025, including advancements in AI, renewable energy, and biotechnology.\", \"metaTitle\": \"2025: Key Technological and Societal Transformations\", \"metaDescription\": \"Discover the major advancements in AI, renewable energy, and biotechnology that will define 2025, along with their societal implications.\", \"featuredImage\": \"https://example.com/featured-image-2025.jpg\", \"sharedImage\": {\"alt\": \"Futuristic cityscape representing 2025\", \"sharedMedia\": \"https://example.com/shared-image-2025.jpg\"}, \"blogBanner\": [{\"orientation\": \"horizontal\", \"Heading\": \"The Year 2025: A Glimpse into the Future\", \"text\": \"Discover the technological and societal changes expected in 2025.\", \"backgroundColor\": \"#FFFFFF\", \"backgroundImage\": \"https://example.com/banner-image-2025.jpg\", \"label\": \"2025 Insights\", \"buttonText\": \"Read More\", \"buttonLink\": \"https://example.com/2025-glimpse\"}], \"optIn\": [{\"buttonText\": \"Subscribe Now\", \"title\": \"Stay Updated on Future Trends\", \"description\": \"Join our newsletter to receive the latest insights on technological and societal changes.\", \"label\": \"Newsletter\", \"referral\": \"https://example.com/newsletter-signup\"}], \"callToAction\": [{\"buttonText\": \"Explore More\", \"buttonLink\": \"https://example.com/explore-2025\", \"title\": \"Dive Deeper into 2025\", \"label\": \"Explore\"}]}}",
         "metadata": {},
         "model": "gpt-4o",
         "name": "StoryWriter",
@@ -10453,7 +10453,7 @@
         "id": "asst_LoLQUz4sPUxFS99peDgRVFrZ",
         "created_at": 1733364081,
         "description": null,
-        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic:\n        ['2025']\n        \n        Important:\n        1. Use ReadPageText to validate each URL before saving it\n        2. Only save URLs that are accessible and return valid content\n        3. Skip any URLs that return 404 or other errors\n        4. Save validated URLs and metadata using SaveStoryURLs.\n\n\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic:\n        ['2025']\n        \n        Important:\n        1. Use ReadPageText to validate each URL before saving it\n        2. Only save URLs that are accessible and return valid content\n        3. Skip any URLs that return 404 or other errors\n        4. Save validated URLs and metadata using SaveStoryURLs.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Find Story URLs', 'key': 'task_execute:19e74a73-9841-4ef7-91b4-0ccd402b0a9a:Find Story URLs', 'dependencies': ['topics'], 'optional_dependencies': [], 'result_keys': ['story_urls'], 'agent_class': 'ResearchAgent', 'tools': ['ReadPageText', 'SaveStoryURLs'], 'message_template': 'Find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on:\\n        {topics}\\n        \\n        Remember to validate each URL with ReadPageText before saving it.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None}",
+        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic:\n        ['2025']\n        \n        Important:\n        1. Use ReadPageText to validate each URL before saving it\n        2. Only save URLs that are accessible and return valid content\n        3. Skip any URLs that return 404 or other errors\n        4. Save validated URLs and metadata using SaveStoryURLs.\n\n\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic:\n        ['2025']\n        \n        Important:\n        1. Use ReadPageText to validate each URL before saving it\n        2. Only save URLs that are accessible and return valid content\n        3. Skip any URLs that return 404 or other errors\n        4. Save validated URLs and metadata using SaveStoryURLs.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Find Story URLs', 'key': 'task_execute:85c56ae9-0ffb-4d3c-881e-ffd159a51441:Find Story URLs', 'dependencies': ['topics'], 'optional_dependencies': [], 'result_keys': ['story_urls'], 'agent_class': 'ResearchAgent', 'tools': ['ReadPageText', 'SaveStoryURLs'], 'message_template': 'Find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on:\\n        {topics}\\n        \\n        Remember to validate each URL with ReadPageText before saving it.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None}",
         "metadata": {},
         "model": "gpt-4o",
         "name": "ResearchAgent",
@@ -10552,12 +10552,186 @@
         "id": "asst_08GieCNpRqg1YQFfcDdaL85P",
         "created_at": 1733364093,
         "description": null,
-        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this URL:\n        {url}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\n\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this URL:\n        {url}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Process Story Content', 'key': 'task_expanded:task_execute:00294f12-4899-4095-a190-1eb7d37cb548:Process Story Content:0', 'dependencies': ['story_urls'], 'optional_dependencies': [], 'result_keys': ['story_research'], 'agent_class': 'SpecializedBrowsingAgent', 'tools': ['ReadPageText', 'SaveToStoryResearch'], 'message_template': 'Process the content from this URL:\\n        {url}\\n        \\n        1. Use ReadPageText to read and save the content\\n        2. Use SaveToStoryResearch to process the saved content', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Urls: b'[{\"url\": \"https://vaclaimsinsider.com/2025-va-disability-pay-rates-chart/\", \"metadata\": {}}, {\"url\": \"https://vaclaimsinsider.com/top-25-best-va-disability-claims-and-their-ratings-2025-edition/\", \"metadata\": {}}, {\"url\": \"https://vaclaimsinsider.com/the-25-easiest-va-claims-to-win-right-now-2025-update/\", \"metadata\": {}}, {\"url\": \"https://vaclaimsinsider.com/big-va-rating-changes-coming-in-2025-what-veterans-really-need-to-know/\", \"metadata\": {}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-special-monthly-compensation-smc-rates-pay-chart/\", \"metadata\": {}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-rates-pay-chart-confirmed-2-5-cola-increase/\", \"metadata\": {}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-vocational-rehabilitation-pay-chart/\", \"metadata\": {}}, {\"url\": \"https://vaclaimsinsider.com/va-disability-rates-2025-confirmed-2-5-cola-increase/\", \"metadata\": {}}, {\"url\": \"https://vaclaimsinsider.com/2025-military-retiree-pay-chart/\", \"metadata\": {}}, {\"url\": \"https://vaclaimsinsider.com/will-there-be-a-military-retiree-pay-raise-2025/\", \"metadata\": {}}]'",
+        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this URL:\n        {url}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\n\n        Please read and understand the following manual for your capabilities:\n\n        Error reading manual file\n\n        Follow the instructions and best practices outlined in the manual for all tasks.\n        \n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this URL:\n        {url}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Process Story Content', 'key': 'task_expanded:task_execute:85c56ae9-0ffb-4d3c-881e-ffd159a51441:Process Story Content:0', 'dependencies': ['story_urls'], 'optional_dependencies': [], 'result_keys': ['story_research'], 'agent_class': 'SpecializedBrowsingAgent', 'tools': ['ReadPageText', 'SaveToStoryResearch'], 'message_template': 'Process the content from this URL:\\n        {url}\\n        \\n        1. Use ReadPageText to read and save the content\\n        2. Use SaveToStoryResearch to process the saved content', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Urls: b'[{\"url\": \"https://vaclaimsinsider.com/2025-va-disability-pay-rates-chart/\", \"metadata\": {\"topic\": \"2025\"}}, {\"url\": \"https://vaclaimsinsider.com/va-disability-calculator/\", \"metadata\": {\"topic\": \"2025\"}}, {\"url\": \"https://vaclaimsinsider.com/va-disability-rates-2025/\", \"metadata\": {\"topic\": \"2025\"}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-compensation-rates/\", \"metadata\": {\"topic\": \"2025\"}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-pay-chart/\", \"metadata\": {\"topic\": \"2025\"}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-compensation/\", \"metadata\": {\"topic\": \"2025\"}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-increase/\", \"metadata\": {\"topic\": \"2025\"}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-benefits/\", \"metadata\": {\"topic\": \"2025\"}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-rating/\", \"metadata\": {\"topic\": \"2025\"}}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-changes/\", \"metadata\": {\"topic\": \"2025\"}}]'",
         "metadata": {},
         "model": "gpt-4o",
         "name": "SpecializedBrowsingAgent",
         "object": "assistant",
         "tools": [
+            {
+                "function": {
+                    "name": "Scroll",
+                    "description": "This tool allows you to scroll the current web page up or down by 1 screen height.",
+                    "parameters": {
+                        "properties": {
+                            "direction": {
+                                "description": "Direction to scroll.",
+                                "enum": [
+                                    "up",
+                                    "down"
+                                ],
+                                "title": "Direction",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "direction"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "function": {
+                    "name": "SendKeys",
+                    "description": "This tool sends keys into input fields on the current webpage based on the description of that element and what needs to be typed. It then clicks \"Enter\" on the last element to submit the form. You do not need to tell it to press \"Enter\"; it will do that automatically.",
+                    "parameters": {
+                        "properties": {
+                            "description": {
+                                "description": "Description of the inputs to send to the web page, clearly stated in natural language.",
+                                "examples": [
+                                    "Type 'hello' into the 'Search' input field.",
+                                    "Type johndoe@gmail.com into the 'Email' input field, and type 'password123' into the 'Password' input field.",
+                                    "Select the second option in the 'Country' dropdown."
+                                ],
+                                "title": "Description",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "description"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "function": {
+                    "name": "ClickElement",
+                    "description": "This tool clicks on an element on the current web page based on element or task description. Do not use this tool for input fields or dropdowns.",
+                    "parameters": {
+                        "properties": {
+                            "description": {
+                                "description": "Description of the element to click on in natural language.",
+                                "example": "Click on the 'Sign Up' button.",
+                                "title": "Description",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "description"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "function": {
+                    "name": "ReadURL",
+                    "description": "This tool reads a single URL and opens it in your current browser window. For each new source, go to a direct URL\nthat you think might contain the answer to the user's question or perform a google search like\n'https://google.com/search?q=search' if applicable. Otherwise, don't try to guess the direct url, use ClickElement tool\nto click on the link that you think might contain the desired information on the current web page.\nRemember, this tool only supports opening 1 URL at a time. Previous URL will be closed when you open a new one.\n    ",
+                    "parameters": {
+                        "properties": {
+                            "url": {
+                                "description": "URL of the webpage.",
+                                "examples": [
+                                    "https://google.com/search?q=search"
+                                ],
+                                "title": "Url",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "url"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "function": {
+                    "name": "GoBack",
+                    "description": "This tool allows you to go back 1 page in the browser history. Use it in case of a mistake or if a page shows you unexpected content.",
+                    "parameters": {
+                        "properties": {},
+                        "type": "object",
+                        "required": []
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "function": {
+                    "name": "SelectDropdown",
+                    "description": "This tool selects an option in a dropdown on the current web page based on the description of that element and which option to select.",
+                    "parameters": {
+                        "properties": {
+                            "description": {
+                                "description": "Description of which option to select and for which dropdown on the page, clearly stated in natural langauge.",
+                                "examples": [
+                                    "Select Germany option in the 'Country' dropdown."
+                                ],
+                                "title": "Description",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "description"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "function": {
+                    "name": "SolveCaptcha",
+                    "description": "This tool asks a human to solve captcha on the current webpage. Make sure that captcha is visible before running it.",
+                    "parameters": {
+                        "properties": {},
+                        "type": "object",
+                        "required": []
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "function": {
+                    "name": "ReadPDF",
+                    "description": "This tool reads the contents of a PDF file using the Browserless API.\nThe content can optionally be stored in the caller agent's context when save=True.",
+                    "parameters": {
+                        "properties": {
+                            "url": {
+                                "description": "The URL of the PDF file to read.",
+                                "title": "Url",
+                                "type": "string"
+                            },
+                            "save": {
+                                "default": false,
+                                "description": "Whether to save the content with a UUID reference.",
+                                "title": "Save",
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "url"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
             {
                 "function": {
                     "name": "ReadPageText",
@@ -10584,6 +10758,69 @@
                     "strict": false
                 },
                 "type": "function"
+            },
+            {
+                "function": {
+                    "name": "SaveStoryURLs",
+                    "description": "Correctly extracted `SaveStoryURLs` with all the required parameters with correct types",
+                    "parameters": {
+                        "$defs": {
+                            "StoryURL": {
+                                "properties": {
+                                    "url": {
+                                        "title": "Url",
+                                        "type": "string"
+                                    },
+                                    "metadata": {
+                                        "additionalProperties": {
+                                            "type": "string"
+                                        },
+                                        "title": "Metadata",
+                                        "type": "object"
+                                    }
+                                },
+                                "required": [
+                                    "url",
+                                    "metadata"
+                                ],
+                                "title": "StoryURL",
+                                "type": "object"
+                            }
+                        },
+                        "properties": {
+                            "user_id": {
+                                "description": "The id of the user.",
+                                "title": "User Id",
+                                "type": "string"
+                            },
+                            "story_urls": {
+                                "description": "The list of story URLs and their metadata.",
+                                "items": {
+                                    "$ref": "#/$defs/StoryURL"
+                                },
+                                "title": "Story Urls",
+                                "type": "array"
+                            }
+                        },
+                        "required": [
+                            "story_urls",
+                            "user_id"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "type": "file_search",
+                "file_search": {
+                    "max_num_results": null,
+                    "ranking_options": {
+                        "ranker": "default_2024_08_21",
+                        "score_threshold": 0.0
+                    }
+                }
             },
             {
                 "function": {
@@ -10749,7 +10986,9 @@
         "temperature": 0.3,
         "tool_resources": {
             "code_interpreter": null,
-            "file_search": null
+            "file_search": {
+                "vector_store_ids": []
+            }
         },
         "top_p": 1.0
     }

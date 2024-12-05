@@ -657,20 +657,17 @@ class Agent:
 
             raise Exception("Tool must not be initialized.")
         if issubclass(tool, FileSearch):
-            # check that tools name is not already in tools
-            for t in self.tools:
-                if issubclass(t, FileSearch):
-                    return
+            if FileSearch in self.tools:
+                return
+            
             self.tools.append(tool)
         elif issubclass(tool, CodeInterpreter):
-            for t in self.tools:
-                if issubclass(t, CodeInterpreter):
-                    return
+            if CodeInterpreter in self.tools:
+                return
             self.tools.append(tool)
         elif issubclass(tool, Retrieval):
-            for t in self.tools:
-                if issubclass(t, Retrieval):
-                    return
+            if Retrieval in self.tools:
+                return
             self.tools.append(tool)
         elif issubclass(tool, BaseTool):
             for t in self.tools:

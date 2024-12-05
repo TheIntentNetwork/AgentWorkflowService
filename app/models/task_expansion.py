@@ -13,11 +13,19 @@ class TaskExpansion:
     """
 
     @staticmethod
-    def _expand_array_task(task_data: Dict[str, Any], expansion_config: Dict[str, Any], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _expand_array_task(task_data: Dict[str, Any], expansion_config: Dict[str, Any], context: str) -> List[Dict[str, Any]]:
         """
         Expands a task based on array data in the context.
         """
         try:
+            # Deserialize context if it's a string
+            if isinstance(context, str):
+                try:
+                    context = json.loads(context)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse context JSON: {str(e)}")
+                    return [task_data]  # Return the original task data if context parsing fails
+
             # Safely get context keys
             context_keys = list(context.keys()) if isinstance(context, dict) else "Context is not a dictionary"
             
@@ -39,9 +47,12 @@ class TaskExpansion:
                 logger.error("No identifiers found in expansion config!")
                 raise ValueError("Expansion config must contain identifiers")
 
+            # Initialize array_deps
+            array_deps = []
+
             # Find array dependencies in context
             array_deps = TaskExpansion.find_array_dependencies(task_data, context)
-            
+
             # If no array dependencies found, attempt to parse context values
             if not array_deps:
                 for key, value in context.items():
@@ -193,7 +204,7 @@ class TaskExpansion:
             return str(data)
 
     @staticmethod
-    def find_array_dependencies(task_data: Dict[str, Any], context: Dict[str, Any]) -> List[Tuple[str, List[Any]]]:
+    def find_array_dependencies(task_data: Dict[str, Any], context: Dict[str, Any], expansion_config: Dict[str, Any]) -> List[Tuple[str, List[Any]]]:
         """
         Find array dependencies in the context that match task dependencies.
         
@@ -206,7 +217,6 @@ class TaskExpansion:
         """
         array_deps = []
         dependencies = task_data.get('dependencies', [])
-        expansion_config = task_data.get('expansion_config', {})
         array_mapping = expansion_config.get('array_mapping', {})
 
         if dependencies:

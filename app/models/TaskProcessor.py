@@ -287,8 +287,7 @@ class TaskProcessor(BaseModel):
                         'result_keys': self.task_info.result_keys,
                         'message_template': self.task_info.message_template,
                         'shared_instructions': self.task_info.shared_instructions,
-                        'optional_dependencies': self.task_info.optional_dependencies,
-                        'expansion_config': self.task_info.expansion_config
+                        'optional_dependencies': self.task_info.optional_dependencies
                     },
                     expansion_config=self.task_info.expansion_config,
                     context=serialized_context
