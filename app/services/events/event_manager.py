@@ -8,11 +8,8 @@ from kafka.consumer.fetcher import ConsumerRecord
 from app.interfaces import IService
 from app.logging_config import configure_logger
 from dependency_injector.wiring import inject, Provide
-from app.services.cache.redis import RedisService
-from app.services.queue.kafka import KafkaService
 from app.services.worker.worker import Worker
 from contextlib import asynccontextmanager
-from app.utilities.resource_tracker import ResourceTracker
 
 class EventManager(IService):
     @inject
@@ -20,10 +17,10 @@ class EventManager(IService):
         self,
         name: str = "event_manager",
         config: dict = None,
-        redis: 'RedisService' = Provide['redis'],
-        kafka: 'KafkaService' = Provide['kafka'],
+        redis = Provide['redis'],
+        kafka = Provide['kafka'],
         worker: Worker = Provide['worker'],
-        resource_tracker: 'ResourceTracker' = Provide['resource_tracker']
+        resource_tracker = Provide['resource_tracker']
     ):
         super().__init__(name=name, config=config)
         self.redis = redis
@@ -352,21 +349,13 @@ class EventManager(IService):
         return True
 
     async def __event_listener(self, message: Any):
-        from app.models.Node import Node
-        from app.models.Task import Task
-        from app.models.AgencyTask import AgencyTask
-        from app.models.CleanupTask import CleanupTask
         from app.models.AgencyTaskGroup import AgencyTaskGroup
         from app.models.TaskProcessor import TaskProcessor
         from app.models.TaskGroup import TaskGroup
 
         event_mapping = {
-            'agency': AgencyTask,
-            'task': Task,
             'task_execute': TaskProcessor,
             'task_expanded': TaskProcessor,
-            'node': Node,
-            'cleanup': CleanupTask,
             'task_group': AgencyTaskGroup,
             'task_group_execute': TaskGroup,
         }

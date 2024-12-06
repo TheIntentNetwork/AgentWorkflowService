@@ -6,16 +6,11 @@ import uuid
 from pydantic import BaseModel, Field
 from app.constants import *
 from app.models.TaskProcessor import TaskProcessor
-from app.models.TaskInfo import TaskInfo
 from app.models.TaskGroup import TaskGroup
 from app.models.ContextInfo import ContextInfo
 from app.logging_config import configure_logger
 import asyncio
 import threading
-
-from app.services.cache.redis import RedisService
-from app.services.queue.kafka import KafkaService
-from app.utilities.errors import DependencyError
 
 logger = configure_logger('AgencyTaskGroup')
 

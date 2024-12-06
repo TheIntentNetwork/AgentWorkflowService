@@ -17,13 +17,6 @@ class LLMInterface(ABC):
 
         self.logger = configure_logger(__name__)
 
-    def save_context(self, session_id: str):
-        from app.services.discovery.service_registry import ServiceRegistry
-        session_manager = ServiceRegistry.instance("session_manager")
-        session_manager.save_context(session_id, self.messages)
-        session_manager.save_context(session_id, self.function_output)
-        pass
-
     @abstractmethod
     def initialize(self, api_key: str, **kwargs):
         pass

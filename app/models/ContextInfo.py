@@ -11,38 +11,17 @@ from app.utilities.errors import ContextError, VectorDatabaseError
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-async def setup_environment():
-    from containers import get_container
-    container = get_container()
     
-    # Initialize and register UserContextManager
-    user_context_manager = container.user_context_manager()
-    await container.context_manager().register('user_context', user_context_manager)
-    
-    # Initialize and register other necessary services
-    # For example:
-    # redis_service = container.redis()
-    # await container.context_manager().register('redis', redis_service)
-    
-    # context_manager = container.context_manager()
-    # await container.context_manager().register('context_manager', context_manager)
-    
-    # Add any other services that need to be initialized and registered
 
 class ContextInfo(BaseContextInfo):
     
     _redis_service: Any = PrivateAttr()
-    _context_manager: Any = PrivateAttr()
-    _user_context_manager: Any = PrivateAttr()
 
     def __init__(self, **data):
         from containers import get_container
         super().__init__(**data)
         container = get_container()
         self._redis_service = container.redis()
-        self._context_manager = container.context_manager()
-        self._user_context_manager = container.user_context_manager()
 
     def validate_context_structure(self, context: Dict[str, Any]) -> None:
         """Validate the structure of a context dictionary"""
@@ -258,10 +237,8 @@ class ContextInfo(BaseContextInfo):
     async def seed_data(self):
         from app.services.cache.redis import RedisService
         redis_service: RedisService = self._redis_service
-        user_context_manager = self._user_context_manager
         
         logger.debug(f"Redis service: {redis_service}")
-        logger.debug(f"User context manager: {user_context_manager}")
         
         try:
             # Create index first
@@ -288,9 +265,7 @@ class ContextInfo(BaseContextInfo):
                     logger.debug(f"User ID for {prefix}: {user_id}")
                     
                     if user_id:
-                        user_context = await user_context_manager.load_user_context(data)
-                        logger.debug(f"Loaded user context for {prefix}: {user_context}")
-                        context_info['user_context'] = user_context
+                        self.context['user_id'] = user_id
 
                     embeddings = redis_service.generate_embeddings(
                         context_info.model_dump() if hasattr(context_info, 'model_dump') else context_info,
@@ -390,7 +365,6 @@ async def test_context_info_methods():
 # Update the main function to call our test function
 async def main():
     try:
-        await setup_environment()
         context_info = ContextInfo()
         await context_info.seed_data()
         await test_context_info_methods()
