@@ -51,7 +51,7 @@ class TaskExpansion:
             array_deps = []
 
             # Find array dependencies in context
-            array_deps = TaskExpansion.find_array_dependencies(task_data, context)
+            array_deps = TaskExpansion.find_array_dependencies(task_data, context, expansion_config)
 
             # If no array dependencies found, attempt to parse context values
             if not array_deps:
@@ -63,7 +63,7 @@ class TaskExpansion:
                             logger.error(f"Failed to parse JSON for context key: {key}")
 
                 # Retry finding array dependencies after parsing
-                array_deps = TaskExpansion.find_array_dependencies(task_data, context)
+                array_deps = TaskExpansion.find_array_dependencies(task_data, context, expansion_config)
 
             logger.info(f"""
             ====== ARRAY DEPENDENCIES DEBUG ======
