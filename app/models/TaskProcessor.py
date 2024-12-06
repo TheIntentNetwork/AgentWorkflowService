@@ -317,7 +317,7 @@ class TaskProcessor(BaseModel):
                 
                 # Send each expanded task to Kafka
                 for i, expanded_task in enumerate(expanded_tasks):
-                    expanded_key = f"task_expanded:{self.task_info.key}:{i}"
+                    expanded_key = f"{self.task_info.key}:{i}"
                     quick_log.info(f"Sending expanded task {expanded_task['name']} to Kafka")
                     expanded_task['session_id'] = self.session_id
                     
@@ -361,6 +361,11 @@ class TaskProcessor(BaseModel):
         Execute a single task (either original or expanded) with proper context management
         """
         try:
+            if task.is_expanded_task:
+                self._task_logger.info(f"Executing expanded task: {task.name}")
+            else:
+                self._task_logger.info(f"Executing single task: {task.name}")
+                
             message = task.message_template
             
             # Then process other context variables
@@ -425,11 +430,20 @@ class TaskProcessor(BaseModel):
                     self.context_info.context[result_key] = []
                     self._task_logger.warning(f"Task result is None for optional key: {result_key}")
                 else:
-                    self._task_logger.error(f"Task result is None for key: {result_key}")
+                    self._task_logger.warning(f"Task result is None for key: {result_key}")
                     agency = Agency(agency_chart=[agent], shared_instructions=task.shared_instructions)
                     await agency.get_completion(
                     f"{task.message_template}\n\n"
                     f"Please try again. Please ensure that all necessary tools are used to generate the required {result_key}."
+                )
+            
+            result = agent.context_info.context.get(result_key, None)
+            if result is None:
+                self._task_logger.error(f"Task result is None for key: {result_key}")
+                raise TaskExecutionError(
+                    message=f"Task result is None for key: {result_key}",
+                    task_name=task.name,
+                    error_type="task_execution"
                 )
         
             if task.validator_prompt and task.validator_tool:
@@ -437,7 +451,6 @@ class TaskProcessor(BaseModel):
                 result = await self.validate_result(result, task, event_handler)
         
             # Store result in outputs and context, using empty list if None
-            result = result if result is not None else []
             outputs[result_key] = result
             
             # For lists, replace instead of extend to avoid duplicates
@@ -460,27 +473,34 @@ class TaskProcessor(BaseModel):
             - Updated keys: {set(self.context_info.context.keys())}
             """)
             
-            # We need to update any context in Redis for all the keys in context_info.context
-            for key in self.task_info.result_keys:
-                if key in self.context_info.context:
-                    if task.expansion_config:
-                        if key in task.expansion_config['array_mapping'].values():
-                            await self._redis.client.lpush(
-                                f"session:{self.session_id}:task_results:array_mapping:{key}",
-                                json.dumps(outputs[key])
-                            )
-                    else:
-                        await self._redis.client.hset(
-                            f"session:{self.session_id}:task_results",
-                            key,
+        # We need to update any context in Redis for all the keys in context_info.context
+        for key in self.task_info.result_keys:
+            if key in self.context_info.context:
+                if task.expansion_config:
+                    if key in task.expansion_config['array_mapping'].values():
+                        await self._redis.client.lpush(
+                            f"session:{self.session_id}:task_results:{key}",
                             json.dumps(outputs[key])
                         )
+                        
+                        if len(outputs[result_key]) == len(task.context_info.context.get(result_key)):
+                            await self._notify_subscribers({
+                                'task_name': self.task_info.name,
+                                'result_key': result_key,
+                                'value': outputs[result_key]
+                            })
+                else:
+                    await self._redis.client.hset(
+                        f"session:{self.session_id}:task_results",
+                        key,
+                        json.dumps(outputs[key])
+                        )
+                    await self._notify_subscribers({
+                        'task_name': self.task_info.name,
+                        'result_key': result_key,
+                        'value': outputs[result_key]
+                    })
             
-            await self._notify_subscribers({
-                'task_name': self.task_info.name,
-                'result_key': result_key,
-                'value': outputs[result_key]
-            })
 
         if not outputs:
             self._task_logger.warning(f"Task {self.task_info.name} completed but returned no results")

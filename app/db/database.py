@@ -49,11 +49,6 @@ class Database:
 
     async def shutdown(self):
         self.logger.info("Shutting down Database service")
-        if self.supabase:
-            # Close Supabase client if it has a close method
-            if hasattr(self.supabase, 'close'):
-                await self.supabase.close()
-            self.supabase = None
         self.logger.info("Database service shut down")
     
     @classmethod

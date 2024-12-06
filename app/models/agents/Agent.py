@@ -80,8 +80,15 @@ class Agent:
 
     @property
     def functions(self):
+        functions = []
         from app.tools.base_tool import BaseTool
-        return [tool for tool in self.tools if issubclass(tool, BaseTool)]
+        try:
+            functions = [tool for tool in self.tools if issubclass(tool, BaseTool)]
+            return functions
+        except Exception as e:
+            logger.error(f"Error getting functions: {e}")
+            logger.error(traceback.format_exc())
+        
     
     @property
     def shared_state(self):
@@ -194,7 +201,7 @@ class Agent:
         self.top_p = top_p
         self.response_format = response_format
         self.tools_folder = tools_folder
-        self.files_folder = files_folder if files_folder else [f"../agents/{self.__class__.__name__}/"]
+        self.files_folder = files_folder if files_folder else [f"../agents/{self.name}/"]
         self.schemas_folder = schemas_folder if schemas_folder else []
         self.api_headers = api_headers if api_headers else {}
         self.api_params = api_params if api_params else {}
@@ -649,7 +656,6 @@ class Agent:
 
     # TODO: fix 2 methods below
     def add_tool(self, tool):
-        from app.tools.ToolFactory import ToolFactory
         from app.tools.base_tool import BaseTool
         from app.tools.oai.FileSearch import FileSearch
         from app.tools.oai import CodeInterpreter, Retrieval

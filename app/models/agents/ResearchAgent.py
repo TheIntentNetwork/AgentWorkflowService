@@ -5,8 +5,9 @@ import sys
 import os
 
 from app.models.agents.Agent import Agent
-from app.tools import SaveStoryURLs, ReadPageText
+from app.tools.ReadPageText import ReadPageText
 from app.logging_config import configure_logger
+from app.tools.SearchTool import SearchTool
 
 logger = configure_logger('ResearchAgent')
 
@@ -24,19 +25,8 @@ class ResearchAgent(Agent):
         
         kwargs.setdefault('tools', [])
         
-        # Read the manual
-        manual_path = os.path.join(os.path.dirname(__file__), 'MANUAL.md')
-        try:
-            with open(manual_path, 'r') as manual_file:
-                manual_content = manual_file.read()
-        except Exception as e:
-            logger.error(f"Error reading manual: {e}")
-            manual_content = "Error reading manual file"
-        
         base_instructions = f"""
-        Please read and understand the following manual for your capabilities:
-
-        {manual_content}
+        Please read and understand the following manual for your capabilities.
 
         Follow the instructions and best practices outlined in the manual for all tasks.
         """
@@ -46,6 +36,5 @@ class ResearchAgent(Agent):
     def set_tools(self):
         """Set the tools available to the ResearchAgent."""
         self.tools.extend([
-            ReadPageText,
-            SaveStoryURLs
+            SearchTool, ReadPageText
         ]) 

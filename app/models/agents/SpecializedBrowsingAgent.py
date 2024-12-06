@@ -30,19 +30,8 @@ class SpecializedBrowsingAgent(Agent):
         
         kwargs.setdefault('tools', [])
         
-        # Read the manual
-        manual_path = os.path.join(os.path.dirname(__file__), 'SpecializedBrowsingAgent', 'MANUAL.md')
-        try:
-            with open(manual_path, 'r') as manual_file:
-                manual_content = manual_file.read()
-        except Exception as e:
-            logger.error(f"Error reading manual: {e}")
-            manual_content = "Error reading manual file"
-        
         base_instructions = f"""
-        Please read and understand the following manual for your capabilities:
-
-        {manual_content}
+        Please read and understand the following manual for your capabilities.
 
         Follow the instructions and best practices outlined in the manual for all tasks.
         """

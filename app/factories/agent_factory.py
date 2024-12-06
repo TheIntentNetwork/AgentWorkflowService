@@ -13,7 +13,7 @@ class AgentFactory:
         logger = configure_logger('AgentFactory')
 
         if agent_data.get('name', None):
-            agents_module = 'app.agents'
+            agents_module = 'app.models.agents'
             module = importlib.import_module(agents_module)
             agent_class = getattr(module, agent_data['name'], None)
             if isinstance(agent_class, type):

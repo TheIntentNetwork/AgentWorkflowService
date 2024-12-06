@@ -85,14 +85,6 @@ from .GetNotes import GetNotes
 from .CompileDocument import CompileDocument
 from .CompileConditionSection import CompileConditionSection
 
-
-
-def __getattr__(name):
-    if name == 'RetrieveOutputs':
-        from .RetrieveOutputs import RetrieveOutputs
-        return RetrieveOutputs
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
 __all__ = [
     # File and Document Processing
     "ReadPageText", "ReadPDF", "FileSearch",

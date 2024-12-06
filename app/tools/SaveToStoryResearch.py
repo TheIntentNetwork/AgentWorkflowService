@@ -33,7 +33,7 @@ class SaveToStoryResearch(BaseTool):
     Can retrieve content using content_id from context and continue processing where it left off.
     """
     research_items: List[StoryResearchItem] = Field(..., description="The research items from example stories")
-    target_id: Optional[str] = Field(None, description="Optional ID of specific story to update")
+    content_id: Optional[str] = Field(None, description="Optional ID of specific story to update")
     chunk_size: int = Field(default=500, description="Size of content chunks to process at once")
     result_keys: ClassVar[List[str]] = ['story_research']
 
@@ -41,11 +41,7 @@ class SaveToStoryResearch(BaseTool):
         logger = configure_logger('SaveToStoryResearch')
         logger.info("Running SaveToStoryResearch tool")
         
-        try:
-            # Initialize story_research in context if it doesn't exist
-            if "story_research" not in self._caller_agent.context_info.context:
-                self._caller_agent.context_info.context["story_research"] = []
-            
+        try:            
             # Initialize temporary storage for processing
             if "temp_story_research" not in self._caller_agent.context_info.context:
                 self._caller_agent.context_info.context["temp_story_research"] = {}
@@ -83,6 +79,9 @@ class SaveToStoryResearch(BaseTool):
                             'processed_chars': processed_chars,
                             'processing_complete': True
                         }
+                        if "story_research" not in self._caller_agent.context_info.context:
+                            self._caller_agent.context_info.context["story_research"] = []
+                            
                         self._caller_agent.context_info.context["story_research"].append(final_item)
                         # Clean up temporary storage
                         del self._caller_agent.context_info.context["temp_story_research"][content_id]
@@ -112,7 +111,7 @@ class SaveToStoryResearch(BaseTool):
 
             # Return processing status
             return {
-                "research_items": self._caller_agent.context_info.context["story_research"],
+                "research_items": self.research_items,
                 "processing_status": {
                     content_id: {
                         'processed_chars': data['processed_chars'],

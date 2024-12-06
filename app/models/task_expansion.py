@@ -50,20 +50,15 @@ class TaskExpansion:
             # Initialize array_deps
             array_deps = []
 
-            # Find array dependencies in context
-            array_deps = TaskExpansion.find_array_dependencies(task_data, context)
-
-            # If no array dependencies found, attempt to parse context values
-            if not array_deps:
-                for key, value in context.items():
-                    if isinstance(value, str):
-                        try:
-                            context[key] = json.loads(value)
-                        except json.JSONDecodeError:
-                            logger.error(f"Failed to parse JSON for context key: {key}")
+            for key, value in context.items():
+                if isinstance(value, str):
+                    try:
+                        context[key] = json.loads(value)
+                    except json.JSONDecodeError:
+                        logger.error(f"Failed to parse JSON for context key: {key}")
 
                 # Retry finding array dependencies after parsing
-                array_deps = TaskExpansion.find_array_dependencies(task_data, context)
+                array_deps = TaskExpansion.find_array_dependencies(task_data, context, expansion_config)
 
             logger.info(f"""
             ====== ARRAY DEPENDENCIES DEBUG ======
@@ -225,13 +220,19 @@ class TaskExpansion:
                     try:
                         # Ensure the context value is a JSON string and parse it
                         value = context[dep]
-                        if isinstance(value, str):
-                            value = json.loads(value)
-                        
+                        try:
+                            if isinstance(value, str):
+                                value = json.loads(value)
+                        except Exception as e:
+                            logger.warning(f"Error parsing JSON for dependency {dep}: {str(e)} with value: {value}")
+                            
                         if isinstance(value, list):
                             array_deps.append((dep, value))
                     except (json.JSONDecodeError, TypeError) as e:
-                        logger.error(f"Error processing dependency {dep}: {str(e)}")
+                        logger.error(f"Error processing dependency {dep}: {str(e)} with value: {value}")
+                    except Exception as e:
+                        logger.error(f"Error processing dependency {dep}: {str(e)} with value: {value}")
+                        logger.error(traceback.format_exc())
                     
         return array_deps
 

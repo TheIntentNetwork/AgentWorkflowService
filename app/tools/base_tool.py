@@ -1,5 +1,4 @@
 import os
-import logging
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, List
 
@@ -25,12 +24,13 @@ class BaseTool(BaseModel, ABC):
         if not self.__class__._shared_state:            
             self.__class__._shared_state = SharedState()
         super().__init__(**kwargs)
-        self._logger = self._configure_logger(kwargs.get('_session_id', self._session_id), kwargs.get('_task_name', None))
+        #self._logger = self._configure_logger(kwargs.get('_session_id', self._session_id), kwargs.get('_task_name', None))
 
     def _configure_logger(self, session_id: str = None, task_name: str = None):
         """Configure logger with proper folder structure for tool calls"""
+        from app.logging_config import configure_logger
         if not session_id:
-            return logging.getLogger(self.__class__.__name__)
+            return configure_logger(self.__name__, task_name)
 
         if not task_name:
             raise ValueError("Task name is required to configure logger")
@@ -46,27 +46,8 @@ class BaseTool(BaseModel, ABC):
         
         # Create directory structure
         os.makedirs(log_path, exist_ok=True)
-        
-        # Full path to log file
-        log_file = os.path.join(log_path, 'tool_calls.log')
-
         # Get or create logger
-        logger = logging.getLogger(f"{self.__class__.__name__}_{session_id}_{task_name}")
-        
-        # Avoid duplicate handlers
-        if not logger.handlers:
-            logger.setLevel(logging.INFO)
-
-            # Create file handler
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setLevel(logging.INFO)
-
-            # Create formatter and add it to the handler
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            file_handler.setFormatter(formatter)
-
-            # Add the handler to the logger
-            logger.addHandler(file_handler)
+        logger = configure_logger(self.__name__, task_name, session_id=session_id)
 
         return logger
 

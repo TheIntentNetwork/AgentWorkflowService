@@ -5,7 +5,6 @@ import sys
 
 from app.models.agents import Agent
 from app.logging_config import configure_logger
-from app.services.discovery import ServiceRegistry
 from app.services.cache import RedisService
 
 
@@ -16,7 +15,8 @@ class IntakeAgent(Agent):
     """
 
     def __init__(self, **kwargs):
-        self.redis_service: RedisService = ServiceRegistry.instance().get(name="redis")
+        from containers import get_container
+        self.redis_service: RedisService = get_container().redis()
         self.logger = configure_logger(self.__class__.__name__)
         self.logger.debug("Initializing IntakeAgent with kwargs: %s", kwargs)
 

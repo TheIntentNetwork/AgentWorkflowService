@@ -10205,242 +10205,12 @@
         "id": "asst_pn2DuMkLsrxWLFQqWdg08ebf",
         "created_at": 1733182944,
         "description": null,
-        "instructions": "Write the final story using the research and analysis.\n\nWrite the final story using the research and analysis.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Write Story', 'key': 'task_execute:199dfa2b-92b8-4dec-9bc6-ebea996314cb:Write Story', 'dependencies': ['story_research'], 'optional_dependencies': [], 'result_keys': ['story'], 'agent_class': 'StoryWriter', 'tools': ['SaveToStory'], 'message_template': '\\n        Review the VA Claims Blogs Guide.pdf file to understand the structure and format of the story requirements for inserting into our Strapi content api.\\n\\n        Write a compelling story incorporating:\\n        - Research findings\\n        - Analysis insights \\n        - Clear narrative structure\\n        \\n        Output the final story as a markdown file.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Research: b'[]' Story: {\"paragraphs\": [\"In the year 2025, the world stands at the precipice of a new era. Technological advancements have reshaped the landscape of human interaction, commerce, and even governance. The digital realm has become an integral part of everyday life, influencing decisions and shaping futures in ways previously unimaginable.\", \"Amidst this backdrop, a young entrepreneur named Alex has emerged as a beacon of innovation. Alex's journey began in a small town, where access to technology was limited, yet curiosity knew no bounds. Inspired by the potential of digital transformation, Alex pursued a path that led to the creation of a groundbreaking platform aimed at bridging the digital divide.\", \"The platform, aptly named \\\"Connect2025,\\\" was designed to provide underserved communities with access to digital resources and education. Through partnerships with tech giants and educational institutions, Connect2025 offered free courses, workshops, and tools to empower individuals with the skills needed for the digital age.\", \"As the platform gained traction, stories of transformation began to surface. In rural areas where opportunities were scarce, individuals found new avenues for employment and entrepreneurship. A farmer in a remote village learned to utilize digital tools to optimize crop production, while a young mother discovered online freelance opportunities that allowed her to support her family.\", \"Alex's vision was not just about technology, but about creating a more equitable society. By 2025, Connect2025 had reached millions, proving that with the right tools and opportunities, anyone could thrive in the digital world. The platform's success was a testament to the power of innovation and the human spirit's resilience.\", \"Looking ahead, Alex plans to expand Connect2025 globally, with the hope of reaching every corner of the world. The journey is far from over, but the impact is undeniable. In a world where technology often divides, Connect2025 stands as a symbol of unity and progress.\"], \"last_updated\": \"2024-12-06T17:21:47.996121\", \"metadata\": {\"title\": \"Connect2025: Bridging the Digital Divide\", \"slug\": \"connect2025-bridging-the-digital-divide\", \"createAt\": \"2025-01-01\", \"description\": \"Explore the journey of Alex and the revolutionary platform Connect2025, designed to bridge the digital divide and empower underserved communities through technology.\", \"metaTitle\": \"Connect2025: Bridging the Digital Divide\", \"metaDescription\": \"Discover how Connect2025 is transforming lives by providing digital resources and education to underserved communities, fostering innovation and equity.\", \"featuredImage\": \"https://example.com/featured-image.jpg\", \"sharedImage\": {\"alt\": \"Connect2025 Logo\", \"sharedMedia\": \"https://example.com/shared-image.jpg\"}, \"blogBanner\": [{\"orientation\": \"horizontal\", \"Heading\": \"Join the Digital Revolution\", \"text\": \"Explore how Connect2025 is changing lives and bridging the digital divide.\", \"backgroundColor\": \"#FFFFFF\", \"backgroundImage\": \"https://example.com/banner-image.jpg\", \"label\": \"Innovation\", \"buttonText\": \"Learn More\", \"buttonLink\": \"https://example.com/connect2025\"}], \"optIn\": [{\"buttonText\": \"Subscribe\", \"title\": \"Stay Updated\", \"description\": \"Get the latest updates on Connect2025 and digital innovation.\", \"label\": \"Newsletter\", \"referral\": \"https://example.com/subscribe\"}], \"callToAction\": [{\"buttonText\": \"Get Involved\", \"buttonLink\": \"https://example.com/get-involved\", \"title\": \"Be Part of the Change\", \"label\": \"Action\"}]}}",
+        "instructions": "Write the final story using the research and analysis.\n\nWrite the final story using the research and analysis.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Write Story', 'key': 'task_execute:5effdb3b-260b-42c3-847c-929a9b48f414:Write Story', 'dependencies': ['story_research'], 'optional_dependencies': [], 'result_keys': ['story'], 'agent_class': 'StoryWriter', 'tools': ['SaveToStory'], 'message_template': '\\n        Review the VA Claims Blogs Guide.pdf file to understand the structure and format of the story requirements for inserting into our Strapi content api.\\n\\n        Write a compelling story incorporating:\\n        - Research findings\\n        - Analysis insights \\n        - Clear narrative structure\\n        \\n        Output the final story as a markdown file.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Research: b'[]'",
         "metadata": {},
         "model": "gpt-4o",
         "name": "StoryWriter",
         "object": "assistant",
-        "tools": [
-            {
-                "function": {
-                    "name": "SaveToStory",
-                    "description": "Tool for saving story paragraphs and metadata to context and Strapi.\nThe story will be used to construct the final story document.",
-                    "parameters": {
-                        "$defs": {
-                            "BlogBanner": {
-                                "properties": {
-                                    "orientation": {
-                                        "default": "horizontal",
-                                        "title": "Orientation",
-                                        "type": "string"
-                                    },
-                                    "Heading": {
-                                        "title": "Heading",
-                                        "type": "string"
-                                    },
-                                    "text": {
-                                        "title": "Text",
-                                        "type": "string"
-                                    },
-                                    "backgroundColor": {
-                                        "default": "#FFFFFF",
-                                        "title": "Backgroundcolor",
-                                        "type": "string"
-                                    },
-                                    "backgroundImage": {
-                                        "title": "Backgroundimage",
-                                        "type": "string"
-                                    },
-                                    "label": {
-                                        "title": "Label",
-                                        "type": "string"
-                                    },
-                                    "buttonText": {
-                                        "title": "Buttontext",
-                                        "type": "string"
-                                    },
-                                    "buttonLink": {
-                                        "title": "Buttonlink",
-                                        "type": "string"
-                                    }
-                                },
-                                "required": [
-                                    "Heading",
-                                    "text",
-                                    "backgroundImage",
-                                    "label",
-                                    "buttonText",
-                                    "buttonLink"
-                                ],
-                                "title": "BlogBanner",
-                                "type": "object"
-                            },
-                            "CallToAction": {
-                                "properties": {
-                                    "buttonText": {
-                                        "title": "Buttontext",
-                                        "type": "string"
-                                    },
-                                    "buttonLink": {
-                                        "title": "Buttonlink",
-                                        "type": "string"
-                                    },
-                                    "title": {
-                                        "title": "Title",
-                                        "type": "string"
-                                    },
-                                    "label": {
-                                        "title": "Label",
-                                        "type": "string"
-                                    }
-                                },
-                                "required": [
-                                    "buttonText",
-                                    "buttonLink",
-                                    "title",
-                                    "label"
-                                ],
-                                "title": "CallToAction",
-                                "type": "object"
-                            },
-                            "OptIn": {
-                                "properties": {
-                                    "buttonText": {
-                                        "title": "Buttontext",
-                                        "type": "string"
-                                    },
-                                    "title": {
-                                        "title": "Title",
-                                        "type": "string"
-                                    },
-                                    "description": {
-                                        "title": "Description",
-                                        "type": "string"
-                                    },
-                                    "label": {
-                                        "title": "Label",
-                                        "type": "string"
-                                    },
-                                    "referral": {
-                                        "title": "Referral",
-                                        "type": "string"
-                                    }
-                                },
-                                "required": [
-                                    "buttonText",
-                                    "title",
-                                    "description",
-                                    "label",
-                                    "referral"
-                                ],
-                                "title": "OptIn",
-                                "type": "object"
-                            },
-                            "SharedImage": {
-                                "properties": {
-                                    "alt": {
-                                        "title": "Alt",
-                                        "type": "string"
-                                    },
-                                    "sharedMedia": {
-                                        "title": "Sharedmedia",
-                                        "type": "string"
-                                    }
-                                },
-                                "required": [
-                                    "alt",
-                                    "sharedMedia"
-                                ],
-                                "title": "SharedImage",
-                                "type": "object"
-                            },
-                            "StoryMetadata": {
-                                "properties": {
-                                    "title": {
-                                        "title": "Title",
-                                        "type": "string"
-                                    },
-                                    "slug": {
-                                        "title": "Slug",
-                                        "type": "string"
-                                    },
-                                    "createAt": {
-                                        "title": "Createat",
-                                        "type": "string"
-                                    },
-                                    "description": {
-                                        "title": "Description",
-                                        "type": "string"
-                                    },
-                                    "metaTitle": {
-                                        "title": "Metatitle",
-                                        "type": "string"
-                                    },
-                                    "metaDescription": {
-                                        "title": "Metadescription",
-                                        "type": "string"
-                                    },
-                                    "featuredImage": {
-                                        "title": "Featuredimage",
-                                        "type": "string"
-                                    },
-                                    "sharedImage": {
-                                        "$ref": "#/$defs/SharedImage"
-                                    },
-                                    "blogBanner": {
-                                        "items": {
-                                            "$ref": "#/$defs/BlogBanner"
-                                        },
-                                        "title": "Blogbanner",
-                                        "type": "array"
-                                    },
-                                    "optIn": {
-                                        "items": {
-                                            "$ref": "#/$defs/OptIn"
-                                        },
-                                        "title": "Optin",
-                                        "type": "array"
-                                    },
-                                    "callToAction": {
-                                        "items": {
-                                            "$ref": "#/$defs/CallToAction"
-                                        },
-                                        "title": "Calltoaction",
-                                        "type": "array"
-                                    }
-                                },
-                                "required": [
-                                    "title",
-                                    "slug",
-                                    "createAt",
-                                    "description",
-                                    "metaTitle",
-                                    "metaDescription",
-                                    "featuredImage",
-                                    "sharedImage",
-                                    "blogBanner",
-                                    "optIn",
-                                    "callToAction"
-                                ],
-                                "title": "StoryMetadata",
-                                "type": "object"
-                            }
-                        },
-                        "properties": {
-                            "story_paragraphs": {
-                                "description": "The paragraphs of the story to save",
-                                "items": {
-                                    "type": "string"
-                                },
-                                "title": "Story Paragraphs",
-                                "type": "array"
-                            },
-                            "metadata": {
-                                "$ref": "#/$defs/StoryMetadata",
-                                "description": "Story metadata including title, images, and components"
-                            }
-                        },
-                        "required": [
-                            "metadata",
-                            "story_paragraphs"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            }
-        ],
+        "tools": [],
         "response_format": "auto",
         "temperature": 0.3,
         "tool_resources": {
@@ -10453,7 +10223,7 @@
         "id": "asst_LoLQUz4sPUxFS99peDgRVFrZ",
         "created_at": 1733364081,
         "description": null,
-        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic:\n        ['2025']\n        \n        Important:\n        1. Use ReadPageText to validate each URL before saving it\n        2. Only save URLs that are accessible and return valid content\n        3. Skip any URLs that return 404 or other errors\n        4. Save validated URLs and metadata using SaveStoryURLs.\n\n\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic:\n        ['2025']\n        \n        Important:\n        1. Use ReadPageText to validate each URL before saving it\n        2. Only save URLs that are accessible and return valid content\n        3. Skip any URLs that return 404 or other errors\n        4. Save validated URLs and metadata using SaveStoryURLs.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Find Story URLs', 'key': 'task_execute:199dfa2b-92b8-4dec-9bc6-ebea996314cb:Find Story URLs', 'dependencies': ['topics'], 'optional_dependencies': [], 'result_keys': ['story_urls'], 'agent_class': 'ResearchAgent', 'tools': ['ReadPageText', 'SaveStoryURLs'], 'message_template': 'Find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on:\\n        {topics}\\n        \\n        Remember to validate each URL with ReadPageText before saving it.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None}",
+        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic using the SearchTool:\n        ['2025']\n        \n        Important:\n        1. Use the SearchTool to find the URLs\n        2. Use ReadPageText to validate each URL before saving it\n        3. If the text is relevant, save the URL and save the content and retrieve the content_id from the ReadPageText tool.\n        4. Skip any URLs that return 404 or other errors\n        5. After saving the content for 10 urls, run the SaveStoryURLs tool to save the URLs and content_ids.\n        \n\n\n        Please read and understand the following manual for your capabilities.\n\n        Follow the instructions and best practices outlined in the manual for all tasks.\n        \n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic using the SearchTool:\n        ['2025']\n        \n        Important:\n        1. Use the SearchTool to find the URLs\n        2. Use ReadPageText to validate each URL before saving it\n        3. If the text is relevant, save the URL and save the content and retrieve the content_id from the ReadPageText tool.\n        4. Skip any URLs that return 404 or other errors\n        5. After saving the content for 10 urls, run the SaveStoryURLs tool to save the URLs and content_ids.\n        \n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Find Story URLs', 'key': 'task_execute:8e21f7d2-77ae-4a90-9224-4a6bdf866694:Find Story URLs', 'dependencies': ['topics'], 'optional_dependencies': [], 'result_keys': ['story_urls'], 'agent_class': 'ResearchAgent', 'tools': ['SaveStoryURLs'], 'message_template': 'Find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on:\\n        {topics}\\n        \\n        Remember to validate each URL with ReadPageText before saving it. Set the save=true parameter in the ReadPageText tool if the content is relevant.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None}",
         "metadata": {},
         "model": "gpt-4o",
         "name": "ResearchAgent",
@@ -10461,270 +10231,27 @@
         "tools": [
             {
                 "function": {
-                    "name": "ReadPageText",
-                    "description": "This tool reads the text contents of an HTML file using the Browserless API. If the retrieval fails, \nwe will use selenium to retrieve the text contents of the page. The content can optionally be stored \nin the caller agent's context when save=True.",
+                    "name": "SearchTool",
+                    "description": "Use this tool to search for a query on Google and return a list of sites. You can also specify a list of reputable sites to search within if you want to limit the search results to those sites.",
                     "parameters": {
                         "properties": {
-                            "url": {
-                                "description": "The URL of the HTML file to read.",
-                                "title": "Url",
-                                "type": "string"
-                            },
-                            "save": {
-                                "default": false,
-                                "description": "Whether to save the content with a UUID reference.",
-                                "title": "Save",
-                                "type": "boolean"
-                            }
-                        },
-                        "required": [
-                            "url"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "SaveStoryURLs",
-                    "description": "Correctly extracted `SaveStoryURLs` with all the required parameters with correct types",
-                    "parameters": {
-                        "$defs": {
-                            "StoryURL": {
-                                "properties": {
-                                    "url": {
-                                        "title": "Url",
-                                        "type": "string"
-                                    },
-                                    "metadata": {
-                                        "additionalProperties": {
-                                            "type": "string"
-                                        },
-                                        "title": "Metadata",
-                                        "type": "object"
-                                    }
-                                },
-                                "required": [
-                                    "url",
-                                    "metadata"
-                                ],
-                                "title": "StoryURL",
-                                "type": "object"
-                            }
-                        },
-                        "properties": {
-                            "user_id": {
-                                "description": "The id of the user.",
-                                "title": "User Id",
-                                "type": "string"
-                            },
-                            "story_urls": {
-                                "description": "The list of story URLs and their metadata.",
+                            "reputable_sites": {
+                                "default": null,
+                                "description": "List of reputable sites to search within.",
                                 "items": {
-                                    "$ref": "#/$defs/StoryURL"
+                                    "type": "string"
                                 },
-                                "title": "Story Urls",
+                                "title": "Reputable Sites",
                                 "type": "array"
-                            }
-                        },
-                        "required": [
-                            "story_urls",
-                            "user_id"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            }
-        ],
-        "response_format": "auto",
-        "temperature": 0.3,
-        "tool_resources": {
-            "code_interpreter": null,
-            "file_search": null
-        },
-        "top_p": 1.0
-    },
-    {
-        "id": "asst_08GieCNpRqg1YQFfcDdaL85P",
-        "created_at": 1733364093,
-        "description": null,
-        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this URL:\n        {url}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\n\n        Please read and understand the following manual for your capabilities:\n\n        Error reading manual file\n\n        Follow the instructions and best practices outlined in the manual for all tasks.\n        \n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this URL:\n        {url}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Process Story Content', 'key': 'task_expanded:task_execute:199dfa2b-92b8-4dec-9bc6-ebea996314cb:Process Story Content:0', 'dependencies': ['story_urls'], 'optional_dependencies': [], 'result_keys': ['story_research'], 'agent_class': 'SpecializedBrowsingAgent', 'tools': ['ReadPageText', 'SaveToStoryResearch'], 'message_template': 'Process the content from this URL:\\n        {url}\\n        \\n        1. Use ReadPageText to read and save the content\\n        2. Use SaveToStoryResearch to process the saved content', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Urls: b'[{\"url\": \"https://vaclaimsinsider.com/2025-va-disability-pay-rates-chart/\", \"metadata\": {\"title\": \"2025 VA Disability Pay Rates & Chart\", \"description\": \"This article discusses the 2025 VA disability rates and pay adjustments due to the Cost of Living Adjustment (COLA).\"}}]'",
-        "metadata": {},
-        "model": "gpt-4o",
-        "name": "SpecializedBrowsingAgent",
-        "object": "assistant",
-        "tools": [
-            {
-                "function": {
-                    "name": "Scroll",
-                    "description": "This tool allows you to scroll the current web page up or down by 1 screen height.",
-                    "parameters": {
-                        "properties": {
-                            "direction": {
-                                "description": "Direction to scroll.",
-                                "enum": [
-                                    "up",
-                                    "down"
-                                ],
-                                "title": "Direction",
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "direction"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "SendKeys",
-                    "description": "This tool sends keys into input fields on the current webpage based on the description of that element and what needs to be typed. It then clicks \"Enter\" on the last element to submit the form. You do not need to tell it to press \"Enter\"; it will do that automatically.",
-                    "parameters": {
-                        "properties": {
-                            "description": {
-                                "description": "Description of the inputs to send to the web page, clearly stated in natural language.",
-                                "examples": [
-                                    "Type 'hello' into the 'Search' input field.",
-                                    "Type johndoe@gmail.com into the 'Email' input field, and type 'password123' into the 'Password' input field.",
-                                    "Select the second option in the 'Country' dropdown."
-                                ],
-                                "title": "Description",
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "description"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "ClickElement",
-                    "description": "This tool clicks on an element on the current web page based on element or task description. Do not use this tool for input fields or dropdowns.",
-                    "parameters": {
-                        "properties": {
-                            "description": {
-                                "description": "Description of the element to click on in natural language.",
-                                "example": "Click on the 'Sign Up' button.",
-                                "title": "Description",
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "description"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "ReadURL",
-                    "description": "This tool reads a single URL and opens it in your current browser window. For each new source, go to a direct URL\nthat you think might contain the answer to the user's question or perform a google search like\n'https://google.com/search?q=search' if applicable. Otherwise, don't try to guess the direct url, use ClickElement tool\nto click on the link that you think might contain the desired information on the current web page.\nRemember, this tool only supports opening 1 URL at a time. Previous URL will be closed when you open a new one.\n    ",
-                    "parameters": {
-                        "properties": {
-                            "url": {
-                                "description": "URL of the webpage.",
-                                "examples": [
-                                    "https://google.com/search?q=search"
-                                ],
-                                "title": "Url",
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "url"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "GoBack",
-                    "description": "This tool allows you to go back 1 page in the browser history. Use it in case of a mistake or if a page shows you unexpected content.",
-                    "parameters": {
-                        "properties": {},
-                        "type": "object",
-                        "required": []
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "SelectDropdown",
-                    "description": "This tool selects an option in a dropdown on the current web page based on the description of that element and which option to select.",
-                    "parameters": {
-                        "properties": {
-                            "description": {
-                                "description": "Description of which option to select and for which dropdown on the page, clearly stated in natural langauge.",
-                                "examples": [
-                                    "Select Germany option in the 'Country' dropdown."
-                                ],
-                                "title": "Description",
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "description"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "SolveCaptcha",
-                    "description": "This tool asks a human to solve captcha on the current webpage. Make sure that captcha is visible before running it.",
-                    "parameters": {
-                        "properties": {},
-                        "type": "object",
-                        "required": []
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "ReadPDF",
-                    "description": "This tool reads the contents of a PDF file using the Browserless API.\nThe content can optionally be stored in the caller agent's context when save=True.",
-                    "parameters": {
-                        "properties": {
-                            "url": {
-                                "description": "The URL of the PDF file to read.",
-                                "title": "Url",
-                                "type": "string"
                             },
-                            "save": {
-                                "default": false,
-                                "description": "Whether to save the content with a UUID reference.",
-                                "title": "Save",
-                                "type": "boolean"
+                            "query": {
+                                "description": "The query to search for.",
+                                "title": "Query",
+                                "type": "string"
                             }
                         },
                         "required": [
-                            "url"
+                            "query"
                         ],
                         "type": "object"
                     },
@@ -10752,59 +10279,6 @@
                         },
                         "required": [
                             "url"
-                        ],
-                        "type": "object"
-                    },
-                    "strict": false
-                },
-                "type": "function"
-            },
-            {
-                "function": {
-                    "name": "SaveStoryURLs",
-                    "description": "Correctly extracted `SaveStoryURLs` with all the required parameters with correct types",
-                    "parameters": {
-                        "$defs": {
-                            "StoryURL": {
-                                "properties": {
-                                    "url": {
-                                        "title": "Url",
-                                        "type": "string"
-                                    },
-                                    "metadata": {
-                                        "additionalProperties": {
-                                            "type": "string"
-                                        },
-                                        "title": "Metadata",
-                                        "type": "object"
-                                    }
-                                },
-                                "required": [
-                                    "url",
-                                    "metadata"
-                                ],
-                                "title": "StoryURL",
-                                "type": "object"
-                            }
-                        },
-                        "properties": {
-                            "user_id": {
-                                "description": "The id of the user.",
-                                "title": "User Id",
-                                "type": "string"
-                            },
-                            "story_urls": {
-                                "description": "The list of story URLs and their metadata.",
-                                "items": {
-                                    "$ref": "#/$defs/StoryURL"
-                                },
-                                "title": "Story Urls",
-                                "type": "array"
-                            }
-                        },
-                        "required": [
-                            "story_urls",
-                            "user_id"
                         ],
                         "type": "object"
                     },
@@ -10817,163 +10291,63 @@
                 "file_search": {
                     "max_num_results": null,
                     "ranking_options": {
-                        "ranker": "default_2024_08_21",
-                        "score_threshold": 0.0
+                        "score_threshold": 0.0,
+                        "ranker": "default_2024_08_21"
                     }
                 }
             },
             {
                 "function": {
-                    "name": "SaveToStoryResearch",
-                    "description": "Tool for saving story research items and example stories to context.\nProcesses content in chunks of 500 characters, creating StoryMeta for each chunk.\nCan retrieve content using content_id from context and continue processing where it left off.",
+                    "name": "SaveStoryURLs",
+                    "description": "Correctly extracted `SaveStoryURLs` with all the required parameters with correct types",
                     "parameters": {
                         "$defs": {
-                            "StoryMeta": {
+                            "StoryURL": {
                                 "properties": {
-                                    "facts": {
-                                        "description": "Critical points from the paragraph that are relevant to the story.",
-                                        "items": {
-                                            "type": "string"
-                                        },
-                                        "title": "Facts",
-                                        "type": "array"
-                                    },
-                                    "key_points": {
-                                        "description": "Key points that summarize the main ideas of the paragraph.",
-                                        "items": {
-                                            "type": "string"
-                                        },
-                                        "title": "Key Points",
-                                        "type": "array"
-                                    },
-                                    "excerpts": {
-                                        "description": "Excerpts that highlight important sections of the paragraph.",
-                                        "items": {
-                                            "type": "string"
-                                        },
-                                        "title": "Excerpts",
-                                        "type": "array"
-                                    },
-                                    "paragraph_summaries": {
-                                        "description": "Summaries that provide a concise overview of each paragraph.",
-                                        "items": {
-                                            "type": "string"
-                                        },
-                                        "title": "Paragraph Summaries",
-                                        "type": "array"
-                                    },
-                                    "full_text": {
-                                        "description": "The full text of the paragraph for context.",
-                                        "title": "Full Text",
-                                        "type": "string"
-                                    }
-                                },
-                                "required": [
-                                    "facts",
-                                    "key_points",
-                                    "excerpts",
-                                    "paragraph_summaries",
-                                    "full_text"
-                                ],
-                                "title": "StoryMeta",
-                                "type": "object"
-                            },
-                            "StoryResearchItem": {
-                                "properties": {
-                                    "id": {
-                                        "description": "The id of the research item",
-                                        "title": "Id",
-                                        "type": "string"
-                                    },
-                                    "title": {
-                                        "description": "The title of the research item",
-                                        "title": "Title",
-                                        "type": "string"
-                                    },
-                                    "meta": {
-                                        "description": "The meta data of the research item",
-                                        "items": {
-                                            "$ref": "#/$defs/StoryMeta"
-                                        },
-                                        "title": "Meta",
-                                        "type": "array"
-                                    },
                                     "url": {
-                                        "description": "The url of the research item",
                                         "title": "Url",
                                         "type": "string"
                                     },
-                                    "author": {
-                                        "description": "The author of the research item",
-                                        "title": "Author",
-                                        "type": "string"
-                                    },
-                                    "date": {
-                                        "description": "The date of the research item",
-                                        "title": "Date",
-                                        "type": "string"
+                                    "metadata": {
+                                        "additionalProperties": {
+                                            "type": "string"
+                                        },
+                                        "title": "Metadata",
+                                        "type": "object"
                                     },
                                     "content_id": {
-                                        "anyOf": [
-                                            {
-                                                "type": "string"
-                                            },
-                                            {
-                                                "type": "null"
-                                            }
-                                        ],
                                         "default": null,
                                         "description": "The ID referencing the full content in context",
-                                        "title": "Content Id"
-                                    },
-                                    "processed_chars": {
-                                        "default": 0,
-                                        "description": "Number of characters processed so far",
-                                        "title": "Processed Chars",
-                                        "type": "integer"
+                                        "title": "Content Id",
+                                        "type": "string"
                                     }
                                 },
                                 "required": [
-                                    "title",
                                     "url",
-                                    "author",
-                                    "date"
+                                    "metadata"
                                 ],
-                                "title": "StoryResearchItem",
+                                "title": "StoryURL",
                                 "type": "object"
                             }
                         },
                         "properties": {
-                            "research_items": {
-                                "description": "The research items from example stories",
+                            "user_id": {
+                                "description": "The id of the user.",
+                                "title": "User Id",
+                                "type": "string"
+                            },
+                            "story_urls": {
+                                "description": "The list of story URLs and their metadata.",
                                 "items": {
-                                    "$ref": "#/$defs/StoryResearchItem"
+                                    "$ref": "#/$defs/StoryURL"
                                 },
-                                "title": "Research Items",
+                                "title": "Story Urls",
                                 "type": "array"
-                            },
-                            "target_id": {
-                                "anyOf": [
-                                    {
-                                        "type": "string"
-                                    },
-                                    {
-                                        "type": "null"
-                                    }
-                                ],
-                                "default": null,
-                                "description": "Optional ID of specific story to update",
-                                "title": "Target Id"
-                            },
-                            "chunk_size": {
-                                "default": 500,
-                                "description": "Size of content chunks to process at once",
-                                "title": "Chunk Size",
-                                "type": "integer"
                             }
                         },
                         "required": [
-                            "research_items"
+                            "story_urls",
+                            "user_id"
                         ],
                         "type": "object"
                     },
@@ -10989,6 +10363,24 @@
             "file_search": {
                 "vector_store_ids": []
             }
+        },
+        "top_p": 1.0
+    },
+    {
+        "id": "asst_08GieCNpRqg1YQFfcDdaL85P",
+        "created_at": 1733364093,
+        "description": null,
+        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this story metadata:\n        Content ID: {content_id}\n        Metadata: {metadata}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\n\n        Please read and understand the following manual for your capabilities.\n\n        Follow the instructions and best practices outlined in the manual for all tasks.\n        \n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this story metadata:\n        Content ID: {content_id}\n        Metadata: {metadata}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Process Story Content', 'key': 'task_execute:8e21f7d2-77ae-4a90-9224-4a6bdf866694:Process Story Content:0', 'dependencies': ['story_urls'], 'optional_dependencies': [], 'result_keys': ['story_research'], 'agent_class': 'SpecializedBrowsingAgent', 'tools': ['SaveToStoryResearch'], 'message_template': 'Process the content from this story metadata:\\n        Content ID: {content_id}\\n        Metadata: {metadata}\\n        \\n        1. Use ReadPageText to read and save the content\\n        2. Use SaveToStoryResearch to process the saved content', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Urls: b'[{\"url\": \"https://vaclaimsinsider.com/big-va-rating-changes/\", \"metadata\": {}, \"content_id\": \"973c75dc-0caf-403c-9942-c5ed0fcb1b99\"}, {\"url\": \"https://vaclaimsinsider.com/va-disability-rating-calculator/\", \"metadata\": {}, \"content_id\": \"7bc81177-35cb-46e5-9769-abe7a0e12f83\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-pay-rates-chart/\", \"metadata\": {}, \"content_id\": \"db97bd2a-7f34-4e72-b8f5-6e77e189fb32\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-payment-schedule/\", \"metadata\": {}, \"content_id\": \"aa13b4ea-850f-49a8-83d3-5e61d9d4a736\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-special-monthly-compensation-smc-rates/\", \"metadata\": {}, \"content_id\": \"3966b005-4ac4-491f-82f2-ca0779d04c0d\"}, {\"url\": \"https://vaclaimsinsider.com/category/va-disability-rates/\", \"metadata\": {}, \"content_id\": \"1b73a6fa-d97a-4b8b-9800-8ece0f1ce408\"}, {\"url\": \"https://vaclaimsinsider.com/project-2025-va-benefits-impact/\", \"metadata\": {}, \"content_id\": \"000f1029-ec0e-4d76-a576-f3d6b2e1e35a\"}, {\"url\": \"https://vaclaimsinsider.com/military-retiree-pay-raise-2025/\", \"metadata\": {}, \"content_id\": \"42c346a3-61c3-4dfa-a815-c37f5d6abf53\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-vocational-rehabilitation-pay-chart/\", \"metadata\": {}, \"content_id\": \"378d8d0f-8eb7-4ea5-818b-eff11be91c66\"}, {\"url\": \"https://vaclaimsinsider.com/2025-post-9-11-gi-bill-pay-chart/\", \"metadata\": {}, \"content_id\": \"58e94695-7eb7-4980-9654-86b965041ddb\"}]'",
+        "metadata": {},
+        "model": "gpt-4o",
+        "name": "SpecializedBrowsingAgent",
+        "object": "assistant",
+        "tools": [],
+        "response_format": "auto",
+        "temperature": 0.3,
+        "tool_resources": {
+            "code_interpreter": null,
+            "file_search": null
         },
         "top_p": 1.0
     }
