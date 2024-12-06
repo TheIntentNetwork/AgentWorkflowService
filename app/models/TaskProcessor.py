@@ -339,7 +339,12 @@ class TaskProcessor(BaseModel):
                         "context": serialized_context,  # Use the already serialized context
                     }
                     
-                    await kafka.send_message("agency_action", kafka_message)                
+                    await kafka.send_message("agency_action", kafka_message)
+                    
+                    from containers import get_container
+                    redis = get_container().redis()
+                    
+                    await redis.client.incr(f"{self.task_info.key}:total_tasks")
             else:
                 # Execute single task normally
                 asyncio.create_task(self._execute_single_task(self.task_info, self.task_info.tools))
@@ -423,6 +428,9 @@ class TaskProcessor(BaseModel):
             agent.context_info = ContextInfo(**agent.context_info)
         
         outputs = {}
+        
+        
+        
         for result_key in task.result_keys:
             result = agent.context_info.context.get(result_key, None)
             if result is None:
@@ -435,15 +443,6 @@ class TaskProcessor(BaseModel):
                     await agency.get_completion(
                     f"{task.message_template}\n\n"
                     f"Please try again. Please ensure that all necessary tools are used to generate the required {result_key}."
-                )
-            
-            result = agent.context_info.context.get(result_key, None)
-            if result is None:
-                self._task_logger.error(f"Task result is None for key: {result_key}")
-                raise TaskExecutionError(
-                    message=f"Task result is None for key: {result_key}",
-                    task_name=task.name,
-                    error_type="task_execution"
                 )
         
             if task.validator_prompt and task.validator_tool:
@@ -472,7 +471,9 @@ class TaskProcessor(BaseModel):
             - Merged result: {self.context_info.context[result_key]}
             - Updated keys: {set(self.context_info.context.keys())}
             """)
-            
+        
+        total_tasks = await self._redis.client.decr(f"{self.task_info.key}:total_tasks")
+        
         # We need to update any context in Redis for all the keys in context_info.context
         for key in self.task_info.result_keys:
             if key in self.context_info.context:
@@ -483,11 +484,11 @@ class TaskProcessor(BaseModel):
                             json.dumps(outputs[key])
                         )
                         
-                        if len(outputs[result_key]) == len(task.context_info.context.get(result_key)):
+                        if total_tasks == 0:
                             await self._notify_subscribers({
                                 'task_name': self.task_info.name,
-                                'result_key': result_key,
-                                'value': outputs[result_key]
+                                'result_key': key,
+                                'value': outputs[key]
                             })
                 else:
                     await self._redis.client.hset(
@@ -497,8 +498,8 @@ class TaskProcessor(BaseModel):
                         )
                     await self._notify_subscribers({
                         'task_name': self.task_info.name,
-                        'result_key': result_key,
-                        'value': outputs[result_key]
+                        'result_key': key,
+                        'value': outputs[key]
                     })
             
 

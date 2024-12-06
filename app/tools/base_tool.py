@@ -14,6 +14,7 @@ class BaseTool(BaseModel, ABC):
     _caller_agent: Any = None
     _session_id: str = None
     _event_handler: Any = None
+    _logger: Any = None
     result_keys: ClassVar[List[str]] = []
     
     @property
@@ -24,7 +25,7 @@ class BaseTool(BaseModel, ABC):
         if not self.__class__._shared_state:            
             self.__class__._shared_state = SharedState()
         super().__init__(**kwargs)
-        #self._logger = self._configure_logger(kwargs.get('_session_id', self._session_id), kwargs.get('_task_name', None))
+        self._logger = self._configure_logger(kwargs.get('_session_id', self._session_id), kwargs.get('_task_name', None))
 
     def _configure_logger(self, session_id: str = None, task_name: str = None):
         """Configure logger with proper folder structure for tool calls"""
@@ -112,9 +113,7 @@ class BaseTool(BaseModel, ABC):
         return schema
 
     @abstractmethod
-    async def run(self, **kwargs):
-        self._logger = self._configure_logger()
-        
+    async def run(self, **kwargs):        
         # Access task info from context if needed
         task_info = self._caller_agent.context_info.context.get('task_info', {})
         self._logger.debug(f"Running tool for task: {task_info.get('name')}")

@@ -38,7 +38,7 @@ class CreateSupplementalIntakes(BaseTool):
                 results.append(f"Supplemental Intake for {condition} created.")
                 
         except Exception as e:
-            configure_logger("CreateSupplementalIntakes").error(f"Error running {self.__class__.__name__} tool: {str(e)} with traceback: {e.__traceback__}")
+            self._logger.error(f"Error running {self.__class__.__name__} tool: {str(e)} with traceback: {e.__traceback__}")
             raise e
         return "Results: \n" + "\n".join(results)
 

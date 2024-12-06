@@ -18,7 +18,7 @@ class GetIntake(BaseTool):
     
     def run(self, **kwargs):
         try:
-            configure_logger("GetIntake").info("Running GetIntake tool")
+            self._logger.info("Running GetIntake tool")
             analyzer = AnalyzerEngine()
             analyzer.nlp_engine = "spacy"
             analyzer.language = "en"
@@ -59,7 +59,7 @@ class GetIntake(BaseTool):
                 for analyzer_result in analyzer_results:
                     print(f"Detected PII: {result['decrypted_form'][analyzer_result.start:analyzer_result.end]} - Type: {analyzer_result.entity_type}")
         except Exception as e:
-            configure_logger("GetIntake").error(f"Error running {self.__class__.__name__} tool: {str(e)} with traceback: {e.__traceback__}")
+            self._logger.error(f"Error running {self.__class__.__name__} tool: {str(e)} with traceback: {e.__traceback__}")
             raise e
         return result
 

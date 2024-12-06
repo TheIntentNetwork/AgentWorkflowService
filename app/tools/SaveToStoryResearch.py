@@ -5,8 +5,6 @@ import uuid
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, ClassVar, Optional
 from app.tools.base_tool import BaseTool
-from app.logging_config import configure_logger
-import textwrap
 
 
 class StoryMeta(BaseModel):
@@ -38,8 +36,7 @@ class SaveToStoryResearch(BaseTool):
     result_keys: ClassVar[List[str]] = ['story_research']
 
     async def run(self) -> Dict[str, Any]:
-        logger = configure_logger('SaveToStoryResearch')
-        logger.info("Running SaveToStoryResearch tool")
+        self._logger.info("Running SaveToStoryResearch tool")
         
         try:            
             # Initialize temporary storage for processing
@@ -103,7 +100,7 @@ class SaveToStoryResearch(BaseTool):
                     temp_storage['meta'].append(meta.model_dump())
                     temp_storage['processed_chars'] = new_processed_chars
                     
-                    logger.info(f"""
+                    self._logger.info(f"""
                     Processed chunk for content_id {content_id}:
                     - Chars processed: {new_processed_chars}/{len(full_content)}
                     - Chunks processed: {len(temp_storage['meta'])}
@@ -123,8 +120,8 @@ class SaveToStoryResearch(BaseTool):
             }
 
         except Exception as e:
-            logger.error(f"Error in SaveToStoryResearch: {e}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error in SaveToStoryResearch: {e}")
+            self._logger.error(traceback.format_exc())
             raise
 
     def _extract_facts(self, text: str) -> List[str]:

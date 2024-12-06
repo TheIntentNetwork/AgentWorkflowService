@@ -94,8 +94,7 @@ class SaveToStory(BaseTool):
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
-                logger = configure_logger('SaveToStory')
-                logger.error(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
+                self._logger.error(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
                 # Add specific error handling for common Strapi errors
                 if e.response.status_code == 413:
                     raise RuntimeError("Content too large for Strapi")
@@ -103,8 +102,7 @@ class SaveToStory(BaseTool):
                     raise RuntimeError("Invalid Strapi authentication token")
                 raise
             except httpx.RequestError as e:
-                logger = configure_logger('SaveToStory')
-                logger.error(f"Request error occurred: {str(e)}")
+                self._logger.error(f"Request error occurred: {str(e)}")
                 raise
 
     def _prepare_strapi_data(self, metadata_dict: Dict[str, Any], story_paragraphs: List[str]) -> Dict[str, Any]:
@@ -136,8 +134,7 @@ class SaveToStory(BaseTool):
         }
 
     async def run(self) -> Dict[str, Any]:
-        logger = configure_logger('SaveToStory')
-        logger.info("Running SaveToStory tool")
+        self._logger.info("Running SaveToStory tool")
         
         try:
             # Validate inputs
@@ -178,7 +175,7 @@ class SaveToStory(BaseTool):
 
             try:
                 strapi_response = await self._make_strapi_request(strapi_url, headers, strapi_data)
-                logger.info("Story successfully saved to Strapi")
+                self._logger.info("Story successfully saved to Strapi")
                 
                 return {
                     "story": story,
@@ -187,10 +184,10 @@ class SaveToStory(BaseTool):
             
             except (httpx.HTTPStatusError, httpx.RequestError) as e:
                 error_msg = f"Failed to save to Strapi: {str(e)}"
-                logger.error(error_msg)
+                self._logger.error(error_msg)
                 raise RuntimeError(error_msg)
         
         except Exception as e:
-            logger.error(f"Error in SaveToStory: {e}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error in SaveToStory: {e}")
+            self._logger.error(traceback.format_exc())
             raise

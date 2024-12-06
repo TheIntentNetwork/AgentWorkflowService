@@ -28,8 +28,7 @@ class AggregateResearch(BaseTool):
     )
 
     async def run(self) -> Dict[str, Any]:
-        logger = configure_logger('AggregateResearch')
-        logger.info("Running AggregateResearch tool")
+        self._logger.info("Running AggregateResearch tool")
         
         try:
             # Initialize the aggregated research structure
@@ -91,8 +90,8 @@ class AggregateResearch(BaseTool):
             }
             
         except Exception as e:
-            logger.error(f"Error in AggregateResearch: {str(e)}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error in AggregateResearch: {str(e)}")
+            self._logger.error(traceback.format_exc())
             return {
                 "status": "error",
                 "message": f"Failed to aggregate research: {str(e)}",

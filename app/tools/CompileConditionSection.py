@@ -35,7 +35,6 @@ class CompileConditionSection(BaseTool):
 
     async def _collect_research_section(self, context: Dict[str, Any]) -> List[ResearchItem]:
         """Collect research items for the condition"""
-        logger = configure_logger('CompileConditionSection')
         research_section = []
         
         try:
@@ -58,14 +57,13 @@ class CompileConditionSection(BaseTool):
                         if item.get('condition_name') == self.condition_name
                     ]
         except Exception as e:
-            logger.error(f"Error collecting research section: {e}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error collecting research section: {e}")
+            self._logger.error(traceback.format_exc())
             
         return research_section
 
     async def _collect_cfr_research(self, context: Dict[str, Any]) -> List[CFRReference]:
         """Collect CFR research for the condition"""
-        logger = configure_logger('CompileConditionSection')
         cfr_references = []
         
         try:
@@ -123,14 +121,13 @@ class CompileConditionSection(BaseTool):
                             cfr_references.append(cfr_reference)
 
         except Exception as e:
-            logger.error(f"Error collecting CFR research: {e}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error collecting CFR research: {e}")
+            self._logger.error(traceback.format_exc())
             
         return cfr_references
 
     async def _collect_cfr_requirements(self, context: Dict[str, Any]) -> List[Point]:
         """Collect CFR requirements points for the condition"""
-        logger = configure_logger('CompileConditionSection')
         requirements = []
         
         try:
@@ -148,14 +145,13 @@ class CompileConditionSection(BaseTool):
                         if req.get('condition_name') == self.condition_name
                     ]
         except Exception as e:
-            logger.error(f"Error collecting CFR requirements: {e}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error collecting CFR requirements: {e}")
+            self._logger.error(traceback.format_exc())
             
         return requirements
 
     async def _collect_points(self, context: Dict[str, Any], key: str) -> List[Point]:
         """Collect points (key points or CFR points) for the condition"""
-        logger = configure_logger('CompileConditionSection')
         points = []
         
         try:
@@ -173,14 +169,13 @@ class CompileConditionSection(BaseTool):
                         if point.get('condition_name') == self.condition_name
                     ]
         except Exception as e:
-            logger.error(f"Error collecting points for {key}: {e}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error collecting points for {key}: {e}")
+            self._logger.error(traceback.format_exc())
             
         return points
 
     async def _collect_future_considerations(self, context: Dict[str, Any]) -> List[FutureConsideration]:
         """Collect future considerations for the condition"""
-        logger = configure_logger('CompileConditionSection')
         considerations = []
         
         try:
@@ -198,14 +193,13 @@ class CompileConditionSection(BaseTool):
                         if item.get('condition_name') == self.condition_name
                     ]
         except Exception as e:
-            logger.error(f"Error collecting future considerations: {e}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error collecting future considerations: {e}")
+            self._logger.error(traceback.format_exc())
             
         return considerations
 
     async def _get_executive_summary(self, context: Dict[str, Any]) -> str:
         """Get executive summary for the condition"""
-        logger = configure_logger('CompileConditionSection')
         exec_summary = ""
         
         try:
@@ -219,8 +213,8 @@ class CompileConditionSection(BaseTool):
                 if isinstance(summary_data, dict) and summary_data.get('condition_name') == self.condition_name:
                     exec_summary = summary_data.get('executive_summary', '')
         except Exception as e:
-            logger.error(f"Error getting executive summary: {e}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error getting executive summary: {e}")
+            self._logger.error(traceback.format_exc())
             
         return exec_summary
 
@@ -231,8 +225,6 @@ class CompileConditionSection(BaseTool):
         Returns:
             Dict containing the compiled condition section with all related information.
         """
-        logger = configure_logger('CompileConditionSection')
-        
         try:
             context = self._caller_agent.context_info.context
             
@@ -266,11 +258,11 @@ class CompileConditionSection(BaseTool):
             # Store in context
             self._caller_agent.context_info.context['condition_section'] = json_safe_condition
             
-            logger.info(f"Successfully compiled condition section for {self.condition_name}")
+            self._logger.info(f"Successfully compiled condition section for {self.condition_name}")
             
             return json_safe_condition
 
         except Exception as e:
-            logger.error(f"Error compiling condition section: {e}")
-            logger.error(traceback.format_exc())
+            self._logger.error(f"Error compiling condition section: {e}")
+            self._logger.error(traceback.format_exc())
             raise 
