@@ -381,13 +381,16 @@ class Agent:
         for key, value in self._contexts.items():
             self._shared_state.set(key, value)
             
-        additional_instructions = []
-        additional_instructions.append("Current Task Information: ")
+        additional_instructions = ["# Current Task Information\n"]
         
-        for key, value in self._contexts.items():
-            context_format = f"""{str(key).replace('_', ' ').title()}: {value}"""
-            additional_instructions.append(context_format)
-        
+        # Only include specified context keys in the prompt
+        if self.prompt_context_keys:
+            for key in self.prompt_context_keys:
+                value = self._contexts.get(key)
+                if value is not None and value != {}:
+                    formatted_value = json.dumps(value, indent=2) if isinstance(value, (dict, list)) else str(value)
+                    formatted_key = key.replace('_', ' ').title()
+                    additional_instructions.append(f"\n## {formatted_key}:\n{formatted_value}")
         
         self.instructions = f"{self.instructions}\n\n{' '.join(additional_instructions)}"
         
