@@ -134,6 +134,7 @@ class Agent:
             tool_resources: ToolResources = None,
             temperature: float = None,
             top_p: float = None,
+            prompt_context_keys: List[str] = None,
             response_format: str | dict = "auto",
             tools_folder: str = None,
             files_folder: Union[List[str], str] = None,
@@ -201,6 +202,7 @@ class Agent:
         self.top_p = top_p
         self.response_format = response_format
         self.tools_folder = tools_folder
+        self.prompt_context_keys = prompt_context_keys or []
         self.files_folder = files_folder if files_folder else [f"../agents/{self.name}/"]
         self.schemas_folder = schemas_folder if schemas_folder else []
         self.api_headers = api_headers if api_headers else {}
@@ -441,7 +443,8 @@ class Agent:
             'id': self.id,
             'name': self.name,
             'instructions': self.instructions,
-            'description': self.description
+            'description': self.description,
+            'prompt_context_keys': self.prompt_context_keys
         }
     
     def init_oai(self):
