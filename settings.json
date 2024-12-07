@@ -10205,17 +10205,259 @@
         "id": "asst_pn2DuMkLsrxWLFQqWdg08ebf",
         "created_at": 1733182944,
         "description": null,
-        "instructions": "Write the final story using the research and analysis.\n\nWrite the final story using the research and analysis.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Write Story', 'key': 'task_execute:5effdb3b-260b-42c3-847c-929a9b48f414:Write Story', 'dependencies': ['story_research'], 'optional_dependencies': [], 'result_keys': ['story'], 'agent_class': 'StoryWriter', 'tools': ['SaveToStory'], 'message_template': '\\n        Review the VA Claims Blogs Guide.pdf file to understand the structure and format of the story requirements for inserting into our Strapi content api.\\n\\n        Write a compelling story incorporating:\\n        - Research findings\\n        - Analysis insights \\n        - Clear narrative structure\\n        \\n        Output the final story as a markdown file.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Research: b'[]'",
+        "instructions": "Write the final story using the research and analysis.\n\nWrite the final story using the research and analysis.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Write Story', 'key': 'task_execute:16a479b7-547e-4905-978a-789e242a1b89:Write Story', 'dependencies': ['story_research'], 'optional_dependencies': [], 'result_keys': ['story'], 'agent_class': 'StoryWriter', 'tools': ['SaveToStory'], 'message_template': '\\n        Review the VA Claims Blogs Guide.pdf file to understand the structure and format of the story requirements for inserting into our Strapi content api.\\n\\n        Write a compelling story incorporating:\\n        - Research findings\\n        - Analysis insights \\n        - Clear narrative structure\\n        \\n        Output the final story as a markdown file.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Research: [] Story: None",
         "metadata": {},
         "model": "gpt-4o",
         "name": "StoryWriter",
         "object": "assistant",
-        "tools": [],
+        "tools": [
+            {
+                "type": "file_search",
+                "file_search": {
+                    "max_num_results": null,
+                    "ranking_options": {
+                        "score_threshold": 0.0,
+                        "ranker": "default_2024_08_21"
+                    }
+                }
+            },
+            {
+                "function": {
+                    "name": "SaveToStory",
+                    "description": "Tool for saving story paragraphs and metadata to context and Strapi.\nThe story will be used to construct the final story document.",
+                    "parameters": {
+                        "$defs": {
+                            "BlogBanner": {
+                                "properties": {
+                                    "orientation": {
+                                        "default": "horizontal",
+                                        "title": "Orientation",
+                                        "type": "string"
+                                    },
+                                    "Heading": {
+                                        "title": "Heading",
+                                        "type": "string"
+                                    },
+                                    "text": {
+                                        "title": "Text",
+                                        "type": "string"
+                                    },
+                                    "backgroundColor": {
+                                        "default": "#FFFFFF",
+                                        "title": "Backgroundcolor",
+                                        "type": "string"
+                                    },
+                                    "backgroundImage": {
+                                        "title": "Backgroundimage",
+                                        "type": "string"
+                                    },
+                                    "label": {
+                                        "title": "Label",
+                                        "type": "string"
+                                    },
+                                    "buttonText": {
+                                        "title": "Buttontext",
+                                        "type": "string"
+                                    },
+                                    "buttonLink": {
+                                        "title": "Buttonlink",
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "Heading",
+                                    "text",
+                                    "backgroundImage",
+                                    "label",
+                                    "buttonText",
+                                    "buttonLink"
+                                ],
+                                "title": "BlogBanner",
+                                "type": "object"
+                            },
+                            "CallToAction": {
+                                "properties": {
+                                    "buttonText": {
+                                        "title": "Buttontext",
+                                        "type": "string"
+                                    },
+                                    "buttonLink": {
+                                        "title": "Buttonlink",
+                                        "type": "string"
+                                    },
+                                    "title": {
+                                        "title": "Title",
+                                        "type": "string"
+                                    },
+                                    "label": {
+                                        "title": "Label",
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "buttonText",
+                                    "buttonLink",
+                                    "title",
+                                    "label"
+                                ],
+                                "title": "CallToAction",
+                                "type": "object"
+                            },
+                            "OptIn": {
+                                "properties": {
+                                    "buttonText": {
+                                        "title": "Buttontext",
+                                        "type": "string"
+                                    },
+                                    "title": {
+                                        "title": "Title",
+                                        "type": "string"
+                                    },
+                                    "description": {
+                                        "title": "Description",
+                                        "type": "string"
+                                    },
+                                    "label": {
+                                        "title": "Label",
+                                        "type": "string"
+                                    },
+                                    "referral": {
+                                        "title": "Referral",
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "buttonText",
+                                    "title",
+                                    "description",
+                                    "label",
+                                    "referral"
+                                ],
+                                "title": "OptIn",
+                                "type": "object"
+                            },
+                            "SharedImage": {
+                                "properties": {
+                                    "alt": {
+                                        "title": "Alt",
+                                        "type": "string"
+                                    },
+                                    "sharedMedia": {
+                                        "title": "Sharedmedia",
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "alt",
+                                    "sharedMedia"
+                                ],
+                                "title": "SharedImage",
+                                "type": "object"
+                            },
+                            "StoryMetadata": {
+                                "properties": {
+                                    "title": {
+                                        "title": "Title",
+                                        "type": "string"
+                                    },
+                                    "slug": {
+                                        "title": "Slug",
+                                        "type": "string"
+                                    },
+                                    "createAt": {
+                                        "title": "Createat",
+                                        "type": "string"
+                                    },
+                                    "description": {
+                                        "title": "Description",
+                                        "type": "string"
+                                    },
+                                    "metaTitle": {
+                                        "title": "Metatitle",
+                                        "type": "string"
+                                    },
+                                    "metaDescription": {
+                                        "title": "Metadescription",
+                                        "type": "string"
+                                    },
+                                    "featuredImage": {
+                                        "title": "Featuredimage",
+                                        "type": "string"
+                                    },
+                                    "sharedImage": {
+                                        "$ref": "#/$defs/SharedImage"
+                                    },
+                                    "blogBanner": {
+                                        "items": {
+                                            "$ref": "#/$defs/BlogBanner"
+                                        },
+                                        "title": "Blogbanner",
+                                        "type": "array"
+                                    },
+                                    "optIn": {
+                                        "items": {
+                                            "$ref": "#/$defs/OptIn"
+                                        },
+                                        "title": "Optin",
+                                        "type": "array"
+                                    },
+                                    "callToAction": {
+                                        "items": {
+                                            "$ref": "#/$defs/CallToAction"
+                                        },
+                                        "title": "Calltoaction",
+                                        "type": "array"
+                                    }
+                                },
+                                "required": [
+                                    "title",
+                                    "slug",
+                                    "createAt",
+                                    "description",
+                                    "metaTitle",
+                                    "metaDescription",
+                                    "featuredImage",
+                                    "sharedImage",
+                                    "blogBanner",
+                                    "optIn",
+                                    "callToAction"
+                                ],
+                                "title": "StoryMetadata",
+                                "type": "object"
+                            }
+                        },
+                        "properties": {
+                            "story_paragraphs": {
+                                "description": "The paragraphs of the story to save",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "title": "Story Paragraphs",
+                                "type": "array"
+                            },
+                            "metadata": {
+                                "$ref": "#/$defs/StoryMetadata",
+                                "description": "Story metadata including title, images, and components"
+                            }
+                        },
+                        "required": [
+                            "metadata",
+                            "story_paragraphs"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            }
+        ],
         "response_format": "auto",
         "temperature": 0.3,
         "tool_resources": {
             "code_interpreter": null,
-            "file_search": null
+            "file_search": {
+                "vector_store_ids": []
+            }
         },
         "top_p": 1.0
     },
@@ -10223,7 +10465,7 @@
         "id": "asst_LoLQUz4sPUxFS99peDgRVFrZ",
         "created_at": 1733364081,
         "description": null,
-        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic using the SearchTool:\n        ['2025']\n        \n        Important:\n        1. Use the SearchTool to find the URLs\n        2. Use ReadPageText to validate each URL before saving it\n        3. If the text is relevant, save the URL and save the content and retrieve the content_id from the ReadPageText tool.\n        4. Skip any URLs that return 404 or other errors\n        5. After saving the content for 10 urls, run the SaveStoryURLs tool to save the URLs and content_ids.\n        \n\n\n        Please read and understand the following manual for your capabilities.\n\n        Follow the instructions and best practices outlined in the manual for all tasks.\n        \n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic using the SearchTool:\n        ['2025']\n        \n        Important:\n        1. Use the SearchTool to find the URLs\n        2. Use ReadPageText to validate each URL before saving it\n        3. If the text is relevant, save the URL and save the content and retrieve the content_id from the ReadPageText tool.\n        4. Skip any URLs that return 404 or other errors\n        5. After saving the content for 10 urls, run the SaveStoryURLs tool to save the URLs and content_ids.\n        \n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Find Story URLs', 'key': 'task_execute:311c6148-1696-4505-88e1-e2c9997ace81:Find Story URLs', 'dependencies': ['topics'], 'optional_dependencies': [], 'result_keys': ['story_urls'], 'agent_class': 'ResearchAgent', 'tools': ['SaveStoryURLs'], 'message_template': 'Find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on:\\n        {topics}\\n        \\n        Remember to validate each URL with ReadPageText before saving it. Set the save=true parameter in the ReadPageText tool if the content is relevant.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None}",
+        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic using the SearchTool:\n        ['2025']\n        \n        Important:\n        1. Use the SearchTool to find the URLs\n        2. Use ReadPageText to validate each URL before saving it\n        3. If the text is relevant, save the URL and save the content and retrieve the content_id from the ReadPageText tool.\n        4. Skip any URLs that return 404 or other errors\n        5. After saving the content for 10 urls, run the SaveStoryURLs tool to save the URLs and content_ids.\n        \n\n\n        Please read and understand the following manual for your capabilities.\n\n        Follow the instructions and best practices outlined in the manual for all tasks.\n        \n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on this topic using the SearchTool:\n        ['2025']\n        \n        Important:\n        1. Use the SearchTool to find the URLs\n        2. Use ReadPageText to validate each URL before saving it\n        3. If the text is relevant, save the URL and save the content and retrieve the content_id from the ReadPageText tool.\n        4. Skip any URLs that return 404 or other errors\n        5. After saving the content for 10 urls, run the SaveStoryURLs tool to save the URLs and content_ids.\n        \n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Find Story URLs', 'key': 'task_execute:16a479b7-547e-4905-978a-789e242a1b89:Find Story URLs', 'dependencies': ['topics'], 'optional_dependencies': [], 'result_keys': ['story_urls'], 'agent_class': 'ResearchAgent', 'tools': ['SaveStoryURLs'], 'message_template': 'Find at least 10 relevant example story URLs from vaclaimsinsider.com blogs on:\\n        {topics}\\n        \\n        Remember to validate each URL with ReadPageText before saving it. Set the save=true parameter in the ReadPageText tool if the content is relevant.', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None}",
         "metadata": {},
         "model": "gpt-4o",
         "name": "ResearchAgent",
@@ -10308,13 +10550,6 @@
                                         "title": "Url",
                                         "type": "string"
                                     },
-                                    "metadata": {
-                                        "additionalProperties": {
-                                            "type": "string"
-                                        },
-                                        "title": "Metadata",
-                                        "type": "object"
-                                    },
                                     "content_id": {
                                         "default": null,
                                         "description": "The ID referencing the full content in context",
@@ -10323,8 +10558,7 @@
                                     }
                                 },
                                 "required": [
-                                    "url",
-                                    "metadata"
+                                    "url"
                                 ],
                                 "title": "StoryURL",
                                 "type": "object"
@@ -10370,17 +10604,164 @@
         "id": "asst_08GieCNpRqg1YQFfcDdaL85P",
         "created_at": 1733364093,
         "description": null,
-        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this story metadata:\n        Content ID: {content_id}\n        Metadata: {metadata}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\n\n        Please read and understand the following manual for your capabilities.\n\n        Follow the instructions and best practices outlined in the manual for all tasks.\n        \n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this story metadata:\n        Content ID: {content_id}\n        Metadata: {metadata}\n        \n        1. First use ReadPageText to read and save the content\n        2. Then use SaveToStoryResearch to process and save the metadata\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Process Story Content', 'key': 'task_execute:311c6148-1696-4505-88e1-e2c9997ace81:Process Story Content:0', 'dependencies': ['story_urls'], 'optional_dependencies': [], 'result_keys': ['story_research'], 'agent_class': 'SpecializedBrowsingAgent', 'tools': ['SaveToStoryResearch'], 'message_template': 'Process the content from this story metadata:\\n        Content ID: {content_id}\\n        Metadata: {metadata}\\n        \\n        1. Use ReadPageText to read and save the content\\n        2. Use SaveToStoryResearch to process the saved content', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Urls: b'[{\"url\": \"https://vaclaimsinsider.com/big-va-rating-changes/\", \"metadata\": {}, \"content_id\": \"45518734-0248-4318-8570-2ef0993f41d5\"}, {\"url\": \"https://vaclaimsinsider.com/va-disability-rating-calculator/\", \"metadata\": {}, \"content_id\": \"0f5a7d33-5f05-43b7-9618-f6f09d2a7531\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-pay-rates-chart/\", \"metadata\": {}, \"content_id\": \"5e6249cd-5f53-45fe-803f-d3522a30b546\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-payment-schedule/\", \"metadata\": {}, \"content_id\": \"cfec9282-d74c-45bb-9311-b10870f3b4a7\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-special-monthly-compensation-smc-rates/\", \"metadata\": {}, \"content_id\": \"98785204-2f4e-42c5-861c-9a8d7d13b05a\"}, {\"url\": \"https://vaclaimsinsider.com/category/va-disability-rates/\", \"metadata\": {}, \"content_id\": \"e16d14bb-f02a-47d4-84e9-71f39be6af8b\"}, {\"url\": \"https://vaclaimsinsider.com/project-2025-va-benefits-impact/\", \"metadata\": {}, \"content_id\": \"f7eaad34-f136-401d-9943-04aea4b824b1\"}, {\"url\": \"https://vaclaimsinsider.com/military-retiree-pay-raise-2025/\", \"metadata\": {}, \"content_id\": \"fb8adaab-1b66-4945-838c-6bdad0107614\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-vocational-rehabilitation-pay-chart/\", \"metadata\": {}, \"content_id\": \"3e39614c-f993-42fa-ae6a-cc3a24f8dfd8\"}, {\"url\": \"https://vaclaimsinsider.com/2025-post-9-11-gi-bill-pay-chart/\", \"metadata\": {}, \"content_id\": \"e7a11e6b-2f09-402c-8e4b-90eb71cc7ec4\"}]'",
+        "instructions": "\n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this story:\n        Content ID: 3a253785-7035-4982-9468-db79c45a3696\n        \n        Process the chunks of content from the provided content_id and save research_items for the chunks until you have processed the entire story for the content_id.\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\n\n        Please read and understand the following manual for your capabilities.\n\n        Follow the instructions and best practices outlined in the manual for all tasks.\n        \n        Please read your MANUAL.md file first to understand your capabilities and best practices.\n        \n        Your task is to process the content from this story:\n        Content ID: 3a253785-7035-4982-9468-db79c45a3696\n        \n        Process the chunks of content from the provided content_id and save research_items for the chunks until you have processed the entire story for the content_id.\n        \n        Make sure to save the content_id from ReadPageText to use with SaveToStoryResearch.\n\nCurrent Task Information:  Key: None Input Keys: None Input Description: None Input Context: None Action Summary: None Outcome Description: None Feedback: None Output: {} Topics: ['2025'] Conditions: [] Context Values: {} Task Info: {'name': 'Process Story Content_10', 'key': 'task_execute:16a479b7-547e-4905-978a-789e242a1b89:Process Story Content:9', 'dependencies': ['story_urls'], 'optional_dependencies': [], 'result_keys': ['story_research'], 'agent_class': 'SpecializedBrowsingAgent', 'tools': ['ReadPageText', 'SaveToStoryResearch'], 'message_template': 'Process the content from this story:\\n        Content ID: 3a253785-7035-4982-9468-db79c45a3696\\n        \\n        1. Use ReadPageText to read and save the content\\n        2. Use SaveToStoryResearch to process the saved content', 'validator_prompt': None, 'validator_tool': None, 'expansion_config': None} Story Urls: b'[{\"url\": \"https://vaclaimsinsider.com/big-va-rating-changes/\", \"content_id\": \"e509b2e3-6a91-41e4-97d9-1ea687ba0880\"}, {\"url\": \"https://vaclaimsinsider.com/va-disability-rating-calculator/\", \"content_id\": \"92994199-122a-4b57-a4e9-647392e9bfcf\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-pay-rates-chart/\", \"content_id\": \"e120f786-2e65-4d5a-864b-1a7e472c3a9c\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-special-monthly-compensation-smc-rates/\", \"content_id\": \"8720adea-0a3b-4025-a7eb-635dc5e174e0\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-disability-payment-schedule/\", \"content_id\": \"f615f2ce-8629-4860-a168-987377b85979\"}, {\"url\": \"https://vaclaimsinsider.com/category/va-disability-rates/\", \"content_id\": \"9ecdb8ba-5d99-4d32-ab44-10764355f14b\"}, {\"url\": \"https://vaclaimsinsider.com/project-2025-va-benefits-impact/\", \"content_id\": \"1e693da0-1ec1-4442-8632-a5ddb420befb\"}, {\"url\": \"https://vaclaimsinsider.com/military-retiree-pay-raise-2025/\", \"content_id\": \"74bf6964-db9b-4c9e-89cc-734791b2109e\"}, {\"url\": \"https://vaclaimsinsider.com/2025-va-vocational-rehabilitation-pay-chart/\", \"content_id\": \"29dbc832-f735-467b-9699-36a92e4be508\"}, {\"url\": \"https://vaclaimsinsider.com/va-disability-pay-chart-2025/\", \"content_id\": \"3a253785-7035-4982-9468-db79c45a3696\"}]'",
         "metadata": {},
         "model": "gpt-4o",
         "name": "SpecializedBrowsingAgent",
         "object": "assistant",
-        "tools": [],
+        "tools": [
+            {
+                "type": "file_search",
+                "file_search": {
+                    "max_num_results": null,
+                    "ranking_options": {
+                        "score_threshold": 0.0,
+                        "ranker": "default_2024_08_21"
+                    }
+                }
+            },
+            {
+                "function": {
+                    "name": "ReadPageText",
+                    "description": "This tool reads the text contents of an HTML file using the Browserless API. If the retrieval fails, \nwe will use selenium to retrieve the text contents of the page. The content can optionally be stored \nin the caller agent's context when save=True.",
+                    "parameters": {
+                        "properties": {
+                            "url": {
+                                "description": "The URL of the HTML file to read.",
+                                "title": "Url",
+                                "type": "string"
+                            },
+                            "save": {
+                                "default": false,
+                                "description": "Whether to save the content with a UUID reference.",
+                                "title": "Save",
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "url"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            },
+            {
+                "function": {
+                    "name": "SaveToStoryResearch",
+                    "description": "Tool for saving story research items and example stories to context.\nProcesses content in chunks of 500 characters, creating StoryMeta for each chunk.\nCan handle multiple content_ids and track their processing status independently.",
+                    "parameters": {
+                        "$defs": {
+                            "StoryResearchItem": {
+                                "properties": {
+                                    "id": {
+                                        "description": "The id of the research item",
+                                        "title": "Id",
+                                        "type": "string"
+                                    },
+                                    "meta": {
+                                        "description": "The meta data of the research item",
+                                        "items": {
+                                            "$ref": "#/$defs/TempStoryMeta"
+                                        },
+                                        "title": "Meta",
+                                        "type": "array"
+                                    },
+                                    "content_id": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ],
+                                        "default": null,
+                                        "description": "The ID referencing the full content in context",
+                                        "title": "Content Id"
+                                    },
+                                    "processed_chars": {
+                                        "default": 0,
+                                        "description": "Number of characters processed so far",
+                                        "title": "Processed Chars",
+                                        "type": "integer"
+                                    }
+                                },
+                                "title": "StoryResearchItem",
+                                "type": "object"
+                            },
+                            "TempStoryMeta": {
+                                "properties": {
+                                    "facts": {
+                                        "description": "Critical points from the paragraph that are relevant to the story.",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "title": "Facts",
+                                        "type": "array"
+                                    },
+                                    "key_points": {
+                                        "description": "Key points that summarize the main ideas of the paragraph.",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "title": "Key Points",
+                                        "type": "array"
+                                    },
+                                    "context": {
+                                        "description": "The context of the research item such as the title, url, author, date, etc.",
+                                        "title": "Context",
+                                        "type": "object"
+                                    }
+                                },
+                                "title": "TempStoryMeta",
+                                "type": "object"
+                            }
+                        },
+                        "properties": {
+                            "research_items": {
+                                "anyOf": [
+                                    {
+                                        "items": {
+                                            "$ref": "#/$defs/StoryResearchItem"
+                                        },
+                                        "type": "array"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ],
+                                "default": null,
+                                "description": "The research items from story content chunk being processed",
+                                "title": "Research Items"
+                            },
+                            "content_ids": {
+                                "description": "List of content IDs to process",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "title": "Content Ids",
+                                "type": "array"
+                            }
+                        },
+                        "required": [
+                            "content_ids"
+                        ],
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                "type": "function"
+            }
+        ],
         "response_format": "auto",
         "temperature": 0.3,
         "tool_resources": {
             "code_interpreter": null,
-            "file_search": null
+            "file_search": {
+                "vector_store_ids": []
+            }
         },
         "top_p": 1.0
     }

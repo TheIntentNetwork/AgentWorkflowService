@@ -54,8 +54,15 @@ class TaskExpansion:
                 if isinstance(value, str):
                     try:
                         context[key] = json.loads(value)
-                    except json.JSONDecodeError:
+                    except Exception as e:
+                        logger.warning(f"Error parsing JSON for context key: {key} with value: {value}")
+                elif isinstance(value, bytes):
+                    try:
+                        context[key] = json.loads(value.decode('utf-8'))
+                    except Exception as e:
                         logger.error(f"Failed to parse JSON for context key: {key}")
+                else:
+                    context[key] = value
 
                 # Retry finding array dependencies after parsing
                 array_deps = TaskExpansion.find_array_dependencies(task_data, context, expansion_config)
@@ -100,24 +107,33 @@ class TaskExpansion:
                         # Handle dictionary items
                         for identifier_key, identifier_path in identifiers.items():
                             try:
-                                parts = identifier_path.split('.')
-                                value = item
-                                for part in parts:
-                                    if isinstance(value, dict):
-                                        value = value.get(part)
+                                # Parse the identifier path to get array name and field
+                                array_name, field_name = identifier_path.split('.')
+                                
+                                # Check if this array matches our mapping
+                                mapped_array = array_mapping.get(array_name)
+                                if mapped_array == dep_name:  # dep_name is from the outer loop
+                                    # Now we know we're looking at the right array
+                                    if field_name in item:
+                                        value = item[field_name]
+                                        replacements[identifier_key] = value
+                                        logger.debug(f"""
+                                        Found value for identifier {identifier_key}
+                                        Array: {array_name}
+                                        Field: {field_name}
+                                        Value: {value}
+                                        """)
                                     else:
-                                        value = None
-                                        break
-                                if value is not None:
-                                    replacements[identifier_key] = value
-                                else:
-                                    logger.error(f"""
-                                    Failed to extract value for identifier {identifier_key}
-                                    Path: {identifier_path}
-                                    Item: {json.dumps(item, indent=2)}
-                                    """)
+                                        logger.debug(f"""
+                                        Could not find field {field_name} in item from array {array_name}
+                                        Available keys: {list(item.keys())}
+                                        Item: {json.dumps(item, indent=2)}
+                                        """)
+                            except ValueError as e:
+                                logger.error(f"Invalid identifier path format {identifier_path}. Should be 'array_name.field_name': {e}")
                             except Exception as e:
                                 logger.error(f"Error processing identifier {identifier_key}: {e}")
+                                logger.error(f"Item: {json.dumps(item, indent=2)}")
                     else:
                         # Handle simple values (like strings)
                         replacements['url'] = item
@@ -127,6 +143,9 @@ class TaskExpansion:
                         No replacements found for item {i}!
                         Item: {json.dumps(item, indent=2) if isinstance(item, dict) else str(item)}
                         Identifiers: {identifiers}
+                        Array Mapping: {array_mapping}
+                        Current Array: {dep_name}
+                        Available keys: {list(item.keys()) if isinstance(item, dict) else 'N/A'}
                         """)
                         continue
 
@@ -202,13 +221,6 @@ class TaskExpansion:
     def find_array_dependencies(task_data: Dict[str, Any], context: Dict[str, Any], expansion_config: Dict[str, Any]) -> List[Tuple[str, List[Any]]]:
         """
         Find array dependencies in the context that match task dependencies.
-        
-        Args:
-            task_data: Task configuration
-            context: Current context
-            
-        Returns:
-            List of tuples containing (dependency_name, array_data)
         """
         array_deps = []
         dependencies = task_data.get('dependencies', [])
@@ -218,20 +230,24 @@ class TaskExpansion:
             for dep in dependencies:
                 if dep in context and dep in array_mapping.values():
                     try:
-                        # Ensure the context value is a JSON string and parse it
                         value = context[dep]
-                        try:
-                            if isinstance(value, str):
-                                value = json.loads(value)
-                        except Exception as e:
-                            logger.warning(f"Error parsing JSON for dependency {dep}: {str(e)} with value: {value}")
-                            
-                        if isinstance(value, list):
+                        # Handle bytes/string JSON
+                        if isinstance(value, (bytes, str)):
+                            if isinstance(value, bytes):
+                                value = value.decode('utf-8')
+                            if value.startswith("b'") and value.endswith("'"):
+                                value = value[2:-1]
+                            try:
+                                parsed_value = json.loads(value)
+                                array_deps.append((dep, parsed_value))
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Error parsing JSON for dependency {dep}: {str(e)}")
+                                logger.error(f"Raw value: {value}")
+                        else:
                             array_deps.append((dep, value))
-                    except (json.JSONDecodeError, TypeError) as e:
-                        logger.error(f"Error processing dependency {dep}: {str(e)} with value: {value}")
                     except Exception as e:
-                        logger.error(f"Error processing dependency {dep}: {str(e)} with value: {value}")
+                        logger.error(f"Error processing dependency {dep}: {str(e)}")
+                        logger.error(f"Value: {value}")
                         logger.error(traceback.format_exc())
                     
         return array_deps

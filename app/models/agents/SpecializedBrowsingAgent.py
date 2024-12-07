@@ -43,7 +43,4 @@ class SpecializedBrowsingAgent(Agent):
 
     def set_tools(self):
         """Set the tools available to the SpecializedBrowsingAgent."""
-        self.tools.extend([
-            Scroll, SendKeys, ClickElement, ReadURL, GoBack, SelectDropdown,
-            SolveCaptcha, ReadPDF, ReadPageText, SaveStoryURLs
-        ]) 
+        self.tools.extend([])

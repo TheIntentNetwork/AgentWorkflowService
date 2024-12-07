@@ -11,17 +11,13 @@ quick_log = configure_logger('quick_log')
 from app.models.TaskInfo import TaskInfo
 from app.models.ContextInfo import ContextInfo
 from app.logging_config import configure_logger
-from app.services.cache.redis import RedisService
 from app.utilities.assistant_event_handler import AgencySwarmEventHandler
-from app.utilities.redis_publisher import RedisPublisher
 from app.utilities.event_handler import EventHandler
 from app.models.agency import Agency
-from app.services.supabase.supabase import Supabase
 from app.utilities.errors import (
     DependencyError,
     ConfigurationError,
     TaskExecutionError,
-    MissingDependencyError
 )
 from json import JSONEncoder
 
@@ -491,16 +487,17 @@ class TaskProcessor(BaseModel):
                                 'value': outputs[key]
                             })
                 else:
-                    await self._redis.client.hset(
-                        f"session:{self.session_id}:task_results",
-                        key,
-                        json.dumps(outputs[key])
+                    if outputs[key] is not None:
+                        await self._redis.client.hset(
+                            f"session:{self.session_id}:task_results",
+                            key,
+                            json.dumps(outputs[key])
                         )
-                    await self._notify_subscribers({
-                        'task_name': self.task_info.name,
-                        'result_key': key,
-                        'value': outputs[key]
-                    })
+                        await self._notify_subscribers({
+                            'task_name': self.task_info.name,
+                            'result_key': key,
+                            'value': outputs[key]
+                        })
             
 
         if not outputs:

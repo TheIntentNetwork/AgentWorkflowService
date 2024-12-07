@@ -5,11 +5,14 @@ import sys
 
 from app.models.agents.Agent import Agent
 from app.tools.browsing import (
-    Scroll, SendKeys, ClickElement, ReadURL, AnalyzeContent, GoBack, SelectDropdown, SolveCaptcha
+    Scroll, SendKeys, ClickElement, ReadURL, GoBack, SelectDropdown, SolveCaptcha
 )
-from app.tools import ReadPDF, ReadPageText, SearchTool
+from app.tools.ReadPDF import ReadPDF
+from app.tools.ReadPageText import ReadPageText
+from app.tools.SearchTool import SearchTool
+
 from app.tools.browsing.util.selenium import set_selenium_config
-#logging.basicConfig(filename='browsingagent.log', level=logging.DEBUG)
+
 logging.debug('Browsing Agent:')
 
 class BrowsingAgent(Agent):

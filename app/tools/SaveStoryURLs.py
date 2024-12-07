@@ -8,7 +8,6 @@ from app.logging_config import configure_logger
 
 class StoryURL(BaseModel):
     url: str
-    metadata: Dict[str, str]
     content_id: str = Field(None, description="The ID referencing the full content in context")
 
 class SaveStoryURLs(BaseTool):
