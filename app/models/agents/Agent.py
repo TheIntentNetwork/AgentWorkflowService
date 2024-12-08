@@ -3,7 +3,6 @@ from abc import abstractmethod
 import asyncio
 import copy
 import gc
-import importlib
 import inspect
 import json
 import logging
@@ -13,24 +12,19 @@ from typing import TYPE_CHECKING, Dict, Literal, Optional, TypedDict, Union, Any
 from typing import List
 import uuid
 from deepdiff import DeepDiff
-from colorama import init, Fore, Back, Style
 import numpy as np
 from openai import NotFoundError
 from openai import AsyncOpenAI
-from app.services.cache.redis import RedisService
 from app.logging_config import configure_logger
 from app.tools.oai import FileSearch
 from app.utilities.openapi import validate_openapi_spec
 from colorama import init, Fore, Back, Style
 
 from openai.types.beta.thread_create_params import ToolResources
-from redisvl.query.filter import Tag, FilterExpression
+#from redisvl.query.filter import Tag, FilterExpression
 from app.tools.oai.FileSearch import FileSearchConfig
 # Remove the import of FileSearch to break the circular dependency
 from app.utilities.llm_client import get_openai_client
-from app.logging_config import configure_logger
-from app.utilities.openapi import validate_openapi_spec
-from colorama import init, Fore, Back, Style
 
 from app.tools.oai import Retrieval, CodeInterpreter
 from typing import List, Optional
@@ -156,7 +150,8 @@ class Agent:
             assistant_id: str = None,
             self_assign: bool = True,
             messages: List[str] = None,
-            node_id: str = None
+            node_id: str = None,
+            logger: logging.Logger = logger
     ):
         """
         Initializes an Agent with specified attributes, tools, and OpenAI client.
@@ -188,7 +183,7 @@ class Agent:
         """
         # public attributes
         init(autoreset=True)
-        self.logger = configure_logger(self.__class__.__name__)
+        self.logger = logger if logger else configure_logger(self.__class__.__name__, session_id=session_id, log_path=self.name.replace(" ", "-").lower())
         
         self.key = key
         self.id = id
@@ -208,7 +203,7 @@ class Agent:
         self.api_headers = api_headers if api_headers else {}
         self.api_params = api_params if api_params else {}
 
-        logger.info(f"Agent initialized with {metadata}")
+        self.logger.info(f"Agent initialized with {metadata}")
         self.metadata = metadata if metadata else {}
         self.model = model
         self.validation_attempts = validation_attempts

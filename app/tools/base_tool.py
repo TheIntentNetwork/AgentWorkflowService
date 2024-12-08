@@ -1,13 +1,26 @@
 import os
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, List
+from functools import wraps
 
 from docstring_parser import parse
-
 from pydantic import BaseModel, Field
 
 from app.utilities.shared_state import SharedState
+from app.utilities.decorators import log_io
 
+def logged_run(func):
+    """Decorator to add logging to tool run methods"""
+    @wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        # Access task info from context if needed
+        task_info = self._caller_agent.context_info.context.get('task_info', {}) if self._caller_agent else {}
+        self._logger.debug(f"Running tool for task: {task_info.get('name')}")
+        
+        # Apply the logging decorator
+        decorated_run = log_io(self._logger)(func)
+        return await decorated_run(self, *args, **kwargs)
+    return wrapper
 
 class BaseTool(BaseModel, ABC):
     _shared_state: ClassVar[SharedState] = None
@@ -29,6 +42,7 @@ class BaseTool(BaseModel, ABC):
 
     def _configure_logger(self, session_id: str = None, task_name: str = None):
         """Configure logger with proper folder structure for tool calls"""
+        
         from app.logging_config import configure_logger
         if not session_id:
             return configure_logger(self.__name__, task_name)
@@ -47,6 +61,7 @@ class BaseTool(BaseModel, ABC):
         
         # Create directory structure
         os.makedirs(log_path, exist_ok=True)
+        
         # Get or create logger
         logger = configure_logger(self.__name__, task_name, session_id=session_id)
 
@@ -113,10 +128,9 @@ class BaseTool(BaseModel, ABC):
         return schema
 
     @abstractmethod
-    async def run(self, **kwargs):        
-        # Access task info from context if needed
-        task_info = self._caller_agent.context_info.context.get('task_info', {})
-        self._logger.debug(f"Running tool for task: {task_info.get('name')}")
-        
-        # Tool implementation
+    @logged_run
+    async def run(self, **kwargs):
+        """
+        Abstract run method to be implemented by subclasses.
+        """
         pass

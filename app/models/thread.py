@@ -4,7 +4,7 @@ import json
 import os
 import time
 import traceback
-from typing import Coroutine, List, Optional, Type, Union, TypeVar
+from typing import Coroutine, List, Optional, Type, Union, TypeVar, AsyncGenerator, Any
 from app.utilities.logging_mixin import LoggingMixin, log_performance, OperationContext
 
 from openai import APIError, BadRequestError
@@ -22,6 +22,7 @@ from app.utilities.llm_client import get_openai_client
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import re
+import logging
 
 class Thread(LoggingMixin):
     async_mode: str = None
@@ -31,10 +32,12 @@ class Thread(LoggingMixin):
     def thread_url(self):
         return f'https://platform.openai.com/playground/assistants?assistant={self.recipient_agent.assistant.id}&mode=assistant&thread={self.id}'
 
-    def __init__(self, agent: Union[Agent, User], recipient_agent: Agent):
+    def __init__(self, agent: Union[Agent, User], recipient_agent: Agent, logger: Optional[logging.Logger] = None):
+        """Initialize Thread with agents and optional logger."""
         super().__init__()
         self.agent = agent
         self.recipient_agent = recipient_agent
+        self.logger = logger or configure_logger('Thread')
         
         self.logger.info("Initializing thread", extra={
             'agent_id': getattr(agent, 'id', 'user'),
@@ -43,28 +46,36 @@ class Thread(LoggingMixin):
         })
         
         self.client = get_openai_client()
-
         self.id = None
         self.thread = None
         self.run = None
         self.stream = None
-
         self.num_run_retries = 0
         self.send_message_in_progress = False
 
     def init_thread(self):
-        if self.id:
-            self.thread = self.client.beta.threads.retrieve(self.id)
-        else:
-            self.thread = self.client.beta.threads.create()
-            self.id = self.thread.id
+        """Initialize OpenAI thread."""
+        self.logger.debug("Initializing OpenAI thread")
+        try:
+            if self.id:
+                self.logger.debug(f"Retrieving existing thread with ID: {self.id}")
+                self.thread = self.client.beta.threads.retrieve(self.id)
+            else:
+                self.logger.debug("Creating new thread")
+                self.thread = self.client.beta.threads.create()
+                self.id = self.thread.id
+                self.logger.info(f"Created new thread with ID: {self.id}")
 
-            if self.recipient_agent.examples:
-                for example in self.recipient_agent.examples:
-                    self.client.beta.threads.messages.create(
-                        thread_id=self.id,
-                        **example,
-                    )
+                if self.recipient_agent.examples:
+                    self.logger.debug("Adding example messages to thread")
+                    for example in self.recipient_agent.examples:
+                        self.client.beta.threads.messages.create(
+                            thread_id=self.id,
+                            **example,
+                        )
+        except Exception as e:
+            self.logger.error(f"Error initializing thread: {str(e)}", exc_info=True)
+            raise
 
     async def get_completion_stream(self,
                               message: str,
@@ -97,38 +108,51 @@ class Thread(LoggingMixin):
                        tool_choice: AssistantToolChoice = None,
                        yield_messages: bool = False,
                        verbose: bool = False,
-                       response_format: Optional[dict] = None
-                       ) -> str:
+                       response_format: Optional[dict] = None,
+                       session_id: str = None,
+                       logger: logging.Logger = None
+                       ) -> AsyncGenerator[str, None]:
+        self.logger.info(f"Starting get_completion with message: {message[:100]}...")
+        
         if not recipient_agent:
             recipient_agent = self.recipient_agent
+            self.logger.debug(f"Using default recipient agent: {recipient_agent.name}")
         
         if not attachments:
             attachments = []
+            self.logger.debug("No attachments provided")
 
         if message_files:
+            self.logger.debug(f"Processing message files: {message_files}")
             recipient_tools = []
 
             if FileSearch in recipient_agent.tools:
                 recipient_tools.append({"type": "file_search"})
+                self.logger.debug("Added file_search tool")
             if CodeInterpreter in recipient_agent.tools:
                 recipient_tools.append({"type": "code_interpreter"})
+                self.logger.debug("Added code_interpreter tool")
 
             for file_id in message_files:
                 attachments.append({"file_id": file_id,
                                     "tools": recipient_tools or [{"type": "file_search"}]})
+                self.logger.debug(f"Added file {file_id} to attachments")
 
         if not self.thread:
+            self.logger.info("Initializing thread")
             self.init_thread()
 
         if event_handler:
+            self.logger.debug(f"Setting up event handler for agents: {self.agent.name} -> {recipient_agent.name}")
             event_handler.set_agent(self.agent)
             event_handler.set_recipient_agent(recipient_agent)
 
         # Determine the sender's name based on the agent type
         sender_name = "user" if isinstance(self.agent, User) else self.agent.name
-        print(f'THREAD:[ {sender_name} -> {recipient_agent.name} ]: URL {self.thread_url}')
+        self.logger.info(f'Thread communication: {sender_name} -> {recipient_agent.name} (URL: {self.thread_url})')
 
         # send message
+        self.logger.debug("Creating message object")
         message_obj = self.create_message(
             message=message,
             role="user",
@@ -136,36 +160,45 @@ class Thread(LoggingMixin):
         )
 
         if yield_messages:
+            self.logger.debug("Yielding initial message")
             yield MessageOutput("text", self.agent.name, recipient_agent.name, message, message_obj)
 
+        self.logger.debug("Creating run with recipient agent")
         self._create_run(recipient_agent, additional_instructions, event_handler, tool_choice, response_format=response_format)
 
         error_attempts = 0
         validation_attempts = 0
         full_message = ""
         while True:
+            self.logger.debug("Waiting for run to complete")
             await self._run_until_done()
 
             # function execution
             if self.run.status == "requires_action":
+                self.logger.info("Run requires action - processing tool calls")
                 tool_calls = self.run.required_action.submit_tool_outputs.tool_calls
                 tool_outputs_and_names = []  # list of tuples (name, tool_output)
                 sync_tool_calls = [tool_call for tool_call in tool_calls if tool_call.function.name == "SendMessage"]
 
                 if self.async_mode == 'tools_threading':
+                    self.logger.debug("Using tools threading mode")
                     futures_with_calls = []
                     with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                         for tool_call in tool_calls:
                             if tool_call.function.name != "SendMessage":
+                                self.logger.debug(f"Submitting tool call: {tool_call.function.name}")
                                 future = executor.submit(await self.execute_tool, tool_call, recipient_agent, event_handler, tool_outputs_and_names)
                                 futures_with_calls.append((future, tool_call))
                         
                         for future, tool_call in futures_with_calls:
                             tool_output = future.result()
+                            self.logger.debug(f"Tool call completed: {tool_call.function.name}")
                             tool_outputs_and_names.append((tool_call.function.name, {"tool_call_id": tool_call.id, "output": tool_output}))
                 else:
+                    self.logger.debug("Using sequential tool execution mode")
                     for tool_call in tool_calls:
                         if tool_call.function.name != "SendMessage":
+                            self.logger.debug(f"Executing tool: {tool_call.function.name}")
                             tool_output = await self.execute_tool(tool_call, recipient_agent, event_handler, tool_outputs_and_names)
                             tool_outputs_and_names.append((tool_call.function.name, {"tool_call_id": tool_call.id, "output": tool_output}))
 
@@ -182,14 +215,18 @@ class Thread(LoggingMixin):
 
                 # send message tools can change this in other threads
                 if event_handler:
+                    self.logger.debug("Resetting event handler")
                     event_handler.set_agent(self.agent)
                     event_handler.set_recipient_agent(recipient_agent)
                     
                 # submit tool outputs
                 try:
+                    self.logger.debug("Submitting tool outputs")
                     self._submit_tool_outputs(tool_outputs, event_handler)
                 except BadRequestError as e:
+                    self.logger.warning(f"BadRequestError encountered: {str(e)}")
                     if 'Runs in status "expired"' in e.message or '''tool_outputs' ''' in e.message or 'tool_outputs too large' in e.message:
+                        self.logger.info("Handling expired run - recreating message and run")
                         self.create_message(
                             message="Previous request timed out. Please repeat the exact same tool calls in the exact same order with the same arguments.",
                             role="user"
@@ -199,16 +236,20 @@ class Thread(LoggingMixin):
                         await self._run_until_done()
 
                         if self.run.status != "requires_action":
-                            raise Exception("Run Failed. Error: ", self.run.last_error or self.run.incomplete_details)
+                            error_msg = "Run Failed. Error: " + (self.run.last_error or self.run.incomplete_details)
+                            self.logger.error(error_msg)
+                            raise Exception(error_msg)
 
                         # change tool call ids
                         tool_calls = self.run.required_action.submit_tool_outputs.tool_calls
 
                         if len(tool_calls) != len(tool_outputs):
+                            self.logger.warning("Tool calls length mismatch - resetting outputs")
                             tool_outputs = []
                             for i, tool_call in enumerate(tool_calls):
                                 tool_outputs.append({"tool_call_id": tool_call.id, "output": "Error: openai run timed out. You can try again one more time."})
                         else:
+                            self.logger.debug("Updating tool call IDs")
                             for i, tool_name in enumerate(tool_names):
                                 for tool_call in tool_calls[:]:
                                     if tool_call.function.name == tool_name:
@@ -221,11 +262,13 @@ class Thread(LoggingMixin):
                         raise e
             # error
             elif self.run.status == "failed":
+                self.logger.error(f"Run failed: {self.run.last_error}")
                 full_message += self._get_last_message_text()
                 common_errors = ["something went wrong", "the server had an error processing your request", "rate limit reached"]
                 error_message = self.run.last_error.message.lower()
 
                 if error_attempts < 3 and any(error in error_message for error in common_errors):
+                    self.logger.info(f"Retrying after error (attempt {error_attempts + 1}/3)")
                     if error_attempts < 2:
                         await asyncio.sleep(1 + error_attempts)
                     else:
@@ -235,20 +278,27 @@ class Thread(LoggingMixin):
                                      tool_choice, response_format=response_format)
                     error_attempts += 1
                 else:
-                    raise Exception("OpenAI Run Failed. Error: ", self.run.last_error.message)
+                    error_msg = "OpenAI Run Failed. Error: " + self.run.last_error.message
+                    self.logger.error(error_msg)
+                    raise Exception(error_msg)
             elif self.run.status == "incomplete":
-                raise Exception("OpenAI Run Incomplete. Details: ", self.run.incomplete_details)
+                error_msg = "OpenAI Run Incomplete. Details: " + self.run.incomplete_details
+                self.logger.error(error_msg)
+                raise Exception(error_msg)
             # return assistant message
             else:
+                self.logger.debug("Processing assistant message")
                 message_obj = self._get_last_assistant_message()
                 last_message = message_obj.content[0].text.value
                 full_message += last_message
                 if recipient_agent.response_validator:
+                    self.logger.debug("Validating response")
                     try:
                         if isinstance(recipient_agent, Agent):
                             # TODO: allow users to modify the last message from response validator and replace it on OpenAI
                             recipient_agent.response_validator(message=last_message)
                     except Exception as e:
+                        self.logger.warning(f"Response validation failed: {str(e)}")
                         if validation_attempts < recipient_agent.validation_attempts:
                             try:
                                 evaluated_content = eval(str(e))
@@ -257,8 +307,10 @@ class Thread(LoggingMixin):
                                 else:
                                     content = str(e)
                             except Exception as eval_exception:
+                                self.logger.error(f"Error evaluating content: {str(eval_exception)}")
                                 content = str(e)
 
+                            self.logger.info(f"Retrying with validation feedback (attempt {validation_attempts + 1})")
                             message_obj = self.create_message(
                                 message=content,
                                 role="user"
@@ -272,6 +324,7 @@ class Thread(LoggingMixin):
                                         break
 
                             if event_handler:
+                                self.logger.debug("Invoking event handler")
                                 handler = event_handler()
                                 handler.on_message_created(message_obj)
                                 handler.on_message_done(message_obj)
@@ -281,6 +334,7 @@ class Thread(LoggingMixin):
                             self._create_run(recipient_agent, additional_instructions, event_handler, tool_choice, response_format=response_format)
 
                             continue
+                self.logger.info("Completion successful, yielding final message")
                 yield last_message
                 return
 

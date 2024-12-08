@@ -9,8 +9,11 @@ class AgentFactory:
     @inject
     async def from_name(**agent_data: Dict[str, Any]) -> Any:
         from app.models.agents.Agent import Agent
-        from app.logging_config import configure_logger
-        logger = configure_logger('AgentFactory')
+        if agent_data.get('logger', None):
+            logger = agent_data['logger']
+        else:
+            from app.logging_config import configure_logger
+            logger = configure_logger('AgentFactory')
 
         if agent_data.get('name', None):
             agents_module = 'app.models.agents'

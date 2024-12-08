@@ -39,7 +39,7 @@ class TaskProcessor(BaseModel):
     _logger = None  # Initialize logger as None
     
     #######################
-    # Core Configuration #
+    # Core Configuration  #
     #######################
     key: str = Field(..., description="The key of the task processor.")
     name: str = Field(..., description="The name of the task processor.")
@@ -286,7 +286,8 @@ class TaskProcessor(BaseModel):
                         'optional_dependencies': self.task_info.optional_dependencies
                     },
                     expansion_config=self.task_info.expansion_config,
-                    context=serialized_context
+                    context=serialized_context,
+                    logger=self._task_logger
                 )
                 
                 quick_log.info(f"[TASK_EXPAND] {self.task_info.name} - Expanded into {len(expanded_tasks)} tasks")
@@ -414,10 +415,11 @@ class TaskProcessor(BaseModel):
             session_id=self.session_id,
             tools=tools,
             instructions=task.shared_instructions,
-            context_info=self.context_info
+            context_info=self.context_info,
+            logger=self._task_logger
         )
             
-        agency = Agency(agency_chart=[agent], shared_instructions=task.shared_instructions, session_id=self.session_id)
+        agency = Agency(agency_chart=[agent], shared_instructions=task.shared_instructions, session_id=self.session_id, logger=self._task_logger)
         await agency.get_completion(message)
         
         if isinstance(agent.context_info, dict):
@@ -435,7 +437,7 @@ class TaskProcessor(BaseModel):
                     self._task_logger.warning(f"Task result is None for optional key: {result_key}")
                 else:
                     self._task_logger.warning(f"Task result is None for key: {result_key}")
-                    agency = Agency(agency_chart=[agent], shared_instructions=task.shared_instructions)
+                    agency = Agency(agency_chart=[agent], shared_instructions=task.shared_instructions, session_id=self.session_id, logger=self._task_logger)
                     await agency.get_completion(
                     f"{task.message_template}\n\n"
                     f"Please try again. Please ensure that all necessary tools are used to generate the required {result_key}."
@@ -1117,7 +1119,37 @@ class TaskProcessor(BaseModel):
             dependency = value.get('result_key')
             value = value.get('value')
             
+            self._task_logger.debug(f"Raw dependency value received: {value}")
+            
             if dependency and value is not None:
+                # Handle byte-string conversion if needed
+                if isinstance(value, (str, bytes)):
+                    try:
+                        # If it's bytes, decode first
+                        if isinstance(value, bytes):
+                            value = value.decode('utf-8')
+                            self._task_logger.debug(f"Decoded bytes to string: {value}")
+                        
+                        # If it starts with b' and ends with ', remove those
+                        if value.startswith("b'") and value.endswith("'"):
+                            value = value[2:-1]
+                            self._task_logger.debug(f"Removed b'' wrapper: {value}")
+                        
+                        # Replace escaped quotes
+                        value = value.replace("\\'", "'")
+                        self._task_logger.debug(f"Unescaped quotes: {value}")
+                        
+                        # Parse JSON
+                        value = json.loads(value)
+                        self._task_logger.debug(f"Successfully parsed JSON: {value}")
+                        
+                    except json.JSONDecodeError as e:
+                        self._task_logger.error(f"JSON parsing failed: {e}")
+                        self._task_logger.error(f"Failed value: {value}")
+                    except Exception as e:
+                        self._task_logger.error(f"Error processing value: {str(e)}")
+                        self._task_logger.error(f"Problematic value: {value}")
+                
                 # Check if this is an array dependency from expansion config
                 is_array_dependency = (self.task_info.expansion_config and 
                                      dependency in self.task_info.expansion_config['array_mapping'].values())                

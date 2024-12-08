@@ -4,7 +4,7 @@ import traceback
 from pydantic import BaseModel, Field
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from .base_tool import BaseTool as BaseTool
+from .base_tool import BaseTool
 
 
 class SearchTool(BaseTool):
@@ -20,16 +20,16 @@ class SearchTool(BaseTool):
     def perform_search(self, service, query, site):
         if not site:
             return service.cse().list(
-            q=query, 
-            cx='e0ad9c99aee184d6a',
-        ).execute()
+                q=query, 
+                cx='e0ad9c99aee184d6a',
+            ).execute()
         else:
             return service.cse().list(
                 q=query + " site:" + site, 
                 cx='e0ad9c99aee184d6a'
             ).execute()
 
-    def run(self):
+    async def run(self):
         try:
             service = self.build_service()
             titles_and_links = []

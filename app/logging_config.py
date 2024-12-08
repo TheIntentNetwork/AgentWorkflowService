@@ -252,6 +252,7 @@ def configure_logger(name, log_path=None, level=logging.INFO, session_id=None):
         level: Logging level
         session_id: Optional session ID for error logging
     """
+    
     logger = logging.getLogger(name)
     logger.setLevel(level)
     

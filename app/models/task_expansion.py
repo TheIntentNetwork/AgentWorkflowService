@@ -1,3 +1,4 @@
+from base64 import decode
 import json
 import logging
 import traceback
@@ -13,7 +14,7 @@ class TaskExpansion:
     """
 
     @staticmethod
-    def _expand_array_task(task_data: Dict[str, Any], expansion_config: Dict[str, Any], context: str) -> List[Dict[str, Any]]:
+    def _expand_array_task(task_data: Dict[str, Any], expansion_config: Dict[str, Any], context: str, logger: logging.Logger = logger) -> List[Dict[str, Any]]:
         """
         Expands a task based on array data in the context.
         """
@@ -51,18 +52,27 @@ class TaskExpansion:
             array_deps = []
 
             for key, value in context.items():
-                if isinstance(value, str):
-                    try:
-                        context[key] = json.loads(value)
-                    except Exception as e:
-                        logger.warning(f"Error parsing JSON for context key: {key} with value: {value}")
-                elif isinstance(value, bytes):
-                    try:
-                        context[key] = json.loads(value.decode('utf-8'))
-                    except Exception as e:
-                        logger.error(f"Failed to parse JSON for context key: {key}")
-                else:
-                    context[key] = value
+                if key in task_data.get('dependencies', []) and key in array_mapping.values():
+                    if isinstance(value, str):
+                        try:
+                            context[key] = json.loads(value)
+                        except Exception as e:
+                            logger.warning(f"Error parsing JSON for context key: {key} with value: {value}")
+                            try:
+                                # Handle potential bytes-like string
+                                if value.startswith("b'") and value.endswith("'"):
+                                    # Remove b'' wrapper and decode
+                                    raw_value = value[2:-1].encode('utf-8').decode('unicode_escape')
+                                    context[key] = json.loads(raw_value)
+                                else:
+                                    context[key] = value
+                            except Exception as e:
+                                logger.error(f"Failed to parse JSON for context key from bytes: {key}")
+                                context[key] = value
+                    else:
+                        context[key] = value
+                    
+                    array_deps.append((key, value))
 
                 # Retry finding array dependencies after parsing
                 array_deps = TaskExpansion.find_array_dependencies(task_data, context, expansion_config)
@@ -162,13 +172,15 @@ class TaskExpansion:
                         expanded_task['message_template'] = TaskExpansion.replace_template_vars(
                             expanded_task['message_template'],
                             replacements,
-                            context if isinstance(context, dict) else {}
+                            context if isinstance(context, dict) else {},
+                            logger
                         )
                     if 'shared_instructions' in expanded_task:
                         expanded_task['shared_instructions'] = TaskExpansion.replace_template_vars(
                             expanded_task['shared_instructions'],
                             replacements,
-                            context if isinstance(context, dict) else {}
+                            context if isinstance(context, dict) else {},
+                            logger
                         )
 
                     logger.info(f"""
@@ -218,7 +230,7 @@ class TaskExpansion:
             return str(data)
 
     @staticmethod
-    def find_array_dependencies(task_data: Dict[str, Any], context: Dict[str, Any], expansion_config: Dict[str, Any]) -> List[Tuple[str, List[Any]]]:
+    def find_array_dependencies(task_data: Dict[str, Any], context: Dict[str, Any], expansion_config: Dict[str, Any], logger: logging.Logger = logger) -> List[Tuple[str, List[Any]]]:
         """
         Find array dependencies in the context that match task dependencies.
         """
@@ -253,7 +265,7 @@ class TaskExpansion:
         return array_deps
 
     @staticmethod
-    def replace_template_vars(template: str, replacements: Dict[str, Any], context: Dict[str, Any]) -> str:
+    def replace_template_vars(template: str, replacements: Dict[str, Any], context: Dict[str, Any], logger: logging.Logger = logger) -> str:
         """
         Replace template variables with actual values.
         

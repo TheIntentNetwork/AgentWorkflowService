@@ -1,6 +1,7 @@
 import inspect
 import json
 from logging import Logger
+import logging
 import os
 import queue
 import threading
@@ -38,6 +39,7 @@ from .message_output import MessageOutputLive
 from app.models.thread import Thread
 from app.models.thread_async import ThreadAsync
 from app.models.User import User
+from app.logging_config import configure_logger
 
 from app.utilities.streaming import AgencyEventHandler
 
@@ -74,6 +76,7 @@ class Agency:
                  max_completion_tokens: int = None,
                  truncation_strategy: dict = None,
                  session_id: str = None,
+                 logger: logging.Logger = None
                  ):
         """
         Initializes the Agency object, setting up agents, threads, and core functionalities.
@@ -113,7 +116,8 @@ class Agency:
         self.max_prompt_tokens = max_prompt_tokens
         self.max_completion_tokens = max_completion_tokens
         self.truncation_strategy = truncation_strategy
-
+        self.logger = logger if logger else configure_logger('Agency', session_id=session_id)
+        
         if self.async_mode == "threading":
             from app.models.thread_async import ThreadAsync
             self.ThreadType = ThreadAsync
@@ -148,15 +152,20 @@ class Agency:
         Returns:
             Thread: The thread object for communication with the specified agent.
         """
+        self.logger.debug(f"Getting thread for recipient agent: {recipient_agent.name}")
+        
         if recipient_agent == self.ceo:
+            self.logger.debug("Using main thread for CEO communication")
             return self.main_thread
         
         for agent_name, threads in self.agents_and_threads.items():
             if recipient_agent.name in threads:
+                self.logger.debug(f"Found existing thread between {agent_name} and {recipient_agent.name}")
                 return threads[recipient_agent.name]
         
         # If no existing thread is found, create a new one
-        new_thread = self.ThreadType(self.user, recipient_agent)
+        self.logger.debug(f"Creating new thread for {recipient_agent.name}")
+        new_thread = self.ThreadType(self.user, recipient_agent, logger=self.logger)
         new_thread.init_thread()
         self.agents_and_threads[self.user.name][recipient_agent.name] = new_thread
         return new_thread
@@ -172,38 +181,55 @@ class Agency:
                              verbose: bool = False,
                              response_format: dict = None,
                              session_id: str = None):
+        """
+        Gets completion for a message from the specified agent.
+        """
+        self.logger.info(f"Getting completion for message: {message[:100]}...")
+        
         if verbose and yield_messages:
+            self.logger.warning("Verbose mode is not compatible with yield_messages=True")
             raise Exception("Verbose mode is not compatible with yield_messages=True")
 
         if not recipient_agent:
             recipient_agent = self.ceo
 
+        self.logger.debug(f"Using recipient agent: {recipient_agent.name}")
+
         thread = self._get_thread(recipient_agent)
+        
+        try:
+            res = thread.get_completion(
+                message=message,
+                message_files=message_files,
+                attachments=attachments,
+                recipient_agent=recipient_agent,
+                additional_instructions=additional_instructions,
+                tool_choice=tool_choice,
+                yield_messages=yield_messages or verbose,
+                response_format=response_format,
+                session_id=session_id,
+                event_handler=AgencyEventHandler,
+                verbose=True
+            )
 
-        res = thread.get_completion(
-            message=message,
-            message_files=message_files,
-            attachments=attachments,
-            recipient_agent=recipient_agent,
-            additional_instructions=additional_instructions,
-            tool_choice=tool_choice,
-            yield_messages=yield_messages or verbose,
-            response_format=response_format
-        )
-
-        if yield_messages:
-            return res
-        else:
-            full_response = ""
-            async for message in res:
-                if verbose:
-                    if isinstance(message, MessageOutput):
-                        message.cprint()
-                    else:
-                        print(message)
-                full_response += str(message) + "\n"
-            return full_response.strip()
-
+            if yield_messages:
+                return res
+            else:
+                full_response = ""
+                async for message in res:
+                    if verbose:
+                        if isinstance(message, MessageOutput):
+                            message.cprint()
+                        else:
+                            print(message)
+                    full_response += str(message) + "\n"
+                
+                self.logger.debug("Completion generated successfully")
+                return full_response.strip()
+            
+        except Exception as e:
+            self.logger.error(f"Error getting completion: {str(e)}", exc_info=True)
+            raise
 
     def get_completion_stream(self,
                               message: str,
@@ -250,7 +276,7 @@ class Agency:
 
                 return e.value
     
-    def type_to_response_format_param(model: Type[BaseModel]) -> Dict[str, Any]:
+    def type_to_response_format_param(self, model: Type[BaseModel]) -> Dict[str, Any]:
        """
        Convert a Pydantic model to a response format parameter for OpenAI API.
        """
@@ -288,7 +314,7 @@ class Agency:
         response_model = None
         if isinstance(response_format, type):
             response_model = response_format
-            response_format = type_to_response_format_param(response_format)
+            response_format = self.type_to_response_format_param(response_format)
 
         res = self.get_completion(message=message,
                             message_files=message_files,
@@ -831,19 +857,17 @@ class Agency:
     def _init_agents(self):
         """
         Initializes all agents in the agency with unique IDs, shared instructions, and OpenAI models.
-
-        This method iterates through each agent in the agency, assigns a unique ID, adds shared instructions, and initializes the OpenAI models for each agent.
-
-        There are no input parameters.
-
-        There are no output parameters as this method is used for internal initialization purposes within the Agency class.
         """
+        self.logger.info("Initializing agents")
+        
         if self.settings_callbacks:
+            self.logger.debug("Loading settings from callbacks")
             loaded_settings = self.settings_callbacks["load"]()
             with open(self.settings_path, 'w') as f:
                 json.dump(loaded_settings, f, indent=4)
 
         for agent in self.agents:
+            self.logger.debug(f"Initializing agent: {agent.name}")
             if "temp_id" in agent.id:
                 agent.id = None
 
@@ -875,49 +899,56 @@ class Agency:
                 agent.shared_state = self.shared_state
 
             agent.init_oai()
+            self.logger.debug(f"Agent {agent.name} initialized successfully")
 
         if self.settings_callbacks:
+            self.logger.debug("Saving settings via callbacks")
             with open(self.agents[0].get_settings_path(), 'r') as f:
                 settings = f.read()
             settings = json.loads(settings)
             self.settings_callbacks["save"](settings)
+        
+        self.logger.info("All agents initialized successfully")
 
     def _init_threads(self):
         """
         Initializes threads for communication between agents within the agency.
-
-        This method creates Thread objects for each pair of interacting agents as defined in the agents_and_threads attribute of the Agency. Each thread facilitates communication and task execution between an agent and its designated recipient agent.
-
-        No input parameters.
-
-        Output Parameters:
-            This method does not return any value but updates the agents_and_threads attribute with initialized Thread objects.
         """
-        self.main_thread = Thread(self.user, self.ceo)
+        self.logger.info("Initializing threads")
+        self.main_thread = Thread(self.user, self.ceo, logger=self.logger)
 
         # load thread ids
         loaded_thread_ids = {}
         if self.threads_callbacks:
+            self.logger.debug("Loading thread IDs from callbacks")
             loaded_thread_ids = self.threads_callbacks["load"]()
             if "main_thread" in loaded_thread_ids and loaded_thread_ids["main_thread"]:
                 self.main_thread.id = loaded_thread_ids["main_thread"]
+                self.logger.debug(f"Loaded main thread ID: {self.main_thread.id}")
             else:
                 self.main_thread.init_thread()
+                self.logger.debug("Initialized new main thread")
 
         for agent_name, threads in self.agents_and_threads.items():
             for other_agent, items in threads.items():
-                self.agents_and_threads[agent_name][other_agent] = self.ThreadType(
+                self.logger.debug(f"Creating thread between {agent_name} and {other_agent}")
+                thread = self.ThreadType(
                     self._get_agent_by_name(items["agent"]),
-                    self._get_agent_by_name(
-                        items["recipient_agent"]))
+                    self._get_agent_by_name(items["recipient_agent"]),
+                    logger=self.logger
+                )
+                self.agents_and_threads[agent_name][other_agent] = thread
 
                 if agent_name in loaded_thread_ids and other_agent in loaded_thread_ids[agent_name]:
-                    self.agents_and_threads[agent_name][other_agent].id = loaded_thread_ids[agent_name][other_agent]
+                    thread.id = loaded_thread_ids[agent_name][other_agent]
+                    self.logger.debug(f"Loaded existing thread ID: {thread.id}")
                 elif self.threads_callbacks:
-                    self.agents_and_threads[agent_name][other_agent].init_thread()
+                    thread.init_thread()
+                    self.logger.debug(f"Initialized new thread with ID: {thread.id}")
 
         # save thread ids
         if self.threads_callbacks:
+            self.logger.debug("Saving thread IDs")
             loaded_thread_ids = {}
             for agent_name, threads in self.agents_and_threads.items():
                 loaded_thread_ids[agent_name] = {}
@@ -925,60 +956,65 @@ class Agency:
                     loaded_thread_ids[agent_name][other_agent] = thread.id
 
             loaded_thread_ids["main_thread"] = self.main_thread.id
-
             self.threads_callbacks["save"](loaded_thread_ids)
+            self.logger.debug("Thread IDs saved successfully")
+
+        self.logger.info("All threads initialized successfully")
 
     def _parse_agency_chart(self, agency_chart):
         """
-        Parses the provided agency chart to initialize and organize agents within the agency.
-
-        Parameters:
-            agency_chart: A structure representing the hierarchical organization of agents within the agency.
-                    It can contain Agent objects and lists of Agent objects.
-
-        This method iterates through each node in the agency chart. If a node is an Agent, it is set as the CEO if not already assigned.
-        If a node is a list, it iterates through the agents in the list, adding them to the agency and establishing communication
-        threads between them. It raises an exception if the agency chart is invalid or if multiple CEOs are defined.
+        Parses the provided agency chart to initialize and organize agents.
         """
+        self.logger.info("Parsing agency chart")
+        
         if not isinstance(agency_chart, list):
+            self.logger.error("Invalid agency chart format - expected list")
             raise Exception("Invalid agency chart.")
 
         if len(agency_chart) == 0:
+            self.logger.error("Empty agency chart provided")
             raise Exception("Agency chart cannot be empty.")
 
-        for node in agency_chart:
-            if isinstance(node, Agent):
-                if not self.ceo:
-                    self.ceo = node
-                    self._add_agent(self.ceo)
-                else:
-                    self._add_agent(node)
-                self._add_main_recipient(node)
+        try:
+            for node in agency_chart:
+                if isinstance(node, Agent):
+                    if not self.ceo:
+                        self.logger.debug(f"Setting {node.name} as CEO")
+                        self.ceo = node
+                        self._add_agent(self.ceo)
+                    else:
+                        self._add_agent(node)
+                    self._add_main_recipient(node)
+                elif isinstance(node, list):
+                    for i, agent in enumerate(node):
+                        if not isinstance(agent, Agent):
+                            raise Exception("Invalid agency chart.")
 
-            elif isinstance(node, list):
-                for i, agent in enumerate(node):
-                    if not isinstance(agent, Agent):
-                        raise Exception("Invalid agency chart.")
+                        index = self._add_agent(agent)
 
-                    index = self._add_agent(agent)
-
-                    if i == len(node) - 1:
-                        continue
-
-                    if agent.name not in self.agents_and_threads.keys():
-                        self.agents_and_threads[agent.name] = {}
-
-                    if i < len(node) - 1:
-                        other_agent = node[i + 1]
-                        if other_agent.name == agent.name:
+                        if i == len(node) - 1:
                             continue
-                        if other_agent.name not in self.agents_and_threads[agent.name].keys():
-                            self.agents_and_threads[agent.name][other_agent.name] = {
-                                "agent": agent.name,
-                                "recipient_agent": other_agent.name,
-                            }
-            else:
-                raise Exception("Invalid agency chart.")
+
+                        if agent.name not in self.agents_and_threads.keys():
+                            self.agents_and_threads[agent.name] = {}
+
+                        if i < len(node) - 1:
+                            other_agent = node[i + 1]
+                            if other_agent.name == agent.name:
+                                continue
+                            if other_agent.name not in self.agents_and_threads[agent.name].keys():
+                                self.agents_and_threads[agent.name][other_agent.name] = {
+                                    "agent": agent.name,
+                                    "recipient_agent": other_agent.name,
+                                }
+                else:
+                    raise Exception("Invalid agency chart.")
+
+            self.logger.info("Agency chart parsed successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error parsing agency chart: {str(e)}", exc_info=True)
+            raise
 
     def _add_agent(self, agent):
         """
@@ -1206,7 +1242,14 @@ class Agency:
 
     def delete(self):
         """
-        This method deletes the agency and all its agents, cleaning up any files and vector stores associated with each agent.
+        Deletes the agency and all its agents.
         """
-        for agent in self.agents:
-            agent.delete()
+        self.logger.info("Deleting agency and all agents")
+        try:
+            for agent in self.agents:
+                self.logger.debug(f"Deleting agent: {agent.name}")
+                agent.delete()
+            self.logger.info("Agency deleted successfully")
+        except Exception as e:
+            self.logger.error(f"Error deleting agency: {str(e)}", exc_info=True)
+            raise

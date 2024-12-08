@@ -8,6 +8,7 @@ from typing import ClassVar, Dict, Any, List, Optional
 from app.tools.base_tool import BaseTool
 from app.logging_config import configure_logger
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from app.services.cache.redis import RedisService
 
 class SharedImage(BaseModel):
     alt: str
@@ -52,12 +53,39 @@ class StoryMetadata(BaseModel):
 class SaveToStory(BaseTool):
     """
     Tool for saving story paragraphs and metadata to context and Strapi.
-    The story will be used to construct the final story document.
+    Utilizes cached research data from processed content to construct the final story.
     """
     result_keys: ClassVar[List[str]] = ['story', 'strapi_response']
     
     story_paragraphs: List[str] = Field(..., description="The paragraphs of the story to save")
     metadata: StoryMetadata = Field(..., description="Story metadata including title, images, and components")
+    session_id: str = Field(..., description="The session ID to retrieve research data")
+    
+    async def _get_research_data(self, redis: RedisService) -> List[Dict[str, Any]]:
+        """
+        Retrieve all research data for the session
+        
+        Args:
+            redis: Redis service instance
+            
+        Returns:
+            List[Dict[str, Any]]: Combined research data from all processed content
+        """
+        session_key = f"session:{self.session_id}:story_research"
+        processed_key = f"session:{self.session_id}:processed_content"
+        
+        # Get all processed content IDs
+        content_ids = await redis.client.smembers(processed_key)
+        content_ids = [id.decode('utf-8') for id in content_ids]
+        
+        research_data = []
+        for content_id in content_ids:
+            content_data = await redis.client.hget(session_key, content_id)
+            if content_data:
+                data = json.loads(content_data.decode('utf-8'))
+                research_data.extend(data['meta'])
+                
+        return research_data
 
     @retry(
         stop=stop_after_attempt(3),
@@ -137,6 +165,12 @@ class SaveToStory(BaseTool):
         self._logger.info("Running SaveToStory tool")
         
         try:
+            from containers import get_container
+            redis: RedisService = get_container().redis()
+            
+            # Retrieve all research data for this session
+            research_data = await self._get_research_data(redis)
+            
             # Validate inputs
             if not self.story_paragraphs:
                 raise ValueError("No story paragraphs provided")
@@ -150,7 +184,8 @@ class SaveToStory(BaseTool):
             story = {
                 "paragraphs": self.story_paragraphs,
                 "last_updated": datetime.now().isoformat(),
-                "metadata": self.metadata.model_dump()
+                "metadata": self.metadata.model_dump(),
+                "research_data": research_data
             }
             
             # Save to context
