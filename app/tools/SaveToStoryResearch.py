@@ -81,7 +81,7 @@ class SaveToStoryResearch(BaseTool):
             )
             
             processed_chars = current_research['processed_chars']
-            remaining_content = full_content[processed_chars:]
+            remaining_content = full_content[processed_chars-100:]
 
             # If content is fully processed
             if not remaining_content:
@@ -106,7 +106,7 @@ class SaveToStoryResearch(BaseTool):
                     }
                     
                 for item in self.research_items:
-                    chunk = remaining_content[:2000]
+                    chunk = remaining_content[:2100]
                     new_processed_chars = processed_chars + len(chunk)
                     
                     meta_item = item.meta[0] if item.meta else TempStoryMeta()
@@ -134,7 +134,7 @@ class SaveToStoryResearch(BaseTool):
 
                     remaining_after_current = full_content[new_processed_chars:]
                     if remaining_after_current:
-                        next_chunk = remaining_after_current[:2000]
+                        next_chunk = remaining_after_current[:2100]
                         return {
                             "chunk": next_chunk,
                             "instructions": "Please continue analyzing the next section and provide research items",
