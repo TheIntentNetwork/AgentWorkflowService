@@ -14,10 +14,10 @@ class SaveStoryURLs(BaseTool):
     _result_keys = ["story_urls"]
 
     """
-    This class represents a tool for saving story URLs and their metadata.
+    This class represents a tool for saving article URLs and their metadata.
     """
     user_id: str = Field(..., description="The id of the user.")
-    story_urls: List[StoryURL] = Field(..., description="The list of story URLs and their metadata.")
+    story_urls: List[StoryURL] = Field(..., description="The list of article URLs and their metadata.")
 
     async def run(self) -> Dict[str, List[Dict[str, str]]]:
         try:

@@ -8,7 +8,7 @@ from app.services.cache.redis import RedisService
 from app.tools.base_tool import BaseTool
 
 class StoryMeta(BaseModel):
-    facts: List[str] = Field(..., description="Critical points from the paragraph that are relevant to the story.")
+    facts: List[str] = Field(..., description="Critical points from the paragraph that are relevant to the article.")
     key_points: List[str] = Field(..., description="Key points that summarize the main ideas of the paragraph.")
     context: Dict[str, Any] = Field(..., description="The context of the research item such as the title, url, author, date, etc.")
     full_text: str = Field(..., description="The full text of the paragraph for context.")
@@ -25,10 +25,10 @@ class StoryResearchItem(BaseModel):
 
 class SaveToStoryResearch(BaseTool):
     """
-    Tool for saving story research items and example stories to context.
+    Tool for saving research items from the article to context.
     Processes content in chunks of 2000 characters, creating StoryMeta for each chunk.
     """
-    research_items: Optional[List[StoryResearchItem]] = Field(None, description="The research items from story content chunk being processed")
+    research_items: Optional[List[StoryResearchItem]] = Field(None, description="The research items from the current chunk of the article that's being processed")
     content_id: str = Field(..., description="The content ID to process")
     result_keys: ClassVar[List[str]] = ['story_research']
 
